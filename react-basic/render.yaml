@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: line-rich-menus-web
+    env: node
+    plan: free
+    region: oregon
+    branch: main
+    autoDeploy: true
+    rootDirectory: react-basic
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: LINE_CHANNEL_SECRET
+        sync: false
+      - key: LINE_CHANNEL_ACCESS_TOKEN
+        sync: false

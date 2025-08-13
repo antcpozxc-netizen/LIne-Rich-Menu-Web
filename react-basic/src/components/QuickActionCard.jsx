@@ -1,3 +1,5 @@
+// src/components/QuickActionCard.jsx
+
 import React from 'react';
 import { Card, CardContent, CardActions, Typography, Box, Button } from '@mui/material';
 

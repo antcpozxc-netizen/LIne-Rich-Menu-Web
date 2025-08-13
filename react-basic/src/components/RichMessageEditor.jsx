@@ -1,3 +1,5 @@
+// src/components/RichMessageEditor.jsx
+
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Box, Button, Container, Grid, IconButton, Paper, Stack, TextField, Typography
