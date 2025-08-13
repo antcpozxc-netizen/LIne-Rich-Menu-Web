@@ -6,6 +6,11 @@ import {
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 
+import myTemplate1 from '../assets/Picture1.png';
+import myTemplate2 from '../assets/Picture2.png';
+import myTemplate3 from '../assets/Picture3.png';
+import myTemplate4 from '../assets/Picture4.png';
+
 // หมวดหมู่ตัวอย่าง
 const CATEGORIES = [
   'ร้านอาหาร / คาเฟ่', 'บริการทั่วไป', 'แหล่งท่องเที่ยว / E-Commerce', 'โรงแรม / รีสอร์ท',
@@ -20,21 +25,21 @@ const TEMPLATES = [
     title: 'Size : 6 Block',
     sizeId: 'large-6',
     category: 'ร้านอาหาร / คาเฟ่',
-    thumb: 'https://picsum.photos/seed/rm-6a/560/320',
+    thumb: myTemplate1,
   },
   {
     id: 'large-6-02',
     title: 'Size : 6 Block',
     sizeId: 'large-6',
     category: 'ร้านอาหาร / คาเฟ่',
-    thumb: 'https://picsum.photos/seed/rm-6b/560/320',
+    thumb: myTemplate2,
   },
   {
     id: 'large-6-03',
     title: 'Size : 6 Block',
     sizeId: 'large-6',
     category: 'บริการทั่วไป',
-    thumb: 'https://picsum.photos/seed/rm-6c/560/320',
+    thumb: myTemplate1,
   },
 
   {
@@ -42,14 +47,14 @@ const TEMPLATES = [
     title: 'Size : 4 Block',
     sizeId: 'compact-4',
     category: 'ร้านอาหาร / คาเฟ่',
-    thumb: 'https://picsum.photos/seed/rm-4a/300/360',
+    thumb: myTemplate3,
   },
   {
     id: 'large-4-02',
     title: 'Size : 4 Block',
     sizeId: 'compact-4',
     category: 'บริการทั่วไป',
-    thumb: 'https://picsum.photos/seed/rm-4b/300/360',
+    thumb: myTemplate3,
   },
 
   {
@@ -57,14 +62,14 @@ const TEMPLATES = [
     title: 'Size : 3 Block',
     sizeId: 'large-3',
     category: 'ร้านอาหาร / คาเฟ่',
-    thumb: 'https://picsum.photos/seed/rm-3a/560/260',
+    thumb: myTemplate4,
   },
   {
     id: 'large-3-02',
     title: 'Size : 3 Block',
     sizeId: 'large-3',
     category: 'บริการทั่วไป',
-    thumb: 'https://picsum.photos/seed/rm-3b/560/260',
+    thumb: myTemplate4,
   },
 ];
 
@@ -133,24 +138,71 @@ function Section({ title, items, onUseTemplate }) {
   if (items.length === 0) return null;
   return (
     <Box sx={{ mb: 4 }}>
-      <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>{title}</Typography>
-      <Grid container spacing={2}>
-        {items.map(t => (
-          <Grid key={t.id} item xs={12} sm={6} md={4}>
-            <Card variant="outlined" sx={{ height: '100%' }}>
-              <CardActionArea onClick={() => onUseTemplate(t)}>
-                <CardMedia component="img" image={t.thumb} alt={t.id} />
-              </CardActionArea>
-              <CardContent sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Typography variant="body2" color="text.secondary">{t.category}</Typography>
-                <Button size="small" variant="contained" onClick={() => onUseTemplate(t)}>
-                  Use
-                </Button>
-              </CardContent>
-            </Card>
-          </Grid>
+      <Typography
+        variant="subtitle2"
+        color="text.secondary"
+        sx={{ mb: 1 }}
+      >
+        {title}
+      </Typography>
+
+      {/* แถวเลื่อนแนวนอน */}
+      <Stack
+        direction="row"
+        spacing={2}
+        sx={{
+          overflowX: 'auto',
+          pb: 1,
+          '&::-webkit-scrollbar': { height: 8 },
+          '&::-webkit-scrollbar-thumb': {
+            backgroundColor: '#ccc',
+            borderRadius: 4,
+          },
+        }}
+      >
+        {items.map((t) => (
+          <Card
+            key={t.id}
+            variant="outlined"
+            sx={{
+              minWidth: 250, // กำหนดความกว้างขั้นต่ำ
+              maxWidth: 300,
+              flexShrink: 0,
+            }}
+          >
+            <CardActionArea onClick={() => onUseTemplate(t)}>
+              <CardMedia
+                component="img"
+                image={t.thumb}
+                alt={t.id}
+                sx={{
+                  height: 160, // กำหนดความสูงของรูป
+                  objectFit: 'cover',
+                }}
+              />
+            </CardActionArea>
+            <CardContent
+              sx={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <Typography variant="body2" color="text.secondary">
+                {t.category}
+              </Typography>
+              <Button
+                size="small"
+                variant="contained"
+                onClick={() => onUseTemplate(t)}
+              >
+                Use
+              </Button>
+            </CardContent>
+          </Card>
         ))}
-      </Grid>
+      </Stack>
     </Box>
   );
 }
+
