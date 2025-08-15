@@ -15,6 +15,17 @@ const admin = require('firebase-admin');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+import admin from 'firebase-admin';
+
+if (!admin.apps.length) {
+  let creds = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+  admin.initializeApp({
+    credential: admin.credential.cert(creds),
+    projectId: creds.project_id,
+  });
+  console.log("[FIREBASE] Initialized with service account from ENV");
+}
+
 // ----- Firebase Admin init -----
 if (!admin.apps.length) {
   const saPath = process.env.GOOGLE_APPLICATION_CREDENTIALS; // ex: C:/myWeb/secrets/firebase-admin.json
