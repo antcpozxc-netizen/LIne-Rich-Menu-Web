@@ -8,56 +8,46 @@ const fetchFn = (...args) =>
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
-
 const jwt = require('jsonwebtoken');
 const admin = require('firebase-admin');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-import admin from 'firebase-admin';
-
+// ----- Firebase Admin init (ใช้ ENV) -----
 if (!admin.apps.length) {
-  let creds = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+  let creds;
+  if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+    creds = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+  } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+    creds = JSON.parse(fs.readFileSync(process.env.GOOGLE_APPLICATION_CREDENTIALS, 'utf8'));
+  } else {
+    throw new Error('No Firebase credentials provided');
+  }
+
   admin.initializeApp({
     credential: admin.credential.cert(creds),
     projectId: creds.project_id,
   });
-  console.log("[FIREBASE] Initialized with service account from ENV");
+  console.log("[FIREBASE] Initialized with service account");
 }
 
-// ----- Firebase Admin init -----
-if (!admin.apps.length) {
-  const saPath = process.env.GOOGLE_APPLICATION_CREDENTIALS; // ex: C:/myWeb/secrets/firebase-admin.json
-  if (!saPath) throw new Error('GOOGLE_APPLICATION_CREDENTIALS not set in .env');
-
-  const serviceAccount = JSON.parse(fs.readFileSync(saPath, 'utf8'));
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    projectId: process.env.FIREBASE_PROJECT_ID || serviceAccount.project_id,
-  });
-  console.log('[FIREBASE] Using service account:', serviceAccount.client_email);
-}
-
-// ---- Helper: ตรวจสอบ Firebase ID Token จาก client (ต้องอยู่นอกบล็อก init) ----
+// ---- Middleware ตรวจสอบ Firebase ID Token ----
 async function requireFirebaseAuth(req, res, next) {
   try {
-    // ต้องส่ง header: Authorization: Bearer <idToken>
     const h = req.headers.authorization || '';
     const m = h.match(/^Bearer (.+)$/);
     if (!m) {
       return res.status(401).json({ error: 'Missing Authorization: Bearer <idToken>' });
     }
-    // ตรวจสอบโทเคน -> ได้ข้อมูลผู้ใช้
     const decoded = await admin.auth().verifyIdToken(m[1]);
-    req.user = decoded; // { uid, ... }
+    req.user = decoded;
     return next();
   } catch (e) {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
 }
 
-// middleware (parse JSON แค่ครั้งเดียว)
 app.use(express.json({ limit: '1mb' }));
 
 // ========== LINE Login Routes ==========
@@ -263,10 +253,13 @@ app.get('/admin-check', (_req, res) => {
     res.status(500).json({ ok: false, error: String(e) });
   }
 });
-
 // เสิร์ฟ React build
 const clientBuildPath = path.join(__dirname, 'build');
 app.use(express.static(clientBuildPath));
+
+app.get('*', (_req, res) => {
+  res.sendFile(path.join(clientBuildPath, 'index.html'));
+});
 
 // ===== Utilities (ตรวจสิทธิ์ OA) =====
 async function getTenantIfMember(tid, uid) {
