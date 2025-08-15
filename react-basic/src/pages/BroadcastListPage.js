@@ -1,79 +1,290 @@
-import React, { useMemo, useState } from 'react';
+// src/pages/BroadcastListPage.js
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Box, Button, Container, Grid, IconButton, Tab, Tabs, TextField,
   Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-  Typography, Stack, Pagination
+  Typography, Stack, Pagination, CircularProgress
 } from '@mui/material';
-
 import { Search as SearchIcon, SwapVert as SortIcon } from '@mui/icons-material';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useOutletContext, useSearchParams } from 'react-router-dom';
 
-const mock = [
-  { id: 'BRD-0001', message: 'Promo A', target: 'All friends', time: '2025-08-08 16:00', updated: '2025-08-01 10:30', status: 'Scheduled' },
-  { id: 'BRD-0002', message: 'New feature', target: 'Segment: VIP', time: '-', updated: '2025-07-29 09:05', status: 'Drafts' },
-  { id: 'BRD-0003', message: 'Flash sale', target: 'All friends', time: '2025-07-21 14:00', updated: '2025-07-21 14:01', status: 'Sent' },
-  { id: 'BRD-0004', message: 'Reminder', target: 'Segment: Dormant', time: '2025-07-20 12:00', updated: '2025-07-20 12:10', status: 'Failed' },
-];
+import {
+  getFirestore, collection, query, where, orderBy, limit, getDocs,
+  startAfter, doc, getDoc
+} from 'firebase/firestore';
 
-const tabs = ['Scheduled', 'Drafts', 'Sent', 'Failed'];
+const TAB_LABELS = ['Scheduled', 'Drafts', 'Sent', 'Failed'];
+const STATUS_MAP = {
+  Scheduled: 'scheduled',
+  Drafts: 'draft',
+  Sent: 'sent',
+  Failed: 'failed',
+};
+const rowsPerPage = 10;
+
+function fmt(ts) {
+  if (!ts) return '-';
+  try {
+    const d = ts.toDate ? ts.toDate() : new Date(ts);
+    if (isNaN(d.getTime())) return '-';
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    return `${y}-${m}-${day} ${hh}:${mm}`;
+  } catch {
+    return '-';
+  }
+}
+
+// สร้างข้อความ preview สั้นๆ จาก messages[] ที่มาจาก BroadcastPage.js
+function previewMessage(messages) {
+  if (!Array.isArray(messages) || messages.length === 0) return '-';
+  const t = messages.find(m => m?.type === 'text')?.text || '';
+  return t || '(messages)';
+}
 
 export default function BroadcastListPage() {
   const navigate = useNavigate();
+  const { tenantId: outletTenantId } = useOutletContext() || {};
+  const [searchParams] = useSearchParams();
+  const tenantFromUrl = searchParams.get('tenant') || '';
+  const tenantId = tenantFromUrl || outletTenantId || '';
+
+  // ถ้าไม่มี tenant ให้เด้งไปหน้าเลือก OA ทันที
+  useEffect(() => {
+    if (!tenantId) {
+      alert('กรุณาเลือก OA ก่อน');
+      // ใช้ navigate แทนที่จะ setRows ว่างเฉย ๆ
+      // (ปรับ path ให้ตรงกับของคุณ)
+      window.location.replace('/accounts');
+    }
+  }, [tenantId]);
 
   // UI state
   const [tab, setTab] = useState(0);
   const [qId, setQId] = useState('');
   const [qDate, setQDate] = useState('');
   const [qTime, setQTime] = useState('');
-  const [orderBy, setOrderBy] = useState('updated'); // 'time' | 'updated'
+  const [orderByKey, setOrderByKey] = useState('updated'); // 'time' | 'updated'
   const [order, setOrder] = useState('desc'); // 'asc' | 'desc'
   const [page, setPage] = useState(1);
-  const rowsPerPage = 10;
 
-  const data = useMemo(() => {
-    // filter by tab
-    let rows = mock.filter(r => r.status === tabs[tab]);
+  // Data state
+  const [rows, setRows] = useState([]);
+  const [errMsg, setErrMsg] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [pageCursors, setPageCursors] = useState([]); // last doc snapshot ของแต่ละหน้า
+  const [hasMore, setHasMore] = useState(true);
 
-    // filter by id/date/time (อย่างง่าย)
-    if (qId.trim()) rows = rows.filter(r => r.id.toLowerCase().includes(qId.trim().toLowerCase()));
-    if (qDate) rows = rows.filter(r => (r.time || '').startsWith(qDate));
-    if (qTime) rows = rows.filter(r => (r.time || '').includes(` ${qTime}`));
+  const db = getFirestore();
+  const orderField = orderByKey === 'time' ? 'scheduledAt' : 'updatedAt';
+  const orderDir = order === 'asc' ? 'asc' : 'desc';
 
-    // sort
-    rows.sort((a, b) => {
-      const av = a[orderBy] || '';
-      const bv = b[orderBy] || '';
-      return order === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
-    });
+  // รีเซ็ตเมื่อเปลี่ยน criteria
+  useEffect(() => {
+    setRows([]);
+    setPage(1);
+    setPageCursors([]);
+    setHasMore(true);
+    setErrMsg('');
+  }, [tab, qId, qDate, qTime, orderByKey, order, tenantId]);
 
-    return rows;
-  }, [tab, qId, qDate, qTime, orderBy, order]);
+  useEffect(() => {
+    if (!tenantId) return;
+    const run = async () => {
+      setLoading(true);
+      try {
+        console.log('[BroadcastList] tenantId =', tenantId);
+        const statusValue = STATUS_MAP[TAB_LABELS[tab]];
+        const colRef = collection(db, 'tenants', tenantId, 'broadcasts');
 
-  const totalPages = Math.max(1, Math.ceil(data.length / rowsPerPage));
-  const paged = data.slice((page - 1) * rowsPerPage, page * rowsPerPage);
+        // ค้นหาแบบระบุ id
+        if (qId.trim()) {
+          // 1) ลอง docId ตรงๆ
+          const dref = doc(db, 'tenants', tenantId, 'broadcasts', qId.trim());
+          const dsnap = await getDoc(dref);
+          if (dsnap.exists()) {
+            const d = dsnap.data();
+            if (d.status === statusValue) {
+              setRows([{
+                id: dsnap.id,
+                message: previewMessage(d.messages),
+                target: d.targetSummary || '-',
+                scheduledAt: d.scheduledAt || null,
+                updatedAt: d.updatedAt || null,
+              }]);
+            } else {
+              setRows([]);
+            }
+            setHasMore(false);
+            setLoading(false);
+            return;
+          }
+          // 2) ไม่เจอ docId: ค้น field `id` เท่ากับ qId
+          const qy = query(
+            colRef,
+            where('status', '==', statusValue),
+            where('id', '==', qId.trim()),
+            orderBy(orderField, orderDir),
+            limit(rowsPerPage)
+          );
+          const snap = await getDocs(qy);
+          const list = snap.docs.map(s => {
+            const d = s.data();
+            return {
+              id: s.id,
+              message: previewMessage(d.messages),
+              target: d.targetSummary || '-',
+              scheduledAt: d.scheduledAt || null,
+              updatedAt: d.updatedAt || null,
+            };
+          });
+          setRows(list);
+          setHasMore(false);
+          setLoading(false);
+          return;
+        }
+
+        // กรองช่วงเวลาจาก date/time (กับ scheduledAt เท่านั้น)
+        const cons = [where('status', '==', statusValue)];
+        let effectiveOrderField = orderField;
+        let effectiveOrderDir = orderDir;
+
+        if (qDate) {
+          const startBase = new Date(qDate + 'T00:00:00');
+          let start = startBase;
+          let end = new Date(startBase);
+          end.setDate(end.getDate() + 1);
+
+          if (qTime) {
+            const [hh, mm] = qTime.split(':').map(Number);
+            start = new Date(qDate);
+            start.setHours(hh || 0, mm || 0, 0, 0);
+            end = new Date(start);
+            end.setMinutes(end.getMinutes() + 1);
+          }
+          // ต้อง orderBy field เดียวกับที่ทำ range
+          cons.push(where('scheduledAt', '>=', start));
+          cons.push(where('scheduledAt', '<', end));
+          effectiveOrderField = 'scheduledAt';
+          // รักษาทิศเดิม
+        }
+
+        // สร้าง query base + order + limit
+        let base = query(
+          colRef,
+          ...cons,
+          orderBy(effectiveOrderField, effectiveOrderDir),
+          limit(rowsPerPage)
+        );
+
+        // ทำ pagination ถึงหน้าที่ต้องการ (ค่อยๆ ไล่เพื่อเก็บ cursor)
+        let localRows = [];
+        let localCursors = [];
+        let last = null;
+
+        // ใช้ cursor ที่มีแล้ว ถ้ายังไม่ถึงหน้าที่ร้องขอค่อยยิงเพิ่ม
+        const needPage = Math.max(1, page);
+        let loadedPages = 0;
+
+        // ถ้าข้ามหน้าแรก ให้ไล่ยิงเก็บ cursor ทีละหน้า
+        while (loadedPages < needPage) {
+          let qRun = base;
+          if (last) qRun = query(base, startAfter(last));
+          const snap = await getDocs(qRun);
+
+          const list = snap.docs.map(s => {
+            const d = s.data();
+            return {
+              id: s.id,
+              message: previewMessage(d.messages),
+              target: d.targetSummary || '-',
+              scheduledAt: d.scheduledAt || null,
+              updatedAt: d.updatedAt || null,
+            };
+          });
+
+          if (loadedPages + 1 === needPage) {
+            localRows = list;
+          }
+          last = snap.docs[snap.docs.length - 1] || null;
+          if (last) localCursors.push(last);
+          if (list.length < rowsPerPage) {
+            // หมดหน้าแล้ว
+            setHasMore(false);
+            // ถ้าผู้ใช้กดไปหน้าว่าง ให้ดึงกลับหน้าสุดท้ายที่มี
+            if (list.length === 0 && page > 1) {
+              setPage(Math.max(1, loadedPages)); // กลับหน้าก่อนหน้า
+            }
+            break;
+          }
+          loadedPages += 1;
+        }
+
+        setRows(localRows);
+        setPageCursors(localCursors);
+      } catch (e) {
+        console.error(e);
+        console.error('[BroadcastList] query error:', e);
+        // failed-precondition มักเป็น index ไม่ครบ
+        if (e?.code === 'failed-precondition') {
+          setErrMsg('ขาด Firestore composite index สำหรับ (status + ' +
+            (orderByKey === 'time' ? 'scheduledAt' : 'updatedAt') +
+            '). เข้า Firestore Console แล้วสร้าง index ตามลิงก์ที่ error แนะนำ หรือสร้างคู่ต่อไปนี้: ' +
+            '[status ASC, updatedAt DESC] และ [status ASC, scheduledAt DESC]');
+        } else if (e?.code === 'permission-denied') {
+          setErrMsg('ไม่ได้รับสิทธิ์อ่านคอลเลกชันนี้ (permission-denied). ตรวจ rules ให้สมาชิก tenant อ่านได้');
+        } else {
+          setErrMsg(String(e?.message || e));
+        }
+        setRows([]);
+        setHasMore(false);
+      } finally {
+        setLoading(false);
+      }
+    };
+    run();
+  }, [tenantId, tab, qId, qDate, qTime, orderByKey, order, page, db]);
+
+  const totalPages = useMemo(() => (hasMore ? page + 1 : Math.max(1, page)), [hasMore, page]);
 
   const toggleSort = (key) => {
-    if (orderBy === key) {
-      setOrder(prev => (prev === 'asc' ? 'desc' : 'asc'));
+    if (key === 'time') {
+      if (orderByKey !== 'time') {
+        setOrderByKey('time'); setOrder('desc'); return;
+      }
     } else {
-      setOrderBy(key);
-      setOrder('desc');
+      if (orderByKey !== 'updated') {
+        setOrderByKey('updated'); setOrder('desc'); return;
+      }
     }
+    setOrder(prev => (prev === 'asc' ? 'desc' : 'asc'));
   };
+
+  const currentTabLabel = TAB_LABELS[tab];
 
   return (
     <Container sx={{ py: 3 }}>
       <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
         <Typography variant="h4" fontWeight="bold">Broadcast</Typography>
-        <Button variant="contained" sx={{ bgcolor: '#66bb6a', '&:hover': { bgcolor: '#57aa5b' } }}
-                onClick={() => navigate('/homepage/broadcast/new')}>
+        <Button
+          variant="contained"
+          sx={{ bgcolor: '#66bb6a', '&:hover': { bgcolor: '#57aa5b' } }}
+          onClick={() => navigate('/homepage/broadcast/new')}
+        >
           + New broadcast
         </Button>
       </Stack>
 
       {/* Tabs */}
-      <Tabs value={tab} onChange={(_, v) => { setTab(v); setPage(1); }} sx={{ mb: 2 }}>
-        {tabs.map(label => <Tab key={label} label={label} />)}
+      <Tabs
+        value={tab}
+        onChange={(_, v) => { setTab(v); setPage(1); }}
+        sx={{ mb: 2 }}
+      >
+        {TAB_LABELS.map(label => <Tab key={label} label={label} />)}
       </Tabs>
 
       {/* Filters */}
@@ -88,9 +299,12 @@ export default function BroadcastListPage() {
           <TextField size="small" type="time" value={qTime} onChange={e=>setQTime(e.target.value)} />
         </Grid>
         <Grid item xs={12} sm="auto">
-          <Button variant="contained" startIcon={<SearchIcon />}
-                  sx={{ bgcolor: '#66bb6a', '&:hover': { bgcolor: '#57aa5b' } }}
-                  onClick={() => setPage(1)}>
+          <Button
+            variant="contained"
+            startIcon={<SearchIcon />}
+            sx={{ bgcolor: '#66bb6a', '&:hover': { bgcolor: '#57aa5b' } }}
+            onClick={() => setPage(1)}
+          >
             Search
           </Button>
         </Grid>
@@ -123,21 +337,34 @@ export default function BroadcastListPage() {
             </TableRow>
           </TableHead>
           <TableBody>
-            {paged.length === 0 ? (
+            {loading && rows.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} align="center" sx={{ py: 6, color: 'text.secondary' }}>
-                  No data
+                  <Stack direction="row" spacing={1} justifyContent="center" alignItems="center">
+                    <CircularProgress size={20} />
+                    <span>Loading…</span>
+                  </Stack>
+                </TableCell>
+              </TableRow>
+            ) : rows.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} align="center" sx={{ py: 6, color: 'text.secondary' }}>
+                  {errMsg ? <span style={{color:'#d32f2f'}}>{errMsg}</span> : 'No data'}
                 </TableCell>
               </TableRow>
             ) : (
-              paged.map(row => (
-                <TableRow key={row.id} hover sx={{ cursor: 'pointer' }}
-                          onClick={() => navigate(`/homepage/broadcast/${row.id}`)}>
+              rows.map(row => (
+                <TableRow
+                  key={row.id}
+                  hover
+                  sx={{ cursor: 'pointer' }}
+                  onClick={() => navigate(`/homepage/broadcast/${row.id}`)}
+                >
                   <TableCell>{row.id}</TableCell>
                   <TableCell>{row.message}</TableCell>
                   <TableCell>{row.target}</TableCell>
-                  <TableCell>{row.time}</TableCell>
-                  <TableCell>{row.updated}</TableCell>
+                  <TableCell>{fmt(row.scheduledAt)}</TableCell>
+                  <TableCell>{fmt(row.updatedAt)}</TableCell>
                 </TableRow>
               ))
             )}
@@ -155,6 +382,12 @@ export default function BroadcastListPage() {
           showFirstButton
           showLastButton
         />
+      </Box>
+
+      <Box sx={{ mt: 1 }}>
+        <Typography variant="caption" color="text.secondary">
+          Showing: {TAB_LABELS[tab]} | Order by: {orderByKey === 'time' ? 'scheduledAt' : 'updatedAt'} ({order})
+        </Typography>
       </Box>
     </Container>
   );

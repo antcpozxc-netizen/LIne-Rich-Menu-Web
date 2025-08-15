@@ -1,5 +1,5 @@
 // src/pages/BroadcastPage.js
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Box, Button, Container, Divider, FormControl, FormControlLabel, FormHelperText,
   Grid, IconButton, InputAdornment, MenuItem, Paper, Radio, RadioGroup,
@@ -17,9 +17,12 @@ import {
   Close as CloseIcon,
   TextFormat as TextFormatIcon
 } from '@mui/icons-material';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useOutletContext } from 'react-router-dom';
+
+import { auth } from '../firebase';
 
 const MAX_CHARS = 500;
+const MAX_MESSAGES = 5;
 
 const timezoneOptions = [
   { label: 'UTC −12:00', value: '-12:00' },
@@ -34,6 +37,14 @@ const timezoneOptions = [
 export default function BroadcastPage() {
   const navigate = useNavigate();
 
+  const { tenantId, tenant } = useOutletContext() || {};
+  useEffect(() => {
+    if (!tenantId) {
+      alert('กรุณาเลือก OA ก่อน');
+      navigate('/accounts', { replace: true });
+    }
+  }, [tenantId, navigate]);
+
   // recipients
   const [recipient, setRecipient] = useState('all'); // 'all' | 'target'
   // schedule
@@ -46,6 +57,11 @@ export default function BroadcastPage() {
   const [blocks, setBlocks] = useState([
     { id: 1, type: 'text', value: '' },
   ]);
+
+  // ui states
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [sendingTest, setSendingTest] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const canSend = useMemo(() => {
     const hasText = blocks.some(b => b.value.trim().length > 0);
@@ -72,19 +88,184 @@ export default function BroadcastPage() {
     );
   };
 
-  const onSaveDraft = () => {
-    // TODO: connect API
-    console.log('save draft', { recipient, sendType, date, time, tz, blocks });
+  const toLineMessages = () => {
+    // รองรับข้อความล้วนก่อน (LINE ส่งได้ครั้งละ <= 5 message)
+    const texts = blocks
+      .filter(b => b.type === 'text' && b.value.trim())
+      .map(b => ({ type: 'text', text: b.value.trim() }));
+    return texts.slice(0, MAX_MESSAGES);
   };
 
-  const onSendTest = () => {
-    // TODO: connect API
-    console.log('send test', { blocks });
+  // แปลง date+time+tz → ISO string (UTC instant) สำหรับ backend/Firestore
+  const buildScheduledAtISO = () => {
+    if (sendType !== 'schedule') return null;
+    if (!date || !time || !tz) return null;
+    // รูปแบบ "2025-08-15T10:00:00+07:00" ให้ JS แปลง offset ถูกต้อง
+    const isoLocalWithOffset = `${date}T${time}:00${tz}`;
+    const when = new Date(isoLocalWithOffset);
+    if (Number.isNaN(when.getTime())) return null;
+    return when.toISOString(); // UTC ISO
   };
 
-  const onSubmit = () => {
-    // TODO: connect API
-    console.log('send broadcast', { recipient, sendType, date, time, tz, blocks });
+  const targetSummary = useMemo(() => {
+    return recipient === 'all' ? 'All friends' : 'Targeting'; // ภายหลังปรับให้บรรยาย segment ได้
+  }, [recipient]);
+
+  const authHeader = async () => {
+    if (!auth.currentUser) {
+      throw new Error('ยังไม่พบผู้ใช้ที่ล็อกอิน');
+    }
+    const idToken = await auth.currentUser.getIdToken();
+    return {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${idToken}`,
+    };
+  };
+
+  // ----- Actions -----
+
+  const onSaveDraft = async () => {
+    try {
+      setSavingDraft(true);
+      const messages = toLineMessages();
+      if (messages.length === 0) {
+        alert('กรุณาพิมพ์ข้อความอย่างน้อย 1 บล็อค');
+        return;
+      }
+      if (!tenantId) {
+        alert('ไม่พบ tenantId');
+        return;
+      }
+
+      const scheduledAtISO = buildScheduledAtISO();
+      const headers = await authHeader();
+
+      // ใช้ endpoint draft เดียวกันสำหรับทั้ง draft และ scheduled
+      // ฝั่ง backend จะตีค่า status = 'draft' ถ้าไม่มี scheduledAt
+      // และ 'scheduled' ถ้ามี scheduledAt
+      const res = await fetch(`/api/tenants/${tenantId}/broadcast/draft`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          recipient,
+          messages,
+          // เผื่อ backend อยากเก็บสรุปไว้โชว์ใน list
+          targetSummary,
+          schedule: scheduledAtISO
+            ? { at: scheduledAtISO, tz }
+            : null,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || 'draft_failed');
+
+      alert(scheduledAtISO ? 'บันทึกกำหนดเวลาสำเร็จ' : 'บันทึกดราฟท์สำเร็จ');
+      // กลับหน้า list เพื่อให้เห็นในแท็บ Drafts หรือ Scheduled
+      navigate(`/homepage/broadcast?tenant=${tenantId}`);
+    } catch (e) {
+      console.error(e);
+      alert('บันทึกไม่สำเร็จ: ' + e.message);
+    } finally {
+      setSavingDraft(false);
+    }
+  };
+
+  const onSendTest = async () => {
+    try {
+      setSendingTest(true);
+      const messages = toLineMessages();
+      if (messages.length === 0) {
+        alert('กรุณาพิมพ์ข้อความอย่างน้อย 1 บล็อค');
+        return;
+      }
+      if (!tenantId) {
+        alert('ไม่พบ tenantId');
+        return;
+      }
+      const headers = await authHeader();
+      const res = await fetch(`/api/tenants/${tenantId}/broadcast/test`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ messages }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || 'send_test_failed');
+
+      alert('ส่งข้อความทดสอบสำเร็จ (push ให้ผู้ส่ง)');
+    } catch (e) {
+      console.error(e);
+      alert('ส่งทดสอบไม่สำเร็จ: ' + e.message);
+    } finally {
+      setSendingTest(false);
+    }
+  };
+
+  const onSubmit = async () => {
+    try {
+      setSubmitting(true);
+
+      const messages = toLineMessages();
+      if (messages.length === 0) {
+        alert('กรุณาพิมพ์ข้อความอย่างน้อย 1 บล็อค');
+        return;
+      }
+      if (!tenantId) {
+        alert('ไม่พบ tenantId');
+        return;
+      }
+
+      const headers = await authHeader();
+
+      // โหมดส่งทันที
+      if (sendType === 'now') {
+        const res = await fetch(`/api/tenants/${tenantId}/broadcast`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            recipient,    // 'all' | 'target' (ตอนนี้รองรับ 'all' ก่อน)
+            sendType,     // 'now'
+            messages,
+            targetSummary // เพื่อให้ฝั่ง backend บันทึก summary ไว้ใช้ใน list
+          }),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json?.error || 'broadcast_failed');
+        alert('ส่ง Broadcast สำเร็จ');
+        navigate(`/homepage/broadcast?tenant=${tenantId}`);
+        return;
+      }
+
+      // โหมดตั้งเวลา → เก็บเป็น scheduled ผ่าน endpoint draft
+      if (sendType === 'schedule') {
+        const scheduledAtISO = buildScheduledAtISO();
+        if (!scheduledAtISO) {
+          alert('กรุณาเลือกวันที่/เวลา/เขตเวลาให้ครบ');
+          return;
+        }
+
+        const res = await fetch(`/api/tenants/${tenantId}/broadcast/draft`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            recipient,
+            messages,
+            targetSummary,
+            schedule: { at: scheduledAtISO, tz }, // backend แปลงเป็น Timestamp และสถานะ 'scheduled'
+          }),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json?.error || 'schedule_failed');
+
+        alert('ตั้งเวลาส่งสำเร็จ');
+        navigate(`/homepage/broadcast?tenant=${tenantId}`);
+        return;
+      }
+    } catch (e) {
+      console.error(e);
+      alert('ส่งไม่สำเร็จ: ' + e.message);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -92,11 +273,23 @@ export default function BroadcastPage() {
       <Stack direction="row" alignItems="center" justifyContent="space-between" mb={2}>
         <Typography variant="h4" fontWeight="bold">Broadcast</Typography>
         <Stack direction="row" spacing={1}>
-          <Button startIcon={<SaveIcon />} variant="contained" sx={{ bgcolor: '#66bb6a', '&:hover': { bgcolor: '#57aa5b' }}} onClick={onSaveDraft}>
-            save draft
+          <Button
+            startIcon={<SaveIcon />}
+            variant="contained"
+            disabled={savingDraft || submitting}
+            sx={{ bgcolor: '#66bb6a', '&:hover': { bgcolor: '#57aa5b' } }}
+            onClick={onSaveDraft}
+          >
+            {sendType === 'schedule' ? (savingDraft ? 'saving…' : 'save schedule') : (savingDraft ? 'saving…' : 'save draft')}
           </Button>
-          <Button startIcon={<SendIcon />} variant="contained" sx={{ bgcolor: '#66bb6a', '&:hover': { bgcolor: '#57aa5b' }}} onClick={onSendTest}>
-            send test
+          <Button
+            startIcon={<SendIcon />}
+            variant="contained"
+            disabled={sendingTest || submitting}
+            sx={{ bgcolor: '#66bb6a', '&:hover': { bgcolor: '#57aa5b' } }}
+            onClick={onSendTest}
+          >
+            {sendingTest ? 'testing…' : 'send test'}
           </Button>
         </Stack>
       </Stack>
@@ -228,11 +421,11 @@ export default function BroadcastPage() {
             variant="contained"
             size="large"
             endIcon={<SendIcon />}
-            disabled={!canSend}
+            disabled={!canSend || submitting || savingDraft}
             onClick={onSubmit}
             sx={{ bgcolor: '#66bb6a', px: 4, '&:hover': { bgcolor: '#57aa5b' } }}
           >
-            send
+            {submitting ? (sendType === 'now' ? 'sending…' : 'scheduling…') : 'send'}
           </Button>
         </Grid>
       </Grid>
