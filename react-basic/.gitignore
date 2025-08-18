@@ -1,27 +1,58 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
-# dependencies
-/node_modules
-/.pnp
+# === Dependencies / package managers
+node_modules/
+.pnp/
 .pnp.js
 
-# testing
-/coverage
+# === Build / production artifacts
+build/
+dist/
+.cache/
+.parcel-cache/
 
-# production
-/build
+# === Test
+coverage/
 
-# misc
+# === Logs / PIDs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+pnpm-debug.*
+*.pid
+*.seed
+*.pid.lock
+
+# === OS / IDE
 .DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# === Env / secrets
+.env            # << สำคัญ: กัน .env ต้นฉบับ
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
 
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
 secrets/
 firebase-admin.json
+service-account.json
+service-account*.json
 *.priv.json
+
+# บางเครื่องใช้ชื่ออื่น ๆ สำหรับ service account
+firebase-adminsdk*.json
+
+# === Firebase / tooling
+.firebase/
+firebase-debug.log
+
+# === ngrok (กัน token/config เผลอขึ้น repo)
+.ngrok2/
+ngrok.yml
+
+# === Misc tools/hosts
+*.swp
+*.swo

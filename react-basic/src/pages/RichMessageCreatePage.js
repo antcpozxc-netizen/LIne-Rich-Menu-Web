@@ -1,3 +1,5 @@
+// RichMessageCreatePage.js
+
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import RichMessageEditor from '../components/RichMessageEditor'
@@ -13,7 +15,7 @@ export default function RichMessageCreatePage() {
 
   const handleSave = (data) => {
     const list = readAll();
-    const id = genId();
+    const id = data.id || genId();
     const now = new Date().toISOString().replace('T',' ').slice(0,16);
     list.unshift({
       id,
@@ -22,7 +24,9 @@ export default function RichMessageCreatePage() {
       areas: data.areas || [],
       actionLabel: data.areas?.[0]?.label || '',
       actionUrl: data.areas?.[0]?.url || '',
+      imagemap: data.imagemap || null,
       createdAt: now,
+      updatedAt: now,
     });
     writeAll(list);
     navigate('/homepage/rich-message'); // back to list

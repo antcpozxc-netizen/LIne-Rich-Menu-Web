@@ -1,3 +1,5 @@
+//RichMessageDetailPage.js
+
 import React, { useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import RichMessageEditor from '../components/RichMessageEditor'
@@ -22,14 +24,17 @@ export default function RichMessageDetailPage() {
     const list = readAll();
     const idx = list.findIndex(r => r.id === id);
     const now = new Date().toISOString().replace('T',' ').slice(0,16);
+    const base = idx >= 0 ? list[idx] : {};
     const updated = {
-      ...list[idx],
+      ...base,
+      id, // ยืนยันว่ามี id เสมอ
       name: data.name,
       image: data.image,
       areas: data.areas || [],
       actionLabel: data.areas?.[0]?.label || '',
       actionUrl: data.areas?.[0]?.url || '',
-      createdAt: list[idx]?.createdAt || now,
+      imagemap: data.imagemap ?? list[idx]?.imagemap ?? null,
+      createdAt: base?.createdAt || now,
       updatedAt: now,
     };
     if (idx >= 0) list[idx] = updated; else list.unshift(updated);
@@ -56,6 +61,8 @@ export default function RichMessageDetailPage() {
     writeAll(list);
     navigate(`/homepage/rich-message/${copy.id}`);
   };
+
+  
 
   return (
     <RichMessageEditor

@@ -1,9 +1,9 @@
 // src/pages/BroadcastPage.js
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Box, Button, Container, Divider, FormControl, FormControlLabel, FormHelperText,
   Grid, IconButton, InputAdornment, MenuItem, Paper, Radio, RadioGroup,
-  Select, Stack, TextField, Tooltip, Typography
+  Select, Stack, TextField, Tooltip, Typography, Chip
 } from '@mui/material';
 import {
   Save as SaveIcon,
@@ -15,12 +15,15 @@ import {
   Link as LinkIcon,
   ContentCopy as ContentCopyIcon,
   Close as CloseIcon,
-  TextFormat as TextFormatIcon
+  TextFormat as TextFormatIcon,
+  PhotoSizeSelectLarge as RichIcon
 } from '@mui/icons-material';
-import { useNavigate, useOutletContext } from 'react-router-dom';
+import { useNavigate, useOutletContext, useSearchParams, useParams } from 'react-router-dom';
+import { ref as sref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { auth, storage } from '../firebase';
+import RichMessagePicker from '../components/RichMessagePicker';
 
-import { auth } from '../firebase';
-
+// ----------------- Constants -----------------
 const MAX_CHARS = 500;
 const MAX_MESSAGES = 5;
 
@@ -35,9 +38,14 @@ const timezoneOptions = [
 ];
 
 export default function BroadcastPage() {
+  // ----- Router / Outlet -----
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { id: idFromPath } = useParams();
+  const editingId = searchParams.get('draft') || idFromPath || null;
 
-  const { tenantId, tenant } = useOutletContext() || {};
+  // ----- Tenant from layout -----
+  const { tenantId } = useOutletContext() || {};
   useEffect(() => {
     if (!tenantId) {
       alert('กรุณาเลือก OA ก่อน');
@@ -45,126 +53,227 @@ export default function BroadcastPage() {
     }
   }, [tenantId, navigate]);
 
-  // recipients
+  // ----- Form states -----
   const [recipient, setRecipient] = useState('all'); // 'all' | 'target'
-  // schedule
   const [sendType, setSendType] = useState('now');   // 'now' | 'schedule'
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
   const [tz, setTz] = useState('+07:00');
 
-  // message blocks
-  const [blocks, setBlocks] = useState([
-    { id: 1, type: 'text', value: '' },
-  ]);
+  // blocks: text | image | file | link | rich
+  const [blocks, setBlocks] = useState([{ id: 1, type: 'text', value: '' }]);
 
-  // ui states
+  // ----- UI states -----
   const [savingDraft, setSavingDraft] = useState(false);
   const [sendingTest, setSendingTest] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  // picker
+  const [richPickerOpen, setRichPickerOpen] = useState(false);
+  const [richTargetBlockId, setRichTargetBlockId] = useState(null);
+
+  // ----- Helpers -----
+  const filePickersRef = useRef({});
+
+  const isBlockFilled = (b) =>
+    (b.type === 'text'  && b.value?.trim()) ||
+    (b.type === 'image' && b.url) ||
+    (b.type === 'file'  && b.url) ||
+    (b.type === 'link'  && b.url) ||
+    (b.type === 'rich'  && (b.rich?.imagemap || b.rich?.image));
+
   const canSend = useMemo(() => {
-    const hasText = blocks.some(b => b.value.trim().length > 0);
+    const hasSomething = blocks.some(isBlockFilled);
     const validSchedule = sendType === 'now' || (date && time);
-    return hasText && validSchedule;
+    return hasSomething && validSchedule;
   }, [blocks, sendType, date, time]);
 
-  const addBlock = () => {
-    const nextId = (blocks.at(-1)?.id || 0) + 1;
-    setBlocks(prev => [...prev, { id: nextId, type: 'text', value: '' }]);
+  const nextId = () => (blocks.at(-1)?.id || 0) + 1;
+
+  const addBlock = () => setBlocks(prev => [...prev, { id: nextId(), type: 'text', value: '' }]);
+  const removeBlock = (id) => setBlocks(prev => prev.filter(b => b.id !== id));
+  const updateBlock = (id, newValue) =>
+    setBlocks(prev => prev.map(b => (b.id === id ? { ...b, value: String(newValue).slice(0, MAX_CHARS) } : b)));
+  const insertEmoji = (id, emoji = '😀') =>
+    setBlocks(prev => prev.map(b => (b.id === id ? { ...b, value: (b.value || '') + ' ' + emoji } : b)));
+
+  const setBlockType = (id, type) =>
+    setBlocks(prev => prev.map(b => (b.id === id ? { id: b.id, type, value: '', url: '', previewUrl: '', fileName: '', label: '', rich: null } : b)));
+
+  const pickFile = (key) => filePickersRef.current[key]?.click();
+
+  const uploadToStorage = async (file, folder) => {
+    const safeName = file.name.replace(/\s+/g, '-');
+    const path = `tenants/${tenantId}/${folder}/${Date.now()}-${safeName}`;
+    const r = sref(storage, path);
+    await uploadBytes(r, file);
+    return getDownloadURL(r);
   };
 
-  const removeBlock = (id) => {
-    setBlocks(prev => prev.filter(b => b.id !== id));
+  const onChooseFile = async (id, kind, e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    try {
+      const folder = kind === 'image' ? 'images' : 'files';
+      const url = await uploadToStorage(f, folder);
+      if (kind === 'image') {
+        setBlocks(prev => prev.map(b => (b.id === id ? { ...b, type: 'image', url, previewUrl: url } : b)));
+      } else {
+        setBlocks(prev => prev.map(b => (b.id === id ? { ...b, type: 'file', url, fileName: f.name } : b)));
+      }
+    } catch (err) {
+      console.error(err);
+      alert('อัปโหลดไม่สำเร็จ: ' + (err?.message || err));
+    } finally {
+      e.target.value = '';
+    }
   };
 
-  const updateBlock = (id, newValue) => {
-    setBlocks(prev => prev.map(b => (b.id === id ? { ...b, value: newValue.slice(0, MAX_CHARS) } : b)));
+  // ----- Rich message picker handlers -----
+  const openRichPickerFor = (blockId) => {
+    setRichTargetBlockId(blockId);
+    setRichPickerOpen(true);
+  };
+  const handleRichPicked = (item) => {
+    const normalized = {
+      ...item,
+      image:
+        item.image ||
+        item.imagemap?.urls?.[700] ||
+        item.imagemap?.urls?.[300] ||
+        item.imagemap?.urls?.[1040] ||
+        item.image, // เผื่อไว้
+    };
+
+    setBlocks(prev => prev.map(b => (
+      b.id === richTargetBlockId
+        ? { ...b, type: 'rich', rich: normalized }
+        : b
+    )));
+    setRichPickerOpen(false);
+    setRichTargetBlockId(null);
   };
 
-  const insertEmoji = (id, emoji = '😀') => {
-    setBlocks(prev =>
-      prev.map(b => (b.id === id ? { ...b, value: (b.value + ' ' + emoji).slice(0, MAX_CHARS) } : b))
-    );
+
+  // ----- Transformers -----
+  const richToImagemapMessage = (r) => ({
+    type: 'imagemap',
+    baseUrl: r.imagemap.baseUrl,
+    altText: r.imagemap.altText || r.name || 'Imagemap',
+    baseSize: r.imagemap.baseSize,     // { width, height }
+    actions: r.imagemap.actions,       // [{ type:'uri'|'message', linkUri?/text, area:{x,y,width,height} }]
+  });
+
+  const richBlockToMessages = (b) => {
+    const r = b.rich;
+    if (!r) return [];
+
+    // 🚀 ใช้ imagemap จริง ถ้า publish แล้ว
+    if (r.imagemap && r.imagemap.baseUrl && r.imagemap.baseSize && Array.isArray(r.imagemap.actions)) {
+      return [richToImagemapMessage(r)];
+    }
+
+    // ↩️ fallback: รูป + สรุปลิงก์เป็นข้อความ
+    const out = [];
+    if (r.image) {
+      out.push({ type: 'image', originalContentUrl: r.image, previewImageUrl: r.image });
+    }
+    const links = (r.areas || []).filter(a => a?.url).map((a, i) => `• ${a.label || `Link ${i + 1}`}: ${a.url}`);
+    if (links.length) out.push({ type: 'text', text: links.join('\n') });
+    return out;
   };
 
   const toLineMessages = () => {
-    // รองรับข้อความล้วนก่อน (LINE ส่งได้ครั้งละ <= 5 message)
-    const texts = blocks
-      .filter(b => b.type === 'text' && b.value.trim())
-      .map(b => ({ type: 'text', text: b.value.trim() }));
-    return texts.slice(0, MAX_MESSAGES);
+    const out = [];
+
+    for (const b of blocks) {
+      if (b.type === 'text' && b.value?.trim()) {
+        out.push({ type: 'text', text: b.value.trim() });
+      }
+      if (b.type === 'image' && b.url) {
+        out.push({
+          type: 'image',
+          originalContentUrl: b.url,
+          previewImageUrl: b.previewUrl || b.url
+        });
+      }
+      if (b.type === 'file' && b.url) {
+        out.push({ type: 'text', text: `${b.fileName || 'Download'}: ${b.url}` });
+      }
+      if (b.type === 'link' && b.url) {
+        out.push({ type: 'text', text: `${b.label ? b.label + ': ' : ''}${b.url}` });
+      }
+      if (b.type === 'rich' && b.rich) {
+        out.push(...richBlockToMessages(b));
+      }
+      if (out.length >= MAX_MESSAGES) break;
+    }
+
+    return out.slice(0, MAX_MESSAGES);
   };
 
-  // แปลง date+time+tz → ISO string (UTC instant) สำหรับ backend/Firestore
   const buildScheduledAtISO = () => {
     if (sendType !== 'schedule') return null;
     if (!date || !time || !tz) return null;
-    // รูปแบบ "2025-08-15T10:00:00+07:00" ให้ JS แปลง offset ถูกต้อง
     const isoLocalWithOffset = `${date}T${time}:00${tz}`;
     const when = new Date(isoLocalWithOffset);
     if (Number.isNaN(when.getTime())) return null;
     return when.toISOString(); // UTC ISO
   };
 
-  const targetSummary = useMemo(() => {
-    return recipient === 'all' ? 'All friends' : 'Targeting'; // ภายหลังปรับให้บรรยาย segment ได้
-  }, [recipient]);
+  const targetSummary = useMemo(
+    () => (recipient === 'all' ? 'All friends' : 'Targeting'),
+    [recipient]
+  );
 
   const authHeader = async () => {
-    if (!auth.currentUser) {
-      throw new Error('ยังไม่พบผู้ใช้ที่ล็อกอิน');
-    }
+    if (!auth.currentUser) throw new Error('ยังไม่พบผู้ใช้ที่ล็อกอิน');
     const idToken = await auth.currentUser.getIdToken();
     return {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${idToken}`,
+      Authorization: `Bearer ${idToken}`
     };
   };
 
-  // ----- Actions -----
-
+  // ----------------- Actions -----------------
   const onSaveDraft = async () => {
     try {
       setSavingDraft(true);
       const messages = toLineMessages();
-      if (messages.length === 0) {
-        alert('กรุณาพิมพ์ข้อความอย่างน้อย 1 บล็อค');
-        return;
-      }
-      if (!tenantId) {
-        alert('ไม่พบ tenantId');
-        return;
-      }
+      if (messages.length === 0) return alert('กรุณาพิมพ์ข้อความหรือแนบอย่างน้อย 1 บล็อค');
+      if (!tenantId) return alert('ไม่พบ tenantId');
 
       const scheduledAtISO = buildScheduledAtISO();
       const headers = await authHeader();
 
-      // ใช้ endpoint draft เดียวกันสำหรับทั้ง draft และ scheduled
-      // ฝั่ง backend จะตีค่า status = 'draft' ถ้าไม่มี scheduledAt
-      // และ 'scheduled' ถ้ามี scheduledAt
-      const res = await fetch(`/api/tenants/${tenantId}/broadcast/draft`, {
-        method: 'POST',
+      const url = editingId
+        ? `/api/tenants/${tenantId}/broadcast/draft/${editingId}`
+        : `/api/tenants/${tenantId}/broadcast/draft`;
+      const method = editingId ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
         headers,
         body: JSON.stringify({
           recipient,
           messages,
-          // เผื่อ backend อยากเก็บสรุปไว้โชว์ใน list
           targetSummary,
-          schedule: scheduledAtISO
-            ? { at: scheduledAtISO, tz }
-            : null,
-        }),
+          schedule: scheduledAtISO ? { at: scheduledAtISO, tz } : null,
+          composer: blocks, // เก็บของจริงไว้เปิดมาแก้ได้
+        })
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error || 'draft_failed');
 
-      alert(scheduledAtISO ? 'บันทึกกำหนดเวลาสำเร็จ' : 'บันทึกดราฟท์สำเร็จ');
-      // กลับหน้า list เพื่อให้เห็นในแท็บ Drafts หรือ Scheduled
+      alert(
+        scheduledAtISO
+          ? (editingId ? 'อัปเดตกำหนดเวลาแล้ว' : 'บันทึกกำหนดเวลาสำเร็จ')
+          : (editingId ? 'อัปเดตดราฟท์แล้ว' : 'บันทึกดราฟท์สำเร็จ')
+      );
       navigate(`/homepage/broadcast?tenant=${tenantId}`);
     } catch (e) {
       console.error(e);
-      alert('บันทึกไม่สำเร็จ: ' + e.message);
+      alert('บันทึกไม่สำเร็จ: ' + (e?.message || e));
     } finally {
       setSavingDraft(false);
     }
@@ -174,19 +283,14 @@ export default function BroadcastPage() {
     try {
       setSendingTest(true);
       const messages = toLineMessages();
-      if (messages.length === 0) {
-        alert('กรุณาพิมพ์ข้อความอย่างน้อย 1 บล็อค');
-        return;
-      }
-      if (!tenantId) {
-        alert('ไม่พบ tenantId');
-        return;
-      }
+      if (messages.length === 0) return alert('กรุณาพิมพ์ข้อความหรือแนบอย่างน้อย 1 บล็อค');
+      if (!tenantId) return alert('ไม่พบ tenantId');
+
       const headers = await authHeader();
       const res = await fetch(`/api/tenants/${tenantId}/broadcast/test`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ messages }),
+        body: JSON.stringify({ messages })
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error || 'send_test_failed');
@@ -205,28 +309,22 @@ export default function BroadcastPage() {
       setSubmitting(true);
 
       const messages = toLineMessages();
-      if (messages.length === 0) {
-        alert('กรุณาพิมพ์ข้อความอย่างน้อย 1 บล็อค');
-        return;
-      }
-      if (!tenantId) {
-        alert('ไม่พบ tenantId');
-        return;
-      }
+      if (messages.length === 0) return alert('กรุณาพิมพ์ข้อความหรือแนบอย่างน้อย 1 บล็อค');
+      if (!tenantId) return alert('ไม่พบ tenantId');
 
       const headers = await authHeader();
 
-      // โหมดส่งทันที
       if (sendType === 'now') {
         const res = await fetch(`/api/tenants/${tenantId}/broadcast`, {
           method: 'POST',
           headers,
           body: JSON.stringify({
-            recipient,    // 'all' | 'target' (ตอนนี้รองรับ 'all' ก่อน)
-            sendType,     // 'now'
+            recipient,
+            sendType: 'now',
             messages,
-            targetSummary // เพื่อให้ฝั่ง backend บันทึก summary ไว้ใช้ใน list
-          }),
+            targetSummary,
+            composer: blocks,
+          })
         });
         const json = await res.json();
         if (!res.ok) throw new Error(json?.error || 'broadcast_failed');
@@ -235,31 +333,31 @@ export default function BroadcastPage() {
         return;
       }
 
-      // โหมดตั้งเวลา → เก็บเป็น scheduled ผ่าน endpoint draft
-      if (sendType === 'schedule') {
-        const scheduledAtISO = buildScheduledAtISO();
-        if (!scheduledAtISO) {
-          alert('กรุณาเลือกวันที่/เวลา/เขตเวลาให้ครบ');
-          return;
-        }
+      // schedule
+      const scheduledAtISO = buildScheduledAtISO();
+      if (!scheduledAtISO) return alert('กรุณาเลือกวันที่/เวลา/เขตเวลาให้ครบ');
 
-        const res = await fetch(`/api/tenants/${tenantId}/broadcast/draft`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            recipient,
-            messages,
-            targetSummary,
-            schedule: { at: scheduledAtISO, tz }, // backend แปลงเป็น Timestamp และสถานะ 'scheduled'
-          }),
-        });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json?.error || 'schedule_failed');
+      const url = editingId
+        ? `/api/tenants/${tenantId}/broadcast/draft/${editingId}`
+        : `/api/tenants/${tenantId}/broadcast/draft`;
+      const method = editingId ? 'PUT' : 'POST';
 
-        alert('ตั้งเวลาส่งสำเร็จ');
-        navigate(`/homepage/broadcast?tenant=${tenantId}`);
-        return;
-      }
+      const res = await fetch(url, {
+        method,
+        headers,
+        body: JSON.stringify({
+          recipient,
+          messages,
+          targetSummary,
+          schedule: { at: scheduledAtISO, tz },
+          composer: blocks,
+        })
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || 'schedule_failed');
+
+      alert(editingId ? 'อัปเดตกำหนดเวลาแล้ว' : 'ตั้งเวลาส่งสำเร็จ');
+      navigate(`/homepage/broadcast?tenant=${tenantId}`);
     } catch (e) {
       console.error(e);
       alert('ส่งไม่สำเร็จ: ' + e.message);
@@ -268,8 +366,56 @@ export default function BroadcastPage() {
     }
   };
 
+  // ----------------- Load draft for editing -----------------
+  useEffect(() => {
+    (async () => {
+      if (!tenantId || !editingId) return;
+      try {
+        const headers = await authHeader();
+        const res = await fetch(`/api/tenants/${tenantId}/broadcasts/${editingId}`, { headers });
+        const j = await res.json();
+        if (!res.ok) throw new Error(j?.error || 'load_failed');
+
+        setRecipient(j.recipient || 'all');
+
+        // ใช้ composer เป็นหลัก
+        if (Array.isArray(j.composer) && j.composer.length) {
+          setBlocks(j.composer.map((blk, i) => ({ id: i + 1, ...blk })));
+        } else {
+          // fallback จาก messages (รองรับ text + image)
+          const msgs = Array.isArray(j.messages) ? j.messages : [];
+          const images = msgs
+            .filter(m => m.type === 'image' && m.originalContentUrl)
+            .map((m, i) => ({ id: i + 1, type: 'image', url: m.originalContentUrl, previewUrl: m.previewImageUrl || m.originalContentUrl }));
+          const texts = msgs
+            .filter(m => m.type === 'text' && typeof m.text === 'string')
+            .map((m, i) => ({ id: images.length + i + 1, type: 'text', value: m.text }));
+          const merged = [...images, ...texts];
+          setBlocks(merged.length ? merged : [{ id: 1, type: 'text', value: '' }]);
+        }
+
+        if (j.status === 'scheduled' && j.scheduledAtISO) {
+          const d = new Date(j.scheduledAtISO);
+          const isoLocal = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString();
+          setDate(isoLocal.slice(0, 10));
+          setTime(isoLocal.slice(11, 16));
+          setSendType('schedule');
+          setTz(j.tz || '+07:00');
+        } else {
+          setSendType('now');
+        }
+      } catch (e) {
+        console.error('[load draft]', e);
+        alert('โหลด Draft ไม่สำเร็จ: ' + e.message);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId, editingId]);
+
+  // ----------------- Render -----------------
   return (
     <Container sx={{ py: 4 }}>
+      {/* Header buttons */}
       <Stack direction="row" alignItems="center" justifyContent="space-between" mb={2}>
         <Typography variant="h4" fontWeight="bold">Broadcast</Typography>
         <Stack direction="row" spacing={1}>
@@ -360,15 +506,20 @@ export default function BroadcastPage() {
       <Stack spacing={2}>
         {blocks.map((b, idx) => (
           <Paper key={b.id} variant="outlined" sx={{ p: 1.5 }}>
-            {/* Toolbar (mock icons) */}
+            {/* Toolbar */}
             <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1, px: .5 }}>
-              <Tooltip title="Text"><IconButton size="small"><TextFormatIcon fontSize="small" /></IconButton></Tooltip>
-              <Tooltip title="Image"><IconButton size="small"><ImageIcon fontSize="small" /></IconButton></Tooltip>
-              <Tooltip title="File"><IconButton size="small"><AttachFileIcon fontSize="small" /></IconButton></Tooltip>
-              <Tooltip title="Link"><IconButton size="small"><LinkIcon fontSize="small" /></IconButton></Tooltip>
+              <Tooltip title="Text"><IconButton size="small" onClick={() => setBlockType(b.id, 'text')}><TextFormatIcon fontSize="small" /></IconButton></Tooltip>
+              <Tooltip title="Image"><IconButton size="small" onClick={() => pickFile(`image-${b.id}`)}><ImageIcon fontSize="small" /></IconButton></Tooltip>
+              <Tooltip title="File"><IconButton size="small" onClick={() => pickFile(`file-${b.id}`)}><AttachFileIcon fontSize="small" /></IconButton></Tooltip>
+              <Tooltip title="Link"><IconButton size="small" onClick={() => setBlockType(b.id, 'link')}><LinkIcon fontSize="small" /></IconButton></Tooltip>
+              <Tooltip title="Rich">
+                <IconButton size="small" onClick={() => { setBlockType(b.id, 'rich'); openRichPickerFor(b.id); }}>
+                  <RichIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
               <Tooltip title="Duplicate">
                 <IconButton size="small" onClick={() => setBlocks(prev => {
-                  const copy = { ...b, id: (prev.at(-1)?.id || 0) + 1 };
+                  const copy = { ...b, id: nextId() };
                   return [...prev.slice(0, idx + 1), copy, ...prev.slice(idx + 1)];
                 })}>
                   <ContentCopyIcon fontSize="small" />
@@ -376,46 +527,148 @@ export default function BroadcastPage() {
               </Tooltip>
               <Box sx={{ flex: 1 }} />
               <Tooltip title="Remove block">
-                <span>
-                  <IconButton size="small" disabled={blocks.length === 1} onClick={() => removeBlock(b.id)}>
-                    <CloseIcon fontSize="small" />
-                  </IconButton>
-                </span>
+                <span><IconButton size="small" disabled={blocks.length === 1} onClick={() => removeBlock(b.id)}><CloseIcon fontSize="small" /></IconButton></span>
               </Tooltip>
             </Stack>
 
-            {/* Text area */}
-            <TextField
-              placeholder="Enter text"
-              multiline
-              minRows={5}
-              value={b.value}
-              onChange={(e) => updateBlock(b.id, e.target.value)}
-              fullWidth
-              inputProps={{ maxLength: MAX_CHARS }}
+            {/* Hidden file pickers */}
+            <input
+              type="file"
+              accept="image/*"
+              style={{ display: 'none' }}
+              ref={el => (filePickersRef.current[`image-${b.id}`] = el)}
+              onChange={(e) => onChooseFile(b.id, 'image', e)}
             />
-            <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mt: .5 }}>
-              <Button
-                size="small"
-                startIcon={<InsertEmoticonIcon />}
-                onClick={() => insertEmoji(b.id, '😀')}
-                sx={{ textTransform: 'none' }}
-              >
-                Emoji
-              </Button>
-              <Typography variant="caption" color="text.secondary">
-                {b.value.length}/{MAX_CHARS}
-              </Typography>
-            </Stack>
+            <input
+              type="file"
+              style={{ display: 'none' }}
+              ref={el => (filePickersRef.current[`file-${b.id}`] = el)}
+              onChange={(e) => onChooseFile(b.id, 'file', e)}
+            />
+
+            {/* Block bodies */}
+            {b.type === 'text' && (
+              <>
+                <TextField
+                  placeholder="Enter text"
+                  multiline
+                  minRows={5}
+                  value={b.value || ''}
+                  onChange={(e) => updateBlock(b.id, e.target.value)}
+                  fullWidth
+                  inputProps={{ maxLength: MAX_CHARS }}
+                />
+                <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mt: .5 }}>
+                  <Button size="small" startIcon={<InsertEmoticonIcon />} onClick={() => insertEmoji(b.id, '😀')} sx={{ textTransform: 'none' }}>
+                    Emoji
+                  </Button>
+                  <Typography variant="caption" color="text.secondary">
+                    {(b.value || '').length}/{MAX_CHARS}
+                  </Typography>
+                </Stack>
+              </>
+            )}
+
+            {b.type === 'image' && (
+              <Box sx={{ p: 1 }}>
+                {b.url ? (
+                  <img src={b.previewUrl || b.url} alt="" style={{ maxWidth: '100%', borderRadius: 8 }} />
+                ) : (
+                  <Typography color="text.secondary">ยังไม่มีรูป (กดไอคอนรูปเพื่ออัปโหลด)</Typography>
+                )}
+              </Box>
+            )}
+
+            {b.type === 'file' && (
+              <Box sx={{ p: 1 }}>
+                {b.url ? (
+                  <a href={b.url} target="_blank" rel="noreferrer">{b.fileName || 'Open file'}</a>
+                ) : (
+                  <Typography color="text.secondary">ยังไม่มีไฟล์ (กดไอคอนคลิปเพื่ออัปโหลด)</Typography>
+                )}
+              </Box>
+            )}
+
+            {b.type === 'link' && (
+              <Stack spacing={1}>
+                <TextField
+                  label="Label (optional)"
+                  size="small"
+                  value={b.label || ''}
+                  onChange={(e) => setBlocks(prev => prev.map(x => x.id === b.id ? { ...x, label: e.target.value } : x))}
+                />
+                <TextField
+                  label="URL"
+                  size="small"
+                  placeholder="https://example.com"
+                  value={b.url || ''}
+                  onChange={(e) => setBlocks(prev => prev.map(x => x.id === b.id ? { ...x, url: e.target.value } : x))}
+                />
+              </Stack>
+            )}
+
+            {b.type === 'rich' && (
+              <Box sx={{ p: 1 }}>
+                {!b.rich ? (
+                  <Typography color="text.secondary">ยังไม่ได้เลือก Rich message (กดไอคอน Rich เพื่อเลือก)</Typography>
+                ) : (
+                  <>
+                    <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+                      <Typography variant="subtitle2">{b.rich.name || '(Untitled)'}</Typography>
+                      {b.rich.imagemap
+                        ? <Chip size="small" color="success" label="Imagemap ready" />
+                        : <Chip size="small" color="warning" label="Not published (send as image+links)" />}
+                    </Stack>
+
+                    {(() => {
+                      const img =
+                        b.rich?.image ||
+                        b.rich?.imagemap?.urls?.[700] ||
+                        b.rich?.imagemap?.urls?.[300] ||
+                        b.rich?.imagemap?.urls?.[1040] ||
+                        '';
+
+                      return (
+                        <Box sx={{ position: 'relative', borderRadius: 1, overflow: 'hidden', border: '1px dashed #ccc', background:'#f6f6f6' }}>
+                          {img ? (
+                            <img
+                              src={img}
+                              alt=""
+                              style={{ width: '100%', display: 'block' }}
+                              onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                            />
+                          ) : (
+                            <Box sx={{ p: 4, textAlign: 'center', color: 'text.secondary' }}>No image</Box>
+                          )}
+
+                          {(b.rich.areas || []).map((a, i) => (
+                            <Box
+                              key={i}
+                              sx={{
+                                position: 'absolute',
+                                left: `${a.x}%`, top: `${a.y}%`,
+                                width: `${a.w}%`, height: `${a.h}%`,
+                                border: '2px solid rgba(46,125,50,.8)',
+                                background: 'rgba(102,187,106,.12)',
+                              }}
+                              title={a.label || a.url}
+                            />
+                          ))}
+                        </Box>
+                      );
+                    })()}
+
+                  </>
+                )}
+              </Box>
+            )}
           </Paper>
         ))}
       </Stack>
 
-      {/* Add block + Send */}
+      {/* Footer buttons */}
       <Grid container alignItems="center" justifyContent="space-between" sx={{ mt: 2 }}>
-        <Grid item>
-          <Button variant="outlined" onClick={addBlock}>+ Add</Button>
-        </Grid>
+        <Grid item><Button variant="outlined" onClick={addBlock}>+ Add</Button></Grid>
         <Grid item>
           <Button
             variant="contained"
@@ -431,8 +684,10 @@ export default function BroadcastPage() {
       </Grid>
 
       <Divider sx={{ my: 3 }} />
-
       <Button variant="text" onClick={() => navigate(-1)}>Back</Button>
+
+      {/* Rich picker */}
+      <RichMessagePicker open={richPickerOpen} onClose={() => setRichPickerOpen(false)} onSelect={handleRichPicked} />
     </Container>
   );
 }

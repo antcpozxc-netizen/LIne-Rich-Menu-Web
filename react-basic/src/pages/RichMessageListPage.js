@@ -1,4 +1,4 @@
-// RichMessageListPage.js
+// src/pages/RichMessageListPage.js
 import React, { useMemo, useState } from 'react';
 import {
   Box, Button, Container, Grid, IconButton, Menu, MenuItem,
@@ -15,24 +15,27 @@ import {
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 
-const mock = [
-  {
-    id: '234596503',
-    image: 'https://picsum.photos/seed/rich1/120/60',
-    name: 'GG',
-    actionLabel: 'Go to google',
-    actionUrl: 'https://google.com',
-    createdAt: '2025-08-07 09:03',
-  },
-  {
-    id: 'RM-1002',
-    image: 'https://picsum.photos/seed/rich2/120/60',
-    name: 'Promo banner A',
-    actionLabel: 'Open landing',
-    actionUrl: 'https://example.com',
-    createdAt: '2025-07-31 15:20',
-  },
-];
+// localStorage helpers
+const KEY = 'richMessages';
+const readAll = () => JSON.parse(localStorage.getItem(KEY) || '[]');
+const writeAll = (rows) => localStorage.setItem(KEY, JSON.stringify(rows));
+
+// ---- helpers สำหรับแสดงผล ----
+const previewUrlOf = (row) =>
+  row?.image ||
+  row?.imagemap?.urls?.[700] ||
+  row?.imagemap?.urls?.['700'] ||
+  null;
+
+// ดึงลิงก์หลักจาก areas (ถ้าไม่เคยเซฟ actionLabel/actionUrl)
+const primaryActionOf = (row) => {
+  if (row?.actionUrl) {
+    return { label: row.actionLabel || row.actionUrl, url: row.actionUrl };
+  }
+  const a = (row?.areas || []).find(x => x?.type !== 'message' && x?.url);
+  if (a?.url) return { label: a.label || 'Open link', url: a.url };
+  return null;
+};
 
 export default function RichMessageListPage() {
   const navigate = useNavigate();
@@ -53,21 +56,24 @@ export default function RichMessageListPage() {
   const [menuRow, setMenuRow] = useState(null);
   const openMenu = Boolean(anchorEl);
 
-  const data = useMemo(() => {
-    let rows = [...mock];
+  // trigger re-render after duplicate/delete
+  const [rev, setRev] = useState(0);
 
-    if (qId.trim()) rows = rows.filter(r => r.id.toLowerCase().includes(qId.trim().toLowerCase()));
-    if (qName.trim()) rows = rows.filter(r => r.name.toLowerCase().includes(qName.trim().toLowerCase()));
-    if (qFrom) rows = rows.filter(r => r.createdAt >= `${qFrom} 00:00`);
-    if (qTo) rows = rows.filter(r => r.createdAt <= `${qTo} 23:59`);
+  const data = useMemo(() => {
+    let rows = readAll();
+
+    if (qId.trim()) rows = rows.filter(r => String(r.id).toLowerCase().includes(qId.trim().toLowerCase()));
+    if (qName.trim()) rows = rows.filter(r => (r.name || '').toLowerCase().includes(qName.trim().toLowerCase()));
+    if (qFrom) rows = rows.filter(r => (r.createdAt || '') >= `${qFrom} 00:00`);
+    if (qTo) rows = rows.filter(r => (r.createdAt || '') <= `${qTo} 23:59`);
 
     rows.sort((a, b) =>
       order === 'asc'
-        ? a.createdAt.localeCompare(b.createdAt)
-        : b.createdAt.localeCompare(a.createdAt)
+        ? String(a.createdAt || '').localeCompare(String(b.createdAt || ''))
+        : String(b.createdAt || '').localeCompare(String(a.createdAt || ''))
     );
     return rows;
-  }, [qId, qName, qFrom, qTo, order]);
+  }, [qId, qName, qFrom, qTo, order, rev]);
 
   const totalPages = Math.max(1, Math.ceil(data.length / rowsPerPage));
   const paged = data.slice((page - 1) * rowsPerPage, page * rowsPerPage);
@@ -81,6 +87,29 @@ export default function RichMessageListPage() {
     setMenuRow(row);
   };
   const handleMenuClose = () => { setAnchorEl(null); setMenuRow(null); };
+
+  const doDuplicate = () => {
+    const list = readAll();
+    const src = list.find(r => r.id === menuRow?.id);
+    if (!src) return handleMenuClose();
+    const copy = JSON.parse(JSON.stringify(src));
+    copy.id = 'RM-' + Math.random().toString(36).slice(2, 8).toUpperCase();
+    copy.name = copy.name ? copy.name + ' (copy)' : 'Untitled (copy)';
+    copy.createdAt = new Date().toISOString().replace('T',' ').slice(0,16);
+    delete copy.updatedAt;
+    list.unshift(copy);
+    writeAll(list);
+    handleMenuClose();
+    setRev(x => x + 1);
+  };
+
+  const doDelete = () => {
+    if (!window.confirm('Delete this Rich message?')) return;
+    const list = readAll().filter(r => r.id !== menuRow?.id);
+    writeAll(list);
+    handleMenuClose();
+    setRev(x => x + 1);
+  };
 
   return (
     <Container sx={{ py: 3 }}>
@@ -108,7 +137,6 @@ export default function RichMessageListPage() {
         <Grid item xs={12} md="auto">
           <TextField
             size="small"
-            placeholder="MM/DD/YYYY"
             type="date"
             value={qFrom}
             onChange={(e) => setQFrom(e.target.value)}
@@ -124,7 +152,6 @@ export default function RichMessageListPage() {
         <Grid item xs={12} md="auto">
           <TextField
             size="small"
-            placeholder="MM/DD/YYYY"
             type="date"
             value={qTo}
             onChange={(e) => setQTo(e.target.value)}
@@ -184,32 +211,51 @@ export default function RichMessageListPage() {
                 </TableCell>
               </TableRow>
             ) : (
-              paged.map(row => (
-                <TableRow key={row.id} hover>
-                  <TableCell>
-                    <Button variant="text" onClick={() => navigate(`/homepage/rich-message/${row.id}`)}>
-                      {row.id}
-                    </Button>
-                  </TableCell>
-                  <TableCell>
-                    <img src={row.image} alt={row.name} style={{ width: 120, height: 60, objectFit: 'cover', borderRadius: 4 }} />
-                  </TableCell>
-                  <TableCell>
-                    <Button variant="text" onClick={() => navigate(`/homepage/rich-message/${row.id}`)}>
-                      {row.name}
-                    </Button>
-                  </TableCell>
-                  <TableCell>
-                    <a href={row.actionUrl} target="_blank" rel="noreferrer">{row.actionLabel}</a>
-                  </TableCell>
-                  <TableCell>{row.createdAt}</TableCell>
-                  <TableCell align="right">
-                    <IconButton onClick={(e) => handleMenuOpen(e, row)}>
-                      <MoreIcon />
-                    </IconButton>
-                  </TableCell>
-                </TableRow>
-              ))
+              paged.map(row => {
+                const img = previewUrlOf(row);
+                const act = primaryActionOf(row);
+                return (
+                  <TableRow key={row.id} hover>
+                    <TableCell>
+                      <Button variant="text" onClick={() => navigate(`/homepage/rich-message/${row.id}`)}>
+                        {row.id}
+                      </Button>
+                    </TableCell>
+                    <TableCell>
+                      {img ? (
+                        <img
+                          src={img}
+                          alt={row.name || ''}
+                          style={{ width: 120, height: 60, objectFit: 'cover', borderRadius: 4 }}
+                          onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement.innerHTML = '<span style="color:#888">—</span>'; }}
+                        />
+                      ) : (
+                        <span style={{ color: '#888' }}>—</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Button variant="text" onClick={() => navigate(`/homepage/rich-message/${row.id}`)}>
+                        {row.name || 'Untitled'}
+                      </Button>
+                    </TableCell>
+                    <TableCell>
+                      {act?.url ? (
+                        <a href={act.url} target="_blank" rel="noreferrer">
+                          {act.label || act.url}
+                        </a>
+                      ) : (
+                        <span style={{ color: '#888' }}>—</span>
+                      )}
+                    </TableCell>
+                    <TableCell>{row.createdAt || '-'}</TableCell>
+                    <TableCell align="right">
+                      <IconButton onClick={(e) => handleMenuOpen(e, row)}>
+                        <MoreIcon />
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>
@@ -232,10 +278,10 @@ export default function RichMessageListPage() {
         <MenuItem onClick={() => { handleMenuClose(); navigate(`/homepage/rich-message/${menuRow?.id}`); }}>
           View / Edit
         </MenuItem>
-        <MenuItem onClick={() => { handleMenuClose(); console.log('Duplicate', menuRow); }}>
+        <MenuItem onClick={doDuplicate}>
           Duplicate
         </MenuItem>
-        <MenuItem onClick={() => { handleMenuClose(); console.log('Delete', menuRow); }}>
+        <MenuItem onClick={doDelete}>
           Delete
         </MenuItem>
       </Menu>

@@ -272,7 +272,8 @@ export default function BroadcastListPage() {
         <Button
           variant="contained"
           sx={{ bgcolor: '#66bb6a', '&:hover': { bgcolor: '#57aa5b' } }}
-          onClick={() => navigate('/homepage/broadcast/new')}
+          onClick={() => navigate(`/homepage/broadcast/new?tenant=${tenantId}`)}
+
         >
           + New broadcast
         </Button>
@@ -358,7 +359,7 @@ export default function BroadcastListPage() {
                   key={row.id}
                   hover
                   sx={{ cursor: 'pointer' }}
-                  onClick={() => navigate(`/homepage/broadcast/${row.id}`)}
+                  onClick={() => navigate(`/homepage/broadcast/new?tenant=${tenantId}&draft=${row.id}`)}
                 >
                   <TableCell>{row.id}</TableCell>
                   <TableCell>{row.message}</TableCell>

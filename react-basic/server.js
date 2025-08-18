@@ -1,9 +1,8 @@
 // server.js
-require('dotenv').config(); // โหลด .env ก่อน
-
-// ใช้ fetch จาก Node 18+ ถ้ามี; ถ้าไม่มีให้ fallback ไป node-fetch แบบ dynamic import
-const fetchFn = (...args) =>
-  (global.fetch ? global.fetch(...args) : import('node-fetch').then(({ default: f }) => f(...args)));
+// ==============================
+// 0) Config & Imports
+// ==============================
+require('dotenv').config();
 
 const fs = require('fs');
 const path = require('path');
@@ -11,16 +10,30 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const admin = require('firebase-admin');
 
+// Node 18+ has global fetch; fallback to node-fetch for older envs
+const fetchFn = (...args) =>
+  (global.fetch ? global.fetch(...args) : import('node-fetch').then(({ default: f }) => f(...args)));
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ----- Firebase Admin init (ใช้ ENV) -----
+// Build base/callback URLs once, then reuse everywhere
+const BASE_APP_URL = ((process.env.PUBLIC_APP_URL || `http://localhost:${PORT}`) + '')
+  .trim()
+  .replace(/\/$/, '');
+const REDIRECT_URI = ((process.env.LINE_LOGIN_CALLBACK_URL || `${BASE_APP_URL}/auth/line/callback`) + '').trim();
+
+
+// ==============================
+// 1) Firebase Admin Init
+// ==============================
 if (!admin.apps.length) {
   let creds;
   if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
     creds = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
   } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-    creds = JSON.parse(fs.readFileSync(process.env.GOOGLE_APPLICATION_CREDENTIALS, 'utf8'));
+    const p = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+    creds = JSON.parse(fs.readFileSync(p, 'utf8'));
   } else {
     throw new Error('No Firebase credentials provided');
   }
@@ -29,36 +42,96 @@ if (!admin.apps.length) {
     credential: admin.credential.cert(creds),
     projectId: creds.project_id,
   });
-  console.log("[FIREBASE] Initialized with service account");
+  console.log('[FIREBASE] Initialized with service account');
 }
 
-// ---- Middleware ตรวจสอบ Firebase ID Token ----
+
+// ==============================
+// 2) Middleware
+// ==============================
+app.use(express.json({ limit: '1mb' }));
+
 async function requireFirebaseAuth(req, res, next) {
   try {
     const h = req.headers.authorization || '';
     const m = h.match(/^Bearer (.+)$/);
-    if (!m) {
-      return res.status(401).json({ error: 'Missing Authorization: Bearer <idToken>' });
-    }
+    if (!m) return res.status(401).json({ error: 'Missing Authorization: Bearer <idToken>' });
     const decoded = await admin.auth().verifyIdToken(m[1]);
     req.user = decoded;
-    return next();
-  } catch (e) {
+    next();
+  } catch (_e) {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
 }
 
-app.use(express.json({ limit: '1mb' }));
 
-// ========== LINE Login Routes ==========
-app.get('/auth/line/start', (req, res) => {
+// ==============================
+// 3) Helpers
+// ==============================
+function validateMessages(messages) {
+  if (!Array.isArray(messages) || messages.length === 0) return 'messages_required';
+  if (messages.length > 5) return 'too_many_messages';
+  return null;
+}
+
+function toTs(iso) {
+  // ISO string → Firestore Timestamp
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return admin.firestore.Timestamp.fromDate(d);
+}
+
+async function getTenantIfMember(tid, uid) {
+  const ref = admin.firestore().collection('tenants').doc(tid);
+  const snap = await ref.get();
+  if (!snap.exists) return null;
+  const t = snap.data();
+  const isOwner = t.ownerUid === uid;
+  const isMember = Array.isArray(t.members) && t.members.includes(uid);
+  if (!isOwner && !isMember) return null;
+  return { id: snap.id, ...t, ref };
+}
+
+async function getTenantSecretAccessToken(tenantRef) {
+  const secSnap = await tenantRef.collection('secret').doc('v1').get();
+  if (!secSnap.exists) throw new Error('missing_secret');
+  const { accessToken } = secSnap.data() || {};
+  if (!accessToken) throw new Error('missing_access_token');
+  return accessToken;
+}
+
+// ✅ เพิ่มตัวช่วยทำลิงก์ download ให้แน่ใจว่าได้ไฟล์ไบต์จริง (ไม่ใช่ HTML viewer)
+function withAltMedia(u) {
+  try {
+    const url = new URL(u);
+    const host = url.hostname;
+    const isStorageHost =
+      host.includes('firebasestorage.googleapis.com') ||
+      host.includes('storage.googleapis.com') ||
+      host.includes('firebasestorage.app');
+    if (isStorageHost && !url.searchParams.has('alt')) {
+      url.searchParams.set('alt', 'media');
+    }
+    return url.toString();
+  } catch {
+    return u;
+  }
+}
+
+
+// ==============================
+// 4) LINE Login
+// ==============================
+
+// Start: redirect to LINE authorize
+app.get('/auth/line/start', (_req, res) => {
   const state = Math.random().toString(36).slice(2);
   const nonce = Math.random().toString(36).slice(2);
 
   const url = new URL('https://access.line.me/oauth2/v2.1/authorize');
   url.searchParams.set('response_type', 'code');
   url.searchParams.set('client_id', process.env.LINE_LOGIN_CHANNEL_ID);
-  url.searchParams.set('redirect_uri', process.env.LINE_LOGIN_CALLBACK_URL);
+  url.searchParams.set('redirect_uri', REDIRECT_URI); // use sanitized value
   url.searchParams.set('scope', 'openid profile');
   url.searchParams.set('state', state);
   url.searchParams.set('nonce', nonce);
@@ -66,16 +139,17 @@ app.get('/auth/line/start', (req, res) => {
   res.redirect(url.toString());
 });
 
+// Callback: exchange token, upsert user, mint Firebase custom token
 app.get('/auth/line/callback', async (req, res) => {
   try {
     const { code } = req.query;
     if (!code) return res.status(400).send('Missing code');
 
-    // 1) แลก token
+    // 1) Exchange code for tokens
     const form = new URLSearchParams({
       grant_type: 'authorization_code',
       code: String(code),
-      redirect_uri: process.env.LINE_LOGIN_CALLBACK_URL,
+      redirect_uri: REDIRECT_URI, // use same sanitized value
       client_id: process.env.LINE_LOGIN_CHANNEL_ID,
       client_secret: process.env.LINE_LOGIN_CHANNEL_SECRET,
     });
@@ -83,7 +157,7 @@ app.get('/auth/line/callback', async (req, res) => {
     const tokenRes = await fetchFn('https://api.line.me/oauth2/v2.1/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: form
+      body: form,
     });
 
     const raw = await tokenRes.text();
@@ -91,10 +165,10 @@ app.get('/auth/line/callback', async (req, res) => {
     const tokenJson = JSON.parse(raw);
 
     const { id_token, access_token } = tokenJson;
-    const payload = jwt.decode(id_token);
+    const payload = jwt.decode(id_token); // (สำหรับโปรดักชันควร verify JWK)
     const uid = `line:${payload.sub}`;
 
-    // 2) ขอโปรไฟล์ล่าสุดจาก LINE
+    // 2) Fetch fresh profile
     let profile = null;
     try {
       const p = await fetchFn('https://api.line.me/v2/profile', {
@@ -105,11 +179,10 @@ app.get('/auth/line/callback', async (req, res) => {
       console.warn('[LINE] profile fetch failed', e);
     }
 
-    // fallback ถ้าดึงโปรไฟล์ไม่สำเร็จ ก็ใช้ข้อมูลจาก id_token
     const displayName = profile?.displayName || payload.name || payload.display_name || 'LINE User';
     const photoURL   = profile?.pictureUrl || payload.picture || '';
 
-    // 3) บันทึกลง Firestore -> users/{uid}
+    // 3) Upsert Firestore user
     const db = admin.firestore();
     await db.doc(`users/${uid}`).set({
       displayName,
@@ -122,18 +195,20 @@ app.get('/auth/line/callback', async (req, res) => {
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: true });
 
-    // 4) ออก custom token และ redirect กลับแอป
+    // 4) Create Firebase custom token and redirect back to app
     const customToken = await admin.auth().createCustomToken(uid);
-    const appUrl = process.env.PUBLIC_APP_URL || `http://localhost:${PORT}`;
-    return res.redirect(302, `${appUrl}/#token=${customToken}`);
+    return res.redirect(302, `${BASE_APP_URL}/#token=${customToken}`);
   } catch (err) {
     console.error('[CALLBACK] unhandled error', err);
     return res.status(500).send('Callback error: ' + (err?.message || err));
   }
 });
-// =======================================
 
-// ---- API: สร้าง tenant (เก็บ OA ของผู้ใช้) ----
+
+// ==============================
+// 5) Tenants (Connect OA)
+// ==============================
+
 app.post('/api/tenants', requireFirebaseAuth, async (req, res) => {
   console.log('[api/tenants] hit', { uid: req.user?.uid, channelId: req.body?.channelId });
 
@@ -143,8 +218,7 @@ app.post('/api/tenants', requireFirebaseAuth, async (req, res) => {
       return res.status(400).json({ error: 'channelId & channelSecret required' });
     }
 
-    // 1) issue channel access token
-    console.log('[api/tenants] issuing token…');
+    // 1) Issue channel access token (Messaging API)
     const tokRes = await fetchFn('https://api.line.me/v2/oauth/accessToken', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -155,7 +229,6 @@ app.post('/api/tenants', requireFirebaseAuth, async (req, res) => {
       })
     });
     const tokText = await tokRes.text();
-    console.log('[api/tenants] token status:', tokRes.status, tokText.slice(0, 200));
     if (!tokRes.ok) {
       let j = {}; try { j = JSON.parse(tokText); } catch {}
       return res.status(400).json({
@@ -165,13 +238,11 @@ app.post('/api/tenants', requireFirebaseAuth, async (req, res) => {
     }
     const { access_token } = JSON.parse(tokText);
 
-    // 2) bot info
-    console.log('[api/tenants] fetching bot info…');
+    // 2) Fetch bot info
     const infoRes = await fetchFn('https://api.line.me/v2/bot/info', {
       headers: { Authorization: `Bearer ${access_token}` }
     });
     const infoText = await infoRes.text();
-    console.log('[api/tenants] bot info status:', infoRes.status, infoText.slice(0, 200));
     if (!infoRes.ok) {
       let j = {}; try { j = JSON.parse(infoText); } catch {}
       return res.status(400).json({
@@ -180,13 +251,12 @@ app.post('/api/tenants', requireFirebaseAuth, async (req, res) => {
         hint: 'ใช้ Channel ID/Secret ของ Messaging API (ไม่ใช่ LINE Login) และ OA ต้อง Enabled ใน OAM'
       });
     }
-    const info = JSON.parse(infoText); // { basicId, displayName, pictureUrl, ... }
+    const info = JSON.parse(infoText);
 
-    // 3) เช็คซ้ำ + บันทึก Firestore
+    // 3) Upsert tenant
     const db = admin.firestore();
     const ownerUid = req.user.uid;
 
-    // 🔎 เช็คว่าผู้ใช้นี้เคยเพิ่ม OA (channelId เดิม) ไปแล้วหรือยัง
     const dupSnap = await db.collection('tenants')
       .where('ownerUid', '==', ownerUid)
       .where('channelId', '==', channelId)
@@ -194,7 +264,6 @@ app.post('/api/tenants', requireFirebaseAuth, async (req, res) => {
       .get();
 
     if (!dupSnap.empty) {
-      // 👉 มีอยู่แล้ว: อัปเดตข้อมูลที่เปลี่ยน + secret (idempotent)
       const docRef = dupSnap.docs[0].ref;
       await docRef.set({
         basicId: info.basicId || null,
@@ -214,7 +283,6 @@ app.post('/api/tenants', requireFirebaseAuth, async (req, res) => {
       return res.json({ ok: true, id: docRef.id, deduped: true });
     }
 
-    // 🆕 ไม่ซ้ำ: สร้างเอกสารใหม่
     const docRef = db.collection('tenants').doc();
     await docRef.set({
       ownerUid,
@@ -242,142 +310,36 @@ app.post('/api/tenants', requireFirebaseAuth, async (req, res) => {
 });
 
 
-// Health check
-app.get('/healthz', (_req, res) => res.json({ ok: true }));
+// ==============================
+// 6) Broadcasts (CRUD + Actions)
+// ==============================
 
-app.get('/admin-check', (_req, res) => {
-  try {
-    const pid = admin.app().options.projectId;
-    res.json({ ok: true, projectId: pid });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: String(e) });
-  }
-});
-// เสิร์ฟ React build
-const clientBuildPath = path.join(__dirname, 'build');
-app.use(express.static(clientBuildPath));
-
-app.get('*', (_req, res) => {
-  res.sendFile(path.join(clientBuildPath, 'index.html'));
-});
-
-// ===== Utilities (ตรวจสิทธิ์ OA) =====
-async function getTenantIfMember(tid, uid) {
-  const ref = admin.firestore().collection('tenants').doc(tid);
-  const snap = await ref.get();
-  if (!snap.exists) return null;
-  const t = snap.data();
-  const isOwner = t.ownerUid === uid;
-  const isMember = Array.isArray(t.members) && t.members.includes(uid);
-  if (!isOwner && !isMember) return null;
-  return { id: snap.id, ...t, ref };
-}
-
-// ===== ส่ง Broadcast ทันที =====
-app.post('/api/tenants/:id/broadcast', requireFirebaseAuth, async (req, res) => {
-  try {
-    const uid = req.user.uid;
-    const { id } = req.params;
-    const { recipient = 'all', sendType = 'now', messages = [] } = req.body || {};
-
-    if (!Array.isArray(messages) || messages.length === 0) {
-      return res.status(400).json({ error: 'messages_required' });
-    }
-    if (messages.length > 5) {
-      return res.status(400).json({ error: 'too_many_messages', detail: 'LINE จำกัดครั้งละไม่เกิน 5 messages' });
-    }
-    if (sendType !== 'now') {
-      return res.status(400).json({ error: 'schedule_not_supported_yet' });
-    }
-
-    // ตรวจสิทธิ์ OA
-    const tenant = await getTenantIfMember(id, uid);
-    if (!tenant) return res.status(403).json({ error: 'not_member_of_tenant' });
-
-    // ดึง accessToken จาก subcollection secret/v1
-    const secSnap = await tenant.ref.collection('secret').doc('v1').get();
-    if (!secSnap.exists) return res.status(500).json({ error: 'missing_secret' });
-    const { accessToken } = secSnap.data();
-    if (!accessToken) return res.status(500).json({ error: 'missing_access_token' });
-
-    // เรียก LINE Broadcast API
-    const resp = await fetchFn('https://api.line.me/v2/bot/message/broadcast', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ messages }),
-    });
-    const text = await resp.text();
-    if (!resp.ok) {
-      console.error('[broadcast] LINE error', resp.status, text);
-      return res.status(resp.status).json({ error: 'line_error', detail: text });
-    }
-
-    // บันทึกประวัติ (optional)
-    const logRef = tenant.ref.collection('broadcasts').doc();
-    await logRef.set({
-      createdBy: uid,
-      recipient,
-      sendType,
-      messages,
-      status: 'sent',
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
-
-    return res.json({ ok: true, id: logRef.id });
-  } catch (e) {
-    console.error('[broadcast] error', e);
-    return res.status(500).json({ error: 'server_error', detail: String(e) });
-  }
-});
-
-
-// ===== Helpers =====
-function toTs(iso) {
-  // รับ ISO string (UTC หรือมี offset) → Firestore Timestamp
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  return admin.firestore.Timestamp.fromDate(d);
-}
-
-async function getTenantSecretAccessToken(tenantRef) {
-  const secSnap = await tenantRef.collection('secret').doc('v1').get();
-  if (!secSnap.exists) throw new Error('missing_secret');
-  const { accessToken } = secSnap.data() || {};
-  if (!accessToken) throw new Error('missing_access_token');
-  return accessToken;
-}
-
-function validateMessages(messages) {
-  if (!Array.isArray(messages) || messages.length === 0) {
-    return 'messages_required';
-  }
-  if (messages.length > 5) {
-    return 'too_many_messages';
-  }
-  return null;
-}
-
-// ===== บันทึก Draft/Scheduled =====
+// 6.1) Create draft/scheduled
 app.post('/api/tenants/:id/broadcast/draft', requireFirebaseAuth, async (req, res) => {
   try {
     const uid = req.user.uid;
     const { id } = req.params;
-    const { recipient = 'all', messages = [], targetSummary, schedule = null } = req.body || {};
+
+    // ✅ ดึงค่าที่ต้องใช้จาก body ให้ครบ
+    const {
+      recipient = 'all',
+      messages = [],
+      targetSummary,
+      schedule = null,
+      composer = null,
+    } = req.body || {};
 
     const msgErr = validateMessages(messages);
     if (msgErr) {
-      return res.status(400).json({ error: msgErr, detail: msgErr === 'too_many_messages' ? 'LINE จำกัดครั้งละไม่เกิน 5 messages' : undefined });
+      return res.status(400).json({
+        error: msgErr,
+        detail: msgErr === 'too_many_messages' ? 'LINE จำกัดครั้งละไม่เกิน 5 messages' : undefined
+      });
     }
 
-    // ตรวจสิทธิ์ OA
     const tenant = await getTenantIfMember(id, uid);
     if (!tenant) return res.status(403).json({ error: 'not_member_of_tenant' });
 
-    // ตีความสถานะจาก schedule
     let status = 'draft';
     let scheduledAt = null;
     let tz = null;
@@ -390,15 +352,16 @@ app.post('/api/tenants/:id/broadcast/draft', requireFirebaseAuth, async (req, re
     }
 
     const now = admin.firestore.FieldValue.serverTimestamp();
-    const docRef = tenant.ref.collection('broadcasts').doc(); // สร้างใหม่
+    const docRef = tenant.ref.collection('broadcasts').doc();
     await docRef.set({
       createdBy: uid,
       recipient,
-      messages,
+      messages, // ✅ pass-through ทั้งหมด (รวม imagemap)
       targetSummary: targetSummary || (recipient === 'all' ? 'All friends' : 'Targeting'),
       status,
       scheduledAt: scheduledAt || null,
       tz: tz || null,
+      composer: composer || null,
       createdAt: now,
       updatedAt: now,
     });
@@ -406,13 +369,99 @@ app.post('/api/tenants/:id/broadcast/draft', requireFirebaseAuth, async (req, re
     return res.json({ ok: true, id: docRef.id, status });
   } catch (e) {
     console.error('[broadcast draft] error', e);
-    const code = e.message === 'not_member_of_tenant' ? 403
-               : (e.message && e.message.startsWith('missing_') ? 500 : 500);
-    return res.status(code).json({ error: 'server_error', detail: String(e.message || e) });
+    return res.status(500).json({ error: 'server_error', detail: String(e.message || e) });
   }
 });
 
-// ===== ส่งทดสอบ (push ให้ผู้ส่ง) =====
+
+// 6.2) Read one (draft/scheduled/sent)
+app.get('/api/tenants/:id/broadcasts/:bid', requireFirebaseAuth, async (req, res) => {
+  try {
+    const { id, bid } = req.params;
+    const uid = req.user.uid;
+
+    const tenant = await getTenantIfMember(id, uid);
+    if (!tenant) return res.status(403).json({ error: 'not_member_of_tenant' });
+
+    const docRef = tenant.ref.collection('broadcasts').doc(bid);
+    const snap = await docRef.get();
+    if (!snap.exists) return res.status(404).json({ error: 'not_found' });
+
+    const data = snap.data();
+    let scheduledAtISO = null;
+    if (data.scheduledAt && typeof data.scheduledAt.toDate === 'function') {
+      scheduledAtISO = data.scheduledAt.toDate().toISOString();
+    }
+
+    return res.json({ id: snap.id, ...data, scheduledAtISO });
+  } catch (e) {
+    console.error('[get broadcast one] error', e);
+    return res.status(500).json({ error: 'server_error', detail: String(e) });
+  }
+});
+
+// 6.3) Update draft/scheduled
+app.put('/api/tenants/:id/broadcast/draft/:bid', requireFirebaseAuth, async (req, res) => {
+  try {
+    const { id, bid } = req.params;
+    const uid = req.user.uid;
+
+    // ✅ ดึงค่าที่ต้องใช้จาก body ให้ครบ
+    const {
+      recipient = 'all',
+      messages = [],
+      targetSummary,
+      schedule = null,
+      composer = null,
+    } = req.body || {};
+
+    const tenant = await getTenantIfMember(id, uid);
+    if (!tenant) return res.status(403).json({ error: 'not_member_of_tenant' });
+
+    const err = validateMessages(messages);
+    if (err) {
+      return res.status(400).json({
+        error: err,
+        detail: err === 'too_many_messages' ? 'LINE จำกัดครั้งละไม่เกิน 5 messages' : undefined
+      });
+    }
+
+    let status = 'draft';
+    let scheduledAt = null;
+    let tz = null;
+
+    if (schedule && schedule.at) {
+      const ts = toTs(schedule.at);
+      if (!ts) return res.status(400).json({ error: 'invalid_schedule_at' });
+      scheduledAt = ts;
+      tz = schedule.tz || null;
+      status = 'scheduled';
+    }
+
+    const docRef = tenant.ref.collection('broadcasts').doc(bid);
+    const snap = await docRef.get();
+    if (!snap.exists) return res.status(404).json({ error: 'not_found' });
+
+    await docRef.set({
+      recipient,
+      messages, // ✅ pass-through (รวม imagemap)
+      targetSummary: targetSummary || (recipient === 'all' ? 'All friends' : 'Targeting'),
+      status,
+      scheduledAt: scheduledAt || null,
+      tz: tz || null,
+      composer: composer || null,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    return res.json({ ok: true, id: bid });
+  } catch (e) {
+    console.error('[update draft] error', e);
+    return res.status(500).json({ error: 'server_error', detail: String(e) });
+  }
+});
+
+
+// 6.4) Send test (push to current user)
 app.post('/api/tenants/:id/broadcast/test', requireFirebaseAuth, async (req, res) => {
   try {
     const uid = req.user.uid;
@@ -424,17 +473,14 @@ app.post('/api/tenants/:id/broadcast/test', requireFirebaseAuth, async (req, res
       return res.status(400).json({ error: msgErr, detail: msgErr === 'too_many_messages' ? 'LINE จำกัดครั้งละไม่เกิน 5 messages' : undefined });
     }
 
-    // ตรวจสิทธิ์ OA + token
     const tenant = await getTenantIfMember(id, uid);
     if (!tenant) return res.status(403).json({ error: 'not_member_of_tenant' });
     const accessToken = await getTenantSecretAccessToken(tenant.ref);
 
-    // หา LINE userId ของผู้ขอทดสอบ
     const userSnap = await admin.firestore().doc(`users/${uid}`).get();
     const to = userSnap.get('line.userId');
     if (!to) return res.status(400).json({ error: 'user_has_no_line_id' });
 
-    // push ให้ผู้ส่ง
     const resp = await fetchFn('https://api.line.me/v2/bot/message/push', {
       method: 'POST',
       headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
@@ -453,7 +499,7 @@ app.post('/api/tenants/:id/broadcast/test', requireFirebaseAuth, async (req, res
   }
 });
 
-// ===== ส่งทันที (เดิม) — เติม log ให้ครบเล็กน้อย =====
+// 6.5) Send now (broadcast to all)
 app.post('/api/tenants/:id/broadcast', requireFirebaseAuth, async (req, res) => {
   try {
     const uid = req.user.uid;
@@ -470,9 +516,9 @@ app.post('/api/tenants/:id/broadcast', requireFirebaseAuth, async (req, res) => 
 
     const tenant = await getTenantIfMember(id, uid);
     if (!tenant) return res.status(403).json({ error: 'not_member_of_tenant' });
+
     const accessToken = await getTenantSecretAccessToken(tenant.ref);
 
-    // Broadcast
     const resp = await fetchFn('https://api.line.me/v2/bot/message/broadcast', {
       method: 'POST',
       headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
@@ -484,7 +530,6 @@ app.post('/api/tenants/:id/broadcast', requireFirebaseAuth, async (req, res) => 
       return res.status(resp.status).json({ error: 'line_error', detail: text });
     }
 
-    // log
     const now = admin.firestore.FieldValue.serverTimestamp();
     const logRef = tenant.ref.collection('broadcasts').doc();
     await logRef.set({
@@ -506,29 +551,216 @@ app.post('/api/tenants/:id/broadcast', requireFirebaseAuth, async (req, res) => 
 });
 
 
-// ใช้คีย์ง่าย ๆ กันคนนอกเรียก
+// 6.x) Rich menus — Send test (create + upload image + link to current user)
+app.post('/api/tenants/:id/richmenus/test', requireFirebaseAuth, async (req, res) => {
+  console.log('[richmenus/test] hit', req.params.id);
+  try {
+    const uid = req.user.uid;
+    const { id } = req.params;
+
+    const tenant = await getTenantIfMember(id, uid);
+    if (!tenant) return res.status(403).json({ error: 'not_member_of_tenant' });
+
+    const accessToken = await getTenantSecretAccessToken(tenant.ref);
+
+    const {
+      title = 'Test rich menu',
+      size = 'large',          // 'large' | 'compact'
+      imageUrl,
+      chatBarText = 'Menu',    // ≤14 chars
+      defaultBehavior = 'shown',
+      areas = [],              // [{ xPct, yPct, wPct, hPct, action:{} }]
+    } = req.body || {};
+
+    if (!imageUrl) return res.status(400).json({ error: 'image_url_required' });
+
+    const HEIGHT = size === 'compact' ? 843 : 1686;
+    const WIDTH  = 2500;
+
+    function mapAction(a = {}) {
+      switch (a.type) {
+        case 'Link':     return { type: 'uri',     label: (a.label || 'Open').slice(0, 20), uri: a.url || 'https://example.com' };
+        case 'Text':     return { type: 'message', text: a.text || 'Hello!' };
+        case 'QnA':      return { type: 'postback', data: a.data || 'qna', displayText: a.label || 'QnA' };
+        case 'Live Chat':return { type: 'message', text: a.text || '#live' };
+        default:         return { type: 'postback', data: 'noop' };
+      }
+    }
+
+    const pxAreas = areas.map(a => ({
+      bounds: {
+        x: Math.round((Number(a.xPct) || 0) * WIDTH),
+        y: Math.round((Number(a.yPct) || 0) * HEIGHT),
+        width: Math.round((Number(a.wPct) || 0) * WIDTH),
+        height: Math.round((Number(a.hPct) || 0) * HEIGHT),
+      },
+      action: mapAction(a.action),
+    }));
+
+    // 1) Create rich menu
+    const createBody = {
+      size: { width: WIDTH, height: HEIGHT },
+      selected: false,
+      name: String(title || 'RichMenu').slice(0, 300),
+      chatBarText: String(chatBarText || 'Menu').slice(0, 14),
+      areas: pxAreas,
+    };
+
+    const createResp = await fetchFn('https://api.line.me/v2/bot/richmenu', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(createBody),
+    });
+    const createText = await createResp.text();
+    if (!createResp.ok) return res.status(createResp.status).json({ error: 'line_create_error', detail: createText });
+
+    const { richMenuId } = JSON.parse(createText);
+    if (!richMenuId) return res.status(500).json({ error: 'line_create_no_id', detail: createText });
+    console.log('[richmenu create]', { richMenuId });
+
+    // 2) Download image (force download URL) + upload to LINE
+    const downloadUrl = withAltMedia(imageUrl);
+    const imgResp = await fetchFn(downloadUrl);
+    if (!imgResp.ok) {
+      const t = await imgResp.text().catch(() => '');
+      console.error('[richmenu image fetch] failed', imgResp.status, t);
+      return res.status(400).json({ error: 'image_fetch_failed', detail: t || imgResp.statusText });
+    }
+
+    let imgType = imgResp.headers.get('content-type') || '';
+    let imgBuf  = Buffer.from(await imgResp.arrayBuffer());
+    if (!/^image\/(png|jpeg)$/i.test(imgType)) {
+      if (imgBuf[0] === 0x89 && imgBuf[1] === 0x50) imgType = 'image/png';
+      else if (imgBuf[0] === 0xFF && imgBuf[1] === 0xD8) imgType = 'image/jpeg';
+      else imgType = 'image/jpeg';
+    }
+    console.log('[richmenu image]', { imgType, bytes: imgBuf.length });
+
+    const upResp = await fetchFn(`https://api-data.line.me/v2/bot/richmenu/${encodeURIComponent(richMenuId)}/content`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': imgType },
+      body: imgBuf,
+    });
+    const upText  = await upResp.text();
+    const upReqId = upResp.headers.get('x-line-request-id') || null;
+    if (!upResp.ok) {
+      try {
+        await fetchFn(`https://api.line.me/v2/bot/richmenu/${encodeURIComponent(richMenuId)}`, {
+          method: 'DELETE', headers: { Authorization: `Bearer ${accessToken}` },
+        });
+      } catch {}
+      console.warn('[richmenu upload] failed', upResp.status, { reqId: upReqId, detail: upText });
+      return res.status(upResp.status).json({ error: 'line_error_upload', detail: upText, reqId: upReqId });
+    }
+    console.log('[richmenu upload] ok', { reqId: upReqId });
+
+    // 3) Link to current user (send test)
+    const userSnap = await admin.firestore().doc(`users/${uid}`).get();
+    const to = userSnap.get('line.userId');
+    if (!to) return res.json({ ok: true, richMenuId, linked: false });
+
+    try {
+      const linkResp = await fetchFn(
+        `https://api.line.me/v2/bot/user/${encodeURIComponent(to)}/richmenu/${encodeURIComponent(richMenuId)}`,
+        { method: 'POST', headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+      const linkText  = await linkResp.text();
+      const linkReqId = linkResp.headers.get('x-line-request-id') || null;
+
+      if (!linkResp.ok) {
+        console.warn('[richmenu link] failed', linkResp.status, { reqId: linkReqId, detail: linkText });
+        return res.status(linkResp.status).json({ ok: false, error: 'line_link_error', detail: linkText, reqId: linkReqId, richMenuId });
+      }
+
+      console.log('[richmenu link] ok', { reqId: linkReqId, to });
+      return res.json({ ok: true, richMenuId, linked: true, reqId: linkReqId });
+    } catch (err) {
+      console.error('[richmenu link] exception', err);
+      return res.status(500).json({ ok: false, error: 'link_exception', detail: String(err?.message || err), richMenuId });
+    }
+  } catch (e) {
+    console.error('[richmenus test] error', e);
+    return res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
+  }
+});
+
+// ตั้ง rich menu เป็นค่าเริ่มต้นทั้ง OA (ทุกคนเห็น)
+app.post('/api/tenants/:id/richmenus/set-default', requireFirebaseAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { richMenuId } = req.body || {};
+    if (!richMenuId) return res.status(400).json({ error: 'richMenuId_required' });
+
+    const tenant = await getTenantIfMember(id, req.user.uid);
+    if (!tenant) return res.status(403).json({ error: 'not_member_of_tenant' });
+
+    const accessToken = await getTenantSecretAccessToken(tenant.ref);
+
+    const r = await fetchFn(
+      'https://api.line.me/v2/bot/user/all/richmenu/' + encodeURIComponent(richMenuId),
+      { method: 'POST', headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    const t = await r.text();
+    if (!r.ok) return res.status(r.status).json({ error: 'line_set_default_error', detail: t });
+
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.status(500).json({ error: 'server_error', detail: String(e) });
+  }
+});
+
+// ลบ rich menu เฉพาะบุคคลของ user ที่ล็อกอิน (ให้กลับไปใช้ default)
+app.post('/api/tenants/:id/richmenus/unlink-me', requireFirebaseAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const tenant = await getTenantIfMember(id, req.user.uid);
+    if (!tenant) return res.status(403).json({ error: 'not_member_of_tenant' });
+
+    const accessToken = await getTenantSecretAccessToken(tenant.ref);
+    const userSnap = await admin.firestore().doc(`users/${req.user.uid}`).get();
+    const to = userSnap.get('line.userId');
+    if (!to) return res.status(400).json({ error: 'user_has_no_line_id' });
+
+    const r = await fetchFn(`https://api.line.me/v2/bot/user/${encodeURIComponent(to)}/richmenu`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const t = await r.text();
+    if (!r.ok) return res.status(r.status).json({ error: 'line_unlink_error', detail: t });
+
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.status(500).json({ error: 'server_error', detail: String(e) });
+  }
+});
+
+
+
+// ==============================
+// 7) Cron (schedule runner)
+// ==============================
 app.post('/tasks/cron/broadcast', async (req, res) => {
-  console.log('[cron] hit', new Date().toISOString(), 'key=', req.get('X-App-Cron-Key'));
+  console.log('[cron] hit', new Date().toISOString()); // อย่าพิมพ์ key ออก log
   try {
     if (req.get('X-App-Cron-Key') !== process.env.CRON_KEY) {
       return res.status(401).json({ error: 'unauthorized' });
     }
+
     const db = admin.firestore();
     const now = admin.firestore.Timestamp.now();
 
-    // ดึงงานที่ถึงเวลาแล้ว (scheduled <= now)
     const snap = await db.collectionGroup('broadcasts')
-      .where('status','==','scheduled')
-      .where('scheduledAt','<=', now)
+      .where('status', '==', 'scheduled')
+      .where('scheduledAt', '<=', now)
       .limit(25)
       .get();
 
     const jobs = snap.docs.map(async d => {
       const data = d.data();
-      const tenantRef = d.ref.parent.parent; // tenants/{id}
+      const tenantRef = d.ref.parent.parent;
       if (!tenantRef) return;
 
-      // กันยิงซ้ำด้วย transaction เล็ก ๆ
+      // lightweight lock
       await db.runTransaction(async t => {
         const curr = await t.get(d.ref);
         if (curr.get('lock')) throw new Error('locked');
@@ -571,9 +803,37 @@ app.post('/tasks/cron/broadcast', async (req, res) => {
   }
 });
 
+
+// ==============================
+// 8) Health/Admin
+// ==============================
+app.get('/healthz', (_req, res) => res.json({ ok: true }));
+
+app.get('/admin-check', (_req, res) => {
+  try {
+    const pid = admin.app().options.projectId;
+    res.json({ ok: true, projectId: pid });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
+
+// ==============================
+// 9) Static (React build)
+// ==============================
+const clientBuildPath = path.join(__dirname, 'build');
+app.use(express.static(clientBuildPath));
 app.get('*', (_req, res) => {
   res.sendFile(path.join(clientBuildPath, 'index.html'));
 });
 
-// Start server
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+// ==============================
+// 10) Start
+// ==============================
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+  console.log(`BASE_APP_URL: ${BASE_APP_URL}`);
+  console.log(`LINE redirect_uri: ${REDIRECT_URI}`);
+});

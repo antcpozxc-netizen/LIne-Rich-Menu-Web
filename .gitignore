@@ -1,0 +1,4 @@
+secrets/
+react-basic/.env
+firebase-admin.json
+*.priv.json

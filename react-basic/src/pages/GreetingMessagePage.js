@@ -1,9 +1,9 @@
 // src/pages/GreetingMessagePage.js
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Box, Button, Card, CardContent, Checkbox, Chip, Container, 
-  FormControlLabel, Grid, Menu, MenuItem, Snackbar, Stack, 
-  TextField, Typography, Tabs, Tab
+  Box, Button, Card, CardContent, Checkbox, Chip, Container,
+  FormControlLabel, Grid, Menu, MenuItem, Snackbar, Stack,
+  TextField, Typography, Tabs, Tab, Switch
 } from '@mui/material';
 import {
   InsertEmoticon as EmojiIcon,
@@ -13,7 +13,9 @@ import {
   Send as SendIcon,
   MoreVert as MoreIcon
 } from '@mui/icons-material';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useOutletContext } from 'react-router-dom';
+import { ref as sref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { auth, storage } from '../firebase';
 
 const MAX_CHARS = 500;
 const KEY = 'greetingMessage';
@@ -26,14 +28,15 @@ const writeData = (obj) => localStorage.setItem(KEY, JSON.stringify(obj));
 
 export default function GreetingMessagePage() {
   const navigate = useNavigate();
+  const { tenantId } = useOutletContext() || {};
 
   // state
   const [enabled, setEnabled] = useState(true);
   const [onlyFirstTime, setOnlyFirstTime] = useState(true);
   const [text, setText] = useState('สวัสดี {displayName} ขอบคุณที่เพิ่มเราเป็นเพื่อน 😊');
-  const [image, setImage] = useState('');
+  const [image, setImage] = useState('');             // public URL (ถ้ามี)
   const [snack, setSnack] = useState('');
-  const [previewTab, setPreviewTab] = useState(1); // 0=Chat screen, 1=Chat list (เหมือนในภาพ)
+  const [previewTab, setPreviewTab] = useState(1);    // 0=Chat screen, 1=Chat list
   const fileRef = useRef(null);
 
   // variable menu
@@ -50,12 +53,35 @@ export default function GreetingMessagePage() {
 
   const canSave = useMemo(() => text.trim().length > 0 && text.length <= MAX_CHARS, [text]);
 
-  const handlePickImage = (e) => {
+  // -------- helpers --------
+  const authHeader = async () => {
+    if (!auth.currentUser) throw new Error('ยังไม่พบผู้ใช้ที่ล็อกอิน');
+    const idToken = await auth.currentUser.getIdToken();
+    return { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` };
+  };
+
+  const uploadToStorage = async (file) => {
+    if (!tenantId) throw new Error('ไม่พบ tenantId');
+    const safeName = file.name.replace(/\s+/g, '-');
+    const path = `tenants/${tenantId}/greeting/${Date.now()}-${safeName}`;
+    const r = sref(storage, path);
+    await uploadBytes(r, file);
+    return getDownloadURL(r);
+  };
+
+  const handlePickImage = async (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
-    const reader = new FileReader();
-    reader.onload = () => setImage(String(reader.result));
-    reader.readAsDataURL(f);
+    try {
+      const url = await uploadToStorage(f);
+      setImage(url);
+      setSnack('Uploaded image');
+    } catch (err) {
+      console.error(err);
+      setSnack('อัปโหลดรูปไม่สำเร็จ');
+    } finally {
+      e.target.value = '';
+    }
   };
 
   const insertAtCursor = (snippet) => {
@@ -76,9 +102,38 @@ export default function GreetingMessagePage() {
     setSnack('Reset to default');
   };
 
-  const onSendTest = () => {
-    console.log('Send test greeting:', { enabled, onlyFirstTime, text, image });
-    setSnack('Sent test (mock)');
+  // สร้างข้อความตัวอย่างทดแทนตัวแปร (ใช้สำหรับพรีวิว/ส่ง test เท่านั้น)
+  const renderVars = (s) =>
+    s.replaceAll('{displayName}', 'คุณลูกค้า')
+     .replaceAll('{accountName}', 'Test Web');
+
+  const buildLineMessages = () => {
+    const msgs = [];
+    if (image) msgs.push({ type: 'image', originalContentUrl: image, previewImageUrl: image });
+    if (text.trim()) msgs.push({ type: 'text', text: renderVars(text.trim()) });
+    return msgs.slice(0, 5);
+  };
+
+  const onSendTest = async () => {
+    try {
+      if (!tenantId) return alert('กรุณาเลือก OA ก่อน (Switch OA ที่มุมขวาบน)');
+      const messages = buildLineMessages();
+      if (messages.length === 0) return alert('กรุณาใส่ข้อความหรือรูปอย่างน้อย 1 อย่าง');
+
+      const headers = await authHeader();
+      const res = await fetch(`/api/tenants/${tenantId}/broadcast/test`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ messages })
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || 'send_test_failed');
+
+      setSnack('ส่งข้อความทดสอบสำเร็จ');
+    } catch (e) {
+      console.error(e);
+      setSnack('ส่งทดสอบไม่สำเร็จ');
+    }
   };
 
   return (
@@ -93,6 +148,10 @@ export default function GreetingMessagePage() {
           </Typography>
         </Stack>
         <Stack direction="row" spacing={1}>
+          <FormControlLabel
+            control={<Switch checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />}
+            label="Enabled"
+          />
           <Button variant="outlined">Insights</Button>
           <Button
             variant="contained"
@@ -155,16 +214,15 @@ export default function GreetingMessagePage() {
                 helperText={`${text.length}/${MAX_CHARS}`}
               />
 
-              {/* image preview inside editor (optional) */}
+              {/* image preview inside editor */}
               {image && (
                 <Box sx={{ mt: 1, border: '1px dashed #ccc', p: 1, borderRadius: 1 }}>
                   <img src={image} alt="greeting" style={{ width: '100%', borderRadius: 4 }} />
                 </Box>
               )}
 
-              {/* Add block + bottom buttons */}
               <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1 }}>
-                <Button variant="outlined">+ Add</Button>
+                <Button variant="outlined" disabled>+ Add</Button>
               </Stack>
             </CardContent>
           </Card>
@@ -199,23 +257,24 @@ export default function GreetingMessagePage() {
                   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                     <Box sx={{ alignSelf: 'flex-start', bgcolor: '#e8f5e9', borderRadius: 2, p: 1.2, maxWidth: '90%' }}>
                       <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
-                        {text.replace('{displayName}', 'คุณลูกค้า').replace('{accountName}', 'Test Web')}
+                        {renderVars(text)}
                       </Typography>
                       {image && <Box sx={{ mt: 1 }}><img src={image} alt="preview" style={{ width: '100%', borderRadius: 4 }} /></Box>}
                     </Box>
                   </Box>
                 ) : (
-                  // Chat list (แสดงตัวอย่างข้อความย่อ)
+                  // Chat list (excerpt)
                   <Stack spacing={1}>
                     <Typography variant="body2" color="text.secondary">
-                      Test Web — สวัสดี คุณ{' '}<strong>display name</strong>
+                      Test Web — สวัสดี คุณ <strong>display name</strong>
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      {text.replace('{displayName}', 'User’s display name').replace('{accountName}', 'Test Web').slice(0, 80)}…
+                      {renderVars(text).slice(0, 80)}…
                     </Typography>
                   </Stack>
                 )}
               </Box>
+
               <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
                 <Button variant="outlined" startIcon={<ResetIcon />} onClick={onReset}>Reset</Button>
                 <Button variant="contained" startIcon={<SendIcon />} onClick={onSendTest}>Send test</Button>
@@ -226,7 +285,7 @@ export default function GreetingMessagePage() {
         </Grid>
       </Grid>
 
-      <Snackbar open={!!snack} autoHideDuration={2000} onClose={() => setSnack('')} message={snack} />
+      <Snackbar open={!!snack} autoHideDuration={2200} onClose={() => setSnack('')} message={snack} />
     </Container>
   );
 }

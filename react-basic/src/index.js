@@ -3,7 +3,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
 import App from './App';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useParams, useLocation } from 'react-router-dom';
 
 import AccountsPage from './pages/AccountsPage';
 import HomePage from './pages/HomePage';          // Layout
@@ -29,6 +29,22 @@ import FriendsPage from './pages/FriendsPage';
 
 import RequireAuth from './routes/RequireAuth';
 
+function RedirectBroadcastIdToNew() {
+  const { id } = useParams();
+  const { search } = useLocation();
+  const sp = new URLSearchParams(search);
+  const tenant = sp.get('tenant') || '';
+
+  const qs = new URLSearchParams();
+  if (tenant) qs.set('tenant', tenant);
+  if (id) qs.set('draft', id);
+
+  const q = qs.toString();
+  const to = q ? `/homepage/broadcast/new?${q}` : `/homepage/broadcast/new`;
+  return <Navigate to={to} replace />;
+}
+
+
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <BrowserRouter>
@@ -47,7 +63,7 @@ root.render(
           {/* Broadcast */}
           <Route path="broadcast" element={<BroadcastListPage />} />
           <Route path="broadcast/new" element={<BroadcastPage />} />
-          <Route path="broadcast/:id" element={<div style={{ padding: 24 }}>Broadcast detail (stub)</div>} />
+          <Route path="broadcast/:id" element={<RedirectBroadcastIdToNew />} />
           {/* Rich Message */}
           <Route path="rich-message" element={<RichMessageListPage />} />
           <Route path="rich-message/new" element={<RichMessageCreatePage />} />
