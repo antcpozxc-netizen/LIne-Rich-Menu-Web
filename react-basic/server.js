@@ -745,6 +745,12 @@ app.post('/tasks/cron/broadcast', async (req, res) => {
     if (req.get('X-App-Cron-Key') !== process.env.CRON_KEY) {
       return res.status(401).json({ error: 'unauthorized' });
     }
+    // ✅ กันเคสช่องว่าง/บรรทัดใหม่ในทั้ง header และ env
+    const sentKey = (req.get('X-App-Cron-Key') || '').trim();
+    const envKey  = (process.env.CRON_KEY || '').trim();
+    // ✅ log แค่ความยาวและผล match เพื่อ debug (ไม่เผยค่า)
+    console.log('[cron] keys', { sentLen: sentKey.length, envLen: envKey.length, match: sentKey === envKey });
+    if (!envKey || sentKey !== envKey) return res.status(401).json({ error: 'unauthorized' });
 
     const db = admin.firestore();
     const now = admin.firestore.Timestamp.now();
