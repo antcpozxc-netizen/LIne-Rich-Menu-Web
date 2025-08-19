@@ -11,6 +11,8 @@ import {
   Chat as ChatIcon, TableChart as TableChartIcon,
   Logout as LogoutIcon, Menu as MenuIcon, Group as GroupIcon, SwapHoriz as SwapIcon
 } from '@mui/icons-material';
+// NEW: ไอคอนสำหรับเมนูแอดมิน
+import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 
 import { useNavigate, useLocation, useSearchParams, Outlet } from 'react-router-dom';
 import { auth, db } from '../firebase';
@@ -36,7 +38,21 @@ export default function HomePage() {
   // auth + user profile (สั้น ๆ เอาเฉพาะ auth user)
   const [user, setUser] = useState(null);
   const [ready, setReady] = useState(false);
-  
+
+  // === NEW: เช็ค custom claim admin จาก ID token ===
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    if (!user) { setIsAdmin(false); return; }
+    (async () => {
+      try {
+        const res = await user.getIdTokenResult(true);
+        setIsAdmin(!!res.claims?.admin);
+      } catch {
+        setIsAdmin(false);
+      }
+    })();
+  }, [user]);
+
   // --- profile from Firestore ---
   const [profile, setProfile] = useState(null);
 
@@ -162,7 +178,7 @@ export default function HomePage() {
     user?.providerData?.[0]?.photoURL || '';
 
   const userLineId = profile?.line?.userId || null;
-  
+
   if (!ready) return <div style={{ padding: 16 }}>Loading...</div>;
 
   return (
@@ -334,6 +350,16 @@ export default function HomePage() {
                 {sidebarOpen && <ListItemText primary="Friends" />}
               </ListItemButton>
             </ListItem>
+
+            {/* === NEW: Admin Templates (เห็นเฉพาะ admin) === */}
+            {isAdmin && (
+              <ListItem disablePadding>
+                <ListItemButton onClick={() => navigate(`/admin/templates`)}>
+                  <ListItemIcon><AdminPanelSettingsIcon /></ListItemIcon>
+                  {sidebarOpen && <ListItemText primary="Admin: Templates" />}
+                </ListItemButton>
+              </ListItem>
+            )}
           </List>
 
           <Divider />

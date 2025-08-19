@@ -5,6 +5,10 @@ import './index.css';
 import App from './App';
 import { BrowserRouter, Routes, Route, Navigate, useParams, useLocation } from 'react-router-dom';
 
+// Admin
+import RequireAdmin from './routes/RequireAdmin';
+import AdminTemplatesPage from './pages/AdminTemplatesPage';
+
 import AccountsPage from './pages/AccountsPage';
 import HomePage from './pages/HomePage';          // Layout
 import DashboardHome from './pages/DashboardHome';// หน้า Home ในกรอบแดง
@@ -51,14 +55,14 @@ const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <BrowserRouter>
     <Routes>
-      {/* Landing / หน้าเริ่มต้น -> มีปุ่มเริ่มต้นที่เรียก LINE Login */}
+      {/* Public */}
       <Route path="/" element={<App />} />
 
-      {/* เส้นทางที่ต้องล็อกอินก่อน */}
+      {/* ต้องล็อกอินก่อนทุกอย่างในบล็อกนี้ */}
       <Route element={<RequireAuth />}>
         <Route path="/accounts" element={<AccountsPage />} />
 
-        {/* HomePage = Layout + Outlet */}
+        {/* Layout หลัก */}
         <Route path="/homepage" element={<HomePage />}>
           <Route index element={<DashboardHome />} />
           <Route path="insight" element={<InsightPage />} />
@@ -74,13 +78,18 @@ root.render(
           <Route path="rich-menus/new" element={<RichMenusPage />} />
           <Route path="rich-menus" element={<RichMenusListPage />} />
           <Route path="template-rich-menus" element={<TemplateRichMenusPage />} />
-          
           {/* Others */}
           <Route path="greeting-message" element={<GreetingMessagePage />} />
           <Route path="friends" element={<FriendsPage />} />
         </Route>
+
+        {/* ต้องล็อกอิน + เป็นแอดมิน */}
+        <Route element={<RequireAdmin />}>
+          <Route path="/admin/templates" element={<AdminTemplatesPage />} />
+        </Route>
       </Route>
 
+      {/* 404 → กลับหน้าแรก */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   </BrowserRouter>
