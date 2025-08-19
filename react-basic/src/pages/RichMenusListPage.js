@@ -34,14 +34,22 @@ export default function RichMenusListPage() {
     return () => off();
   }, [tenantId]);
 
-  const active = useMemo(
-    () => rows.filter(r => r.status === 'ready'),
-    [rows],
-  );
-  const readyOnly = useMemo(
-    () => rows.filter(r => r.status === 'ready' && !r.schedule && !r.scheduleFrom && !r.scheduleTo),
-    [rows],
-  );
+  const scheduledActive = useMemo(() => {
+   return rows.filter((r) => {
+     if (r.status !== 'ready') return false;
+     // ถือว่าเป็น Scheduled/Active เมื่อมี scheduleFrom/scheduleTo อย่างน้อยหนึ่งตัว
+     return !!(r.scheduleFrom || r.scheduleTo || r.schedule);
+   });
+  }, [rows]);
+
+  const readyOnly = useMemo(() => {
+    return rows.filter((r) => {
+      if (r.status !== 'ready') return false;
+      return !r.schedule && !r.scheduleFrom && !r.scheduleTo;
+    });
+  }, [rows]);
+
+  const drafts = useMemo(() => rows.filter(r => r.status === 'draft'), [rows]);
 
   return (
     <Container sx={{ py: 3 }}>

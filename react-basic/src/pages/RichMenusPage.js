@@ -390,53 +390,66 @@ export default function RichMenusPage() {
     };
   };
 
-  const buildPayload = () => ({
+  // แทนที่ของเดิม
+  const buildPayload = (includeSchedule = false) => ({
     title,
-    size: template.size,                 // 'large' | 'compact'
-    imageUrl: normalizeImageUrl(image),  // public URL
+    size: template.size,
+    imageUrl: normalizeImageUrl(image),
     chatBarText: menuBarLabel || 'Menu',
-    defaultBehavior: behavior,           // shown | collapsed
+    defaultBehavior: behavior,
     areas: areas.map(toNormalized),
-    schedule: (periodFrom && periodTo)
-      ? { from: new Date(periodFrom).toISOString(), to: new Date(periodTo).toISOString() }
+    schedule: includeSchedule && periodFrom
+      ? {
+          from: new Date(periodFrom).toISOString(),
+          to: periodTo ? new Date(periodTo).toISOString() : null,
+        }
       : null,
   });
+
 
   const onSaveDraft = async () => {
     try {
       if (!tenantId) return alert('กรุณาเลือก OA ก่อน');
+      if (!image)   return alert('กรุณาอัปโหลดรูปเมนู');
       const headers = await authHeader();
-      const res = await fetch(`/api/tenants/${tenantId}/richmenus/draft`, {
+
+      const res = await fetch(`/api/tenants/${tenantId}/richmenus`, {
         method: 'POST',
         headers,
-        body: JSON.stringify(buildPayload()),
+        body: JSON.stringify(buildPayload(false)), // << ไม่ใส่ schedule
       });
+
       const text = await res.text();
-      if (!res.ok) throw new Error(text || 'save draft failed');
-      writeDraft({ ...buildPayload(), templateId: template.id }); // เก็บ local เฉย ๆ ด้วย
-      setSnack('Draft saved');
-      navigate('/homepage/rich-menus');
+      if (!res.ok) throw new Error(text || 'save failed');
+
+      setSnack('Saved as Ready');
+      navigate(`/homepage/rich-menus?tenant=${tenantId || ''}`);
     } catch (e) {
-      alert('บันทึกดราฟท์ไม่สำเร็จ: ' + (e?.message || e));
+      alert('บันทึกไม่สำเร็จ: ' + (e?.message || e));
     }
   };
 
+  // Save = SCHEDULED/ACTIVE (ถ้ามีช่วงเวลา)
   const onSaveReady = async () => {
     try {
       if (!tenantId) return alert('กรุณาเลือก OA ก่อน');
       if (!image)   return alert('กรุณาอัปโหลดรูปเมนู');
+      if (!periodFrom) return alert('กรุณาเลือก Display from ก่อนเพื่อทำ Scheduled/Active');
+
       const headers = await authHeader();
+
       const res = await fetch(`/api/tenants/${tenantId}/richmenus`, {
         method: 'POST',
         headers,
-        body: JSON.stringify(buildPayload()),
+        body: JSON.stringify(buildPayload(true)), // << ใส่ schedule ถ้ากรอก
       });
-      const text = await res.text();
-      let data; try { data = JSON.parse(text); } catch { data = null; }
-      if (!res.ok) throw new Error(data?.detail || data?.error || text || 'save failed');
 
-      // ❌ ไม่ตั้ง default อัตโนมัติ
-      setSnack('Saved as Ready (not default)');
+      const text = await res.text();
+      if (!res.ok) throw new Error(text || 'save failed');
+
+      // ข้อความแจ้งให้เข้าใจว่าไปแท็บไหน
+      setSnack(periodFrom ? 'Saved as Scheduled/Active' : 'Saved as Ready');
+      navigate(`/homepage/rich-menus?tenant=${tenantId || ''}`);
     } catch (e) {
       alert('บันทึกไม่สำเร็จ: ' + (e?.message || e));
     }
@@ -455,7 +468,7 @@ export default function RichMenusPage() {
         <Stack direction="row" spacing={1} alignItems="center">
           <Button
             variant="outlined"
-            onClick={() => navigate(`/homepage/rich-menus?tenant=${tenant}`)}
+            onClick={() => navigate(`/homepage/rich-menus?tenant=${tenantId || ''}`)}
           >
             Back to list
           </Button>
