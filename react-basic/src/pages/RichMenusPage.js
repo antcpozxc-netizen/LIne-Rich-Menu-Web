@@ -209,6 +209,7 @@ export default function RichMenusPage() {
   const navigate = useNavigate();
   const [sp] = useSearchParams();
   const draftId = sp.get('draft') || '';
+  const isEditing = !!draftId;
 
   const [snack, setSnack] = useState('');
   const [templateOpen, setTemplateOpen] = useState(false);
@@ -468,13 +469,25 @@ export default function RichMenusPage() {
       if (!tenantId) return alert('กรุณาเลือก OA ก่อน');
       if (!image)   return alert('กรุณาอัปโหลดรูปเมนู');
       const headers = await authHeader();
-      const res = await fetch(`/api/tenants/${tenantId}/richmenus`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(buildPayload(false)),
-      });
+
+      let res;
+      if (isEditing) {
+        res = await fetch(`/api/tenants/${tenantId}/richmenus/${draftId}`, {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify({ ...buildPayload(false), action: 'draft' }),
+        });
+      } else {
+        res = await fetch(`/api/tenants/${tenantId}/richmenus`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(buildPayload(false)),
+        });
+      }
+
       const text = await res.text();
       if (!res.ok) throw new Error(text || 'save failed');
+
       setSnack('Saved as Ready');
       navigate(`/homepage/rich-menus?tenant=${tenantId || ''}`);
     } catch (e) {
@@ -487,35 +500,35 @@ export default function RichMenusPage() {
     try {
       if (!tenantId) return alert('กรุณาเลือก OA ก่อน');
       if (!image)   return alert('กรุณาอัปโหลดรูปเมนู');
+      if (!periodFrom) return alert('กรุณาเลือก Display from ก่อน');
 
       const headers = await authHeader();
-      const hasSchedule = !!periodFrom;
 
-      const res = await fetch(`/api/tenants/${tenantId}/richmenus`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(buildPayload(hasSchedule)),
-      });
+      let res;
+      if (isEditing) {
+        res = await fetch(`/api/tenants/${tenantId}/richmenus/${draftId}`, {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify({ ...buildPayload(true), action: 'save' }),
+        });
+      } else {
+        res = await fetch(`/api/tenants/${tenantId}/richmenus`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(buildPayload(true)),
+        });
+      }
 
       const text = await res.text();
       if (!res.ok) throw new Error(text || 'save failed');
-      const json = JSON.parse(text || '{}');
 
-      if (!hasSchedule && json?.richMenuId) {
-        await fetch(`/api/tenants/${tenantId}/richmenus/set-default`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ richMenuId: json.richMenuId })
-        }).catch(()=>{});
-        setSnack('Saved & Activated');
-      } else {
-        setSnack(hasSchedule ? 'Saved as Scheduled' : 'Saved');
-      }
+      setSnack('Saved as Scheduled');
       navigate(`/homepage/rich-menus?tenant=${tenantId || ''}`);
     } catch (e) {
       alert('บันทึกไม่สำเร็จ: ' + (e?.message || e));
     }
   };
+
 
   // ============================= Render =============================
   return (

@@ -766,6 +766,93 @@ app.post('/api/tenants/:id/richmenus/test', requireFirebaseAuth, async (req, res
   }
 });
 
+
+// 6.x.4) Update existing rich menu doc
+app.put('/api/tenants/:id/richmenus/:rid', requireFirebaseAuth, async (req, res) => {
+  try {
+    const { id, rid } = req.params;
+    const uid = req.user.uid;
+
+    const tenant = await getTenantIfMember(id, uid);
+    if (!tenant) return res.status(403).json({ error: 'not_member_of_tenant' });
+
+    const {
+      title = 'Rich menu',
+      size = 'large',
+      imageUrl,
+      chatBarText = 'Menu',
+      defaultBehavior = 'shown',
+      areas = [],
+      schedule = null,            // { from: ISO, to: ISO|null }  (ต้องมีเมื่อ action === 'save')
+      action = 'draft'            // 'draft' | 'save'  (save = Scheduled/Active)
+    } = req.body || {};
+
+    const docRef = tenant.ref.collection('richmenus').doc(rid);
+    const snap = await docRef.get();
+    if (!snap.exists) return res.status(404).json({ error: 'not_found' });
+
+    const prev = snap.data() || {};
+    const now = admin.firestore.FieldValue.serverTimestamp();
+
+    // กรณีต้องมีบน LINE แต่ยังไม่มี -> สร้าง
+    let lineRichMenuId = prev.lineRichMenuId || null;
+    if (!lineRichMenuId) {
+      if (!imageUrl) return res.status(400).json({ error: 'image_url_required' });
+
+      const accessToken = await getTenantSecretAccessToken(tenant.ref);
+      const WIDTH  = 2500;
+      const HEIGHT = size === 'compact' ? 843 : 1686;
+      const areasPx = toPxAreas({ areas, width: WIDTH, height: HEIGHT });
+
+      const created = await createAndUploadRichMenuOnLINE({
+        accessToken, title, chatBarText, size, areasPx, imageUrl
+      });
+      lineRichMenuId = created.richMenuId;
+    }
+
+    // สรุปสถานะ + schedule
+    let scheduleFrom = null, scheduleTo = null;
+    if (action === 'save') {
+      if (!schedule?.from) return res.status(400).json({ error: 'schedule_from_required' });
+      scheduleFrom = toTs(schedule.from);
+      scheduleTo   = schedule?.to ? toTs(schedule.to) : null;
+    }
+
+    await docRef.set({
+      title, size, imageUrl, chatBarText, defaultBehavior,
+      areas,
+      lineRichMenuId,
+      status: 'ready',                     // ตาม mapping: draft ปุ่ม = Ready
+      schedule: action === 'save' ? schedule : null,
+      scheduleFrom: action === 'save' ? scheduleFrom : null,
+      scheduleTo:   action === 'save' ? scheduleTo   : null,
+      updatedAt: now,
+    }, { merge: true });
+
+    return res.json({ ok: true, id: rid, richMenuId: lineRichMenuId, status: 'ready' });
+  } catch (e) {
+    console.error('[richmenus update] error', e);
+    return res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
+  }
+});
+
+// 6.x.5) Delete rich menu doc (ลบเฉพาะใน Firestore)
+// หมายเหตุ: ถ้าต้องการลบบน LINE ด้วย ให้เรียก DELETE /v2/bot/richmenu/{id} เพิ่มได้
+app.delete('/api/tenants/:id/richmenus/:rid', requireFirebaseAuth, async (req, res) => {
+  try {
+    const { id, rid } = req.params;
+    const tenant = await getTenantIfMember(id, req.user.uid);
+    if (!tenant) return res.status(403).json({ error: 'not_member_of_tenant' });
+
+    await tenant.ref.collection('richmenus').doc(rid).delete();
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('[richmenus delete] error', e);
+    return res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
+  }
+});
+
+
 // >>> UPDATED: set-default รองรับ docId หรือ richMenuId
 app.post('/api/tenants/:id/richmenus/set-default', requireFirebaseAuth, async (req, res) => {
   try {
