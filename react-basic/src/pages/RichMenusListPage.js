@@ -45,7 +45,6 @@ export default function RichMenusListPage() {
     return () => off();
   }, [tenantId]);
 
-  // "Scheduled/Active" = ready with schedule window set
   const scheduledActive = useMemo(
     () =>
       rows.filter(
@@ -56,13 +55,8 @@ export default function RichMenusListPage() {
     [rows]
   );
 
-  // "Ready" = ready without schedule
   const readyList = useMemo(
-    () =>
-      rows.filter(
-        (r) =>
-          r.status === 'ready' && !(r.scheduleFrom || r.scheduleTo || r.schedule)
-      ),
+    () => rows.filter((r) => r.status === 'ready' && !(r.scheduleFrom || r.scheduleTo || r.schedule)),
     [rows]
   );
 
@@ -114,27 +108,14 @@ export default function RichMenusListPage() {
                 direction="row"
                 alignItems="center"
                 spacing={2}
-                sx={{
-                  p: 1,
-                  borderBottom: '1px solid #eee',
-                  cursor: 'pointer',
-                  '&:hover': { bgcolor: 'action.hover' }
-                }}
-                onClick={() =>
-                  navigate(`/homepage/rich-menus/new?tenant=${tenant}&draft=${item.id}`)
-                }
+                sx={{ p: 1, borderBottom: '1px solid #eee', cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }}
+                onClick={() => navigate(`/homepage/rich-menus/new?tenant=${tenant}&draft=${item.id}`)}
               >
                 <Box
                   component="img"
                   src={item.imageUrl}
                   alt=""
-                  sx={{
-                    width: 180,
-                    height: 108,
-                    objectFit: 'cover',
-                    borderRadius: 1,
-                    bgcolor: '#fafafa'
-                  }}
+                  sx={{ width: 180, height: 108, objectFit: 'cover', borderRadius: 1, bgcolor: '#fafafa' }}
                 />
                 <Box sx={{ flex: 1, minWidth: 0 }}>
                   <Typography variant="subtitle1" noWrap fontWeight="bold">
@@ -148,22 +129,15 @@ export default function RichMenusListPage() {
                   </Stack>
                 </Box>
 
-                <Stack direction="row" spacing={0.5}>
+                {/* ปุ่มด้านขวา: เปิด/ลบ (กดแล้วไม่ให้ทริกเกอร์ onClick แถว) */}
+                <Stack direction="row" spacing={1} onClick={(e) => e.stopPropagation()}>
                   <Tooltip title="Open">
-                    <IconButton
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        navigate(`/homepage/rich-menus/new?tenant=${tenant}&draft=${item.id}`);
-                      }}
-                    >
+                    <IconButton onClick={() => navigate(`/homepage/rich-menus/new?tenant=${tenant}&draft=${item.id}`)}>
                       <OpenIcon />
                     </IconButton>
                   </Tooltip>
                   <Tooltip title="Delete">
-                    <IconButton
-                      color="error"
-                      onClick={(e) => { e.stopPropagation(); deleteMenu(item.id); }}
-                    >
+                    <IconButton color="error" onClick={() => deleteMenu(item.id)}>
                       <DeleteIcon />
                     </IconButton>
                   </Tooltip>

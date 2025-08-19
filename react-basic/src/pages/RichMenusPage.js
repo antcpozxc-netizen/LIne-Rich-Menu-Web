@@ -4,8 +4,7 @@ import {
   Box, Button, Card, CardContent, Container, Grid,
   MenuItem, Radio, RadioGroup, Select, Stack,
   TextField, Typography, Dialog, DialogTitle, DialogContent,
-  DialogActions, Paper, FormControlLabel, Snackbar, Chip,
-  IconButton, Tooltip
+  DialogActions, Paper, FormControlLabel, Snackbar, Chip
 } from '@mui/material';
 import {
   Save as SaveIcon,
@@ -16,14 +15,15 @@ import {
 } from '@mui/icons-material';
 import { useOutletContext, useNavigate, useSearchParams } from 'react-router-dom';
 import { ref as sref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { auth, storage } from '../firebase';
+import { auth, storage, db } from '../firebase';
+import { doc, getDoc } from 'firebase/firestore';
 
-// ============================= Constants =============================
+// ============================= Consts =============================
 const STORAGE_KEY = 'richMenuDraft';
 
-// Template presets (6×4 grid)
+// -------- Template presets (6×4 grid)
 const TEMPLATES = [
-  // Large (2500×1686)
+  // Large
   { id: 'lg-1x1-1x1-1x1-1x1-1x1-1x1', label: 'Large • 6 blocks (2×2 × 6)', size: 'large',
     preview: [[0,0,2,2],[2,0,2,2],[4,0,2,2],[0,2,2,2],[2,2,2,2],[4,2,2,2]] },
   { id: 'lg-3+3+full', label: 'Large • 3 blocks (3×2,3×2,6×2)', size: 'large',
@@ -37,7 +37,7 @@ const TEMPLATES = [
   { id: 'lg-1', label: 'Large • 1 block (full)', size: 'large',
     preview: [[0,0,6,4]] },
 
-  // Compact (2500×843)
+  // Compact
   { id: 'cp-3+3+3+3', label: 'Compact • 4 blocks (3×2 × 4)', size: 'compact',
     preview: [[0,0,3,2],[3,0,3,2],[0,2,3,2],[3,2,3,2]] },
   { id: 'cp-2+2+2', label: 'Compact • 3 blocks (2×4 × 3)', size: 'compact',
@@ -50,17 +50,18 @@ const TEMPLATES = [
     preview: [[0,0,6,4]] },
 ];
 
-// Action choices
+// -------- Action choices
 const ACTION_OPTIONS = ['Select', 'Link', 'Text', 'QnA', 'Live Chat', 'No action'];
 
-// Utilities
+// ---- utilities
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const pctClamp = (n) => Math.round(clamp(Number(n) || 0, 0, 100) * 100) / 100;
 
 const readDraft = () => { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch { return {}; } };
+// eslint-disable-next-line no-unused-vars
 const writeDraft = (obj) => localStorage.setItem(STORAGE_KEY, JSON.stringify(obj));
 
-// Convert local file to 2500x(1686|843) JPEG <= ~1MB
+// Convert local file to 2500x(1686|843) JPEG <= ~1MB (สำหรับอัปโหลดจริง)
 async function drawToSize(file, targetW, targetH, mime='image/jpeg') {
   const url = URL.createObjectURL(file);
   try {
@@ -126,7 +127,7 @@ function ActionEditor({ idx, action, onChange }) {
           <TextField label="QnA key / id" value={action.qnaKey || ''} onChange={(e) => update({ qnaKey: e.target.value })} />
           <TextField label="Display text (optional)" value={action.displayText || ''} onChange={(e) => update({ displayText: (e.target.value || '').slice(0, 300) })} />
           <Typography variant="caption" color="text.secondary">
-            จะส่งเป็น <Chip size="small" label="postback" /> data: <code>{`qna:${action.qnaKey || '...'}`}</code> และคุณไปจัดการตอบใน webhook
+            จะส่งเป็น <Chip size="small" label="postback" /> data: <code>{`qna:${action.qnaKey || '...'}`}</code>
           </Typography>
         </Stack>
       )}
@@ -134,9 +135,7 @@ function ActionEditor({ idx, action, onChange }) {
       {action.type === 'Live Chat' && (
         <Stack spacing={1}>
           <TextField label="Message to trigger live chat" value={action.liveText ?? '#live'} onChange={(e) => update({ liveText: e.target.value })} />
-          <Typography variant="caption" color="text.secondary">
-            ค่าดีฟอลต์คือ <code>#live</code> — ฝั่งบอตให้เปิดโหมดสนทนาเมื่อได้รับข้อความนี้
-          </Typography>
+          <Typography variant="caption" color="text.secondary">ค่าดีฟอลต์คือ <code>#live</code></Typography>
         </Stack>
       )}
 
@@ -180,12 +179,12 @@ function TemplateModal({ open, onClose, value, onApply }) {
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle>Select a template</DialogTitle>
       <DialogContent dividers>
-        <Typography variant="subtitle2" sx={{ mb: 1 }}>Large</Typography>
+        <Typography variant="subtitle1" sx={{ mb: 1 }}>Large</Typography>
         <Grid container spacing={2} sx={{ mb: 2 }}>
           {TEMPLATES.filter(t => t.size === 'large').map(renderTile)}
         </Grid>
 
-        <Typography variant="subtitle2" sx={{ mb: 1 }}>Compact</Typography>
+        <Typography variant="subtitle1" sx={{ mb: 1 }}>Compact</Typography>
         <Grid container spacing={2}>
           {TEMPLATES.filter(t => t.size === 'compact').map(renderTile)}
         </Grid>
@@ -209,22 +208,22 @@ export default function RichMenusPage() {
   const { tenantId } = useOutletContext() || {};
   const navigate = useNavigate();
   const [sp] = useSearchParams();
-  const tenant = sp.get('tenant') || '';
+  const draftId = sp.get('draft') || '';
 
   const [snack, setSnack] = useState('');
   const [templateOpen, setTemplateOpen] = useState(false);
 
-  // Start with empty title (no default value)
+  // ค่าเริ่มต้น: title ว่าง
   const [title, setTitle] = useState('');
   const [template, setTemplate] = useState(TEMPLATES.find(t => t.id === 'lg-3+3+full') || TEMPLATES[0]);
 
-  const [image, setImage] = useState('');  // public URL (Firebase)
+  const [image, setImage] = useState('');
   const [menuBarLabel, setMenuBarLabel] = useState('Menu');
-  const [behavior, setBehavior] = useState('shown'); // 'shown' | 'collapsed'
-  const [periodFrom, setPeriodFrom] = useState(''); // YYYY-MM-DDTHH:mm (local)
+  const [behavior, setBehavior] = useState('shown');
+  const [periodFrom, setPeriodFrom] = useState('');
   const [periodTo, setPeriodTo] = useState('');
 
-  // Areas (percent 0..100)
+  // areas
   const gridToAreas = (cells) =>
     cells.map((c, i) => {
       const [x, y, w, h] = c;
@@ -241,17 +240,69 @@ export default function RichMenusPage() {
   const [areas, setAreas] = useState(() => gridToAreas(_tpl0.preview));
   const [actions, setActions] = useState(() => Array.from({ length: _tpl0.preview.length }, () => ({ type: 'Select' })));
 
-  // Overlay & drag
+  // overlay & drag
   const overlayRef = useRef(null);
   const [selected, setSelected] = useState('A1');
   const [drag, setDrag] = useState(null);
   const MIN_W = 5, MIN_H = 5;
 
-  // File upload
+  // file upload
   const fileRef = useRef(null);
 
+  // --- helper: ISO/Timestamp -> datetime-local string
+  const toInputLocal = (v) => {
+    if (!v) return '';
+    let d = v;
+    if (v?.toDate) d = v.toDate();
+    if (typeof v === 'string') d = new Date(v);
+    if (!(d instanceof Date) || isNaN(d.getTime())) return '';
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  // โหลด “รายละเอียดจาก Firestore” เมื่อมี ?draft= และมี tenantId
   useEffect(() => {
-    // Load local draft (optional)
+    const run = async () => {
+      if (!tenantId || !draftId) return;
+      try {
+        const snap = await getDoc(doc(db, 'tenants', tenantId, 'richmenus', draftId));
+        if (!snap.exists()) return;
+        const data = snap.data() || {};
+
+        // ขนาดเมนู / template (เดาเลย์เอาต์จากจำนวนพื้นที่เดิมไม่ได้ จึงคงพื้นที่เดิมไว้)
+        setTemplate((prev) => (prev.size === data.size ? prev : (TEMPLATES.find(t => t.size === data.size) || prev)));
+
+        setTitle(data.title || '');
+        setImage(data.imageUrl || '');
+        setMenuBarLabel(data.chatBarText || 'Menu');
+        setBehavior(data.defaultBehavior || 'shown');
+
+        // areas & actions
+        const areasIn = Array.isArray(data.areas) ? data.areas : [];
+        const areasPct = areasIn.map((a, i) => ({
+          id: `A${i+1}`,
+          x: pctClamp((Number(a.xPct)||0)*100),
+          y: pctClamp((Number(a.yPct)||0)*100),
+          w: pctClamp((Number(a.wPct)||0)*100),
+          h: pctClamp((Number(a.hPct)||0)*100),
+        }));
+        setAreas(areasPct);
+        setActions(areasIn.map((a)=>a.action || { type:'Select' }));
+
+        // schedule
+        setPeriodFrom(toInputLocal(data.scheduleFrom || data.schedule?.from));
+        setPeriodTo(toInputLocal(data.scheduleTo || data.schedule?.to));
+      } catch (e) {
+        console.warn('load draft failed', e);
+      }
+    };
+    run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId, draftId]);
+
+  // โหลดดราฟท์จาก localStorage (กรณีสร้างใหม่)
+  useEffect(() => {
+    if (draftId) return; // มี draft -> ข้าม
     const d = readDraft();
     if (d?.title) setTitle(d.title);
     if (d?.menuBarLabel != null) setMenuBarLabel(d.menuBarLabel);
@@ -265,7 +316,7 @@ export default function RichMenusPage() {
     }
     if (d?.periodFrom) setPeriodFrom(d.periodFrom);
     if (d?.periodTo) setPeriodTo(d.periodTo);
-  }, []);
+  }, [draftId]);
 
   const canSave = useMemo(() => title.trim().length > 0 && !!image, [title, image]);
 
@@ -386,7 +437,6 @@ export default function RichMenusPage() {
     } catch { return u; }
   };
 
-  // Send areas + actions in a backend-friendly shape
   const toNormalized = (a, i) => {
     const act = actions[i] || { type: 'No action' };
     return {
@@ -418,16 +468,13 @@ export default function RichMenusPage() {
       if (!tenantId) return alert('กรุณาเลือก OA ก่อน');
       if (!image)   return alert('กรุณาอัปโหลดรูปเมนู');
       const headers = await authHeader();
-
       const res = await fetch(`/api/tenants/${tenantId}/richmenus`, {
         method: 'POST',
         headers,
-        body: JSON.stringify(buildPayload(false)), // save as Ready
+        body: JSON.stringify(buildPayload(false)),
       });
-
       const text = await res.text();
       if (!res.ok) throw new Error(text || 'save failed');
-
       setSnack('Saved as Ready');
       navigate(`/homepage/rich-menus?tenant=${tenantId || ''}`);
     } catch (e) {
@@ -435,7 +482,7 @@ export default function RichMenusPage() {
     }
   };
 
-  // Save: if no schedule → activate now (set-default). If has schedule → Scheduled.
+  // Save = ถ้าไม่มีช่วงเวลา -> Active เดี๋ยวนี้ (call /set-default)
   const onSaveReady = async () => {
     try {
       if (!tenantId) return alert('กรุณาเลือก OA ก่อน');
@@ -452,20 +499,18 @@ export default function RichMenusPage() {
 
       const text = await res.text();
       if (!res.ok) throw new Error(text || 'save failed');
-      const data = JSON.parse(text || '{}');
+      const json = JSON.parse(text || '{}');
 
-      if (!hasSchedule && data?.richMenuId) {
-        // Activate immediately
+      if (!hasSchedule && json?.richMenuId) {
         await fetch(`/api/tenants/${tenantId}/richmenus/set-default`, {
           method: 'POST',
           headers,
-          body: JSON.stringify({ richMenuId: data.richMenuId }),
-        }).catch(() => {});
-        setSnack('Saved & Activated (Active now)');
+          body: JSON.stringify({ richMenuId: json.richMenuId })
+        }).catch(()=>{});
+        setSnack('Saved & Activated');
       } else {
-        setSnack('Saved as Scheduled');
+        setSnack(hasSchedule ? 'Saved as Scheduled' : 'Saved');
       }
-
       navigate(`/homepage/rich-menus?tenant=${tenantId || ''}`);
     } catch (e) {
       alert('บันทึกไม่สำเร็จ: ' + (e?.message || e));
@@ -475,41 +520,18 @@ export default function RichMenusPage() {
   // ============================= Render =============================
   return (
     <Container sx={{ py: 3 }}>
-      <Stack
-        direction="row"
-        justifyContent="space-between"
-        alignItems="center"
-        sx={{ mb: 2 }}
-      >
-        {/* Left: Back + Title */}
+      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
         <Stack direction="row" spacing={1} alignItems="center">
-          <Button
-            variant="outlined"
-            onClick={() => navigate(`/homepage/rich-menus?tenant=${tenantId || ''}`)}
-          >
+          <Button variant="outlined" onClick={() => navigate(`/homepage/rich-menus?tenant=${tenantId || ''}`)}>
             Back to list
           </Button>
-          <Typography variant="h4" fontWeight="bold">
-            Rich menu
-          </Typography>
+          <Typography variant="h4" fontWeight="bold">Rich menu</Typography>
         </Stack>
 
-        {/* Right: Save draft / Save */}
         <Stack direction="row" spacing={1}>
-          <Button
-            variant="outlined"
-            startIcon={<SaveAltIcon />}
-            onClick={onSaveDraft}
-          >
-            Save draft
-          </Button>
-          <Button
-            variant="contained"
-            startIcon={<SaveIcon />}
-            disabled={!canSave}
-            onClick={onSaveReady}
-            sx={{ bgcolor: "#66bb6a", "&:hover": { bgcolor: "#57aa5b" } }}
-          >
+          <Button variant="outlined" startIcon={<SaveAltIcon />} onClick={onSaveDraft}>Save draft</Button>
+          <Button variant="contained" startIcon={<SaveIcon />} disabled={!canSave} onClick={onSaveReady}
+            sx={{ bgcolor: "#66bb6a", "&:hover": { bgcolor: "#57aa5b" } }}>
             Save
           </Button>
         </Stack>
@@ -529,36 +551,17 @@ export default function RichMenusPage() {
               />
             </Grid>
             <Grid item xs={12} md={6}>
-              <Stack
-                direction="row"
-                spacing={2}
-                alignItems="center"
-                sx={{ height: "100%" }}
-              >
+              <Stack direction="row" spacing={2} alignItems="center" sx={{ height: "100%" }}>
                 <TextField
                   label="Chat bar label"
                   size="small"
                   value={menuBarLabel}
-                  onChange={(e) =>
-                    setMenuBarLabel((e.target.value || "").slice(0, 14))
-                  }
+                  onChange={(e) => setMenuBarLabel((e.target.value || "").slice(0, 14))}
                   helperText={`${menuBarLabel.length}/14`}
                 />
-                <RadioGroup
-                  row
-                  value={behavior}
-                  onChange={(e) => setBehavior(e.target.value)}
-                >
-                  <FormControlLabel
-                    value="shown"
-                    control={<Radio />}
-                    label="Shown"
-                  />
-                  <FormControlLabel
-                    value="collapsed"
-                    control={<Radio />}
-                    label="Collapsed"
-                  />
+                <RadioGroup row value={behavior} onChange={(e) => setBehavior(e.target.value)}>
+                  <FormControlLabel value="shown" control={<Radio />} label="Shown" />
+                  <FormControlLabel value="collapsed" control={<Radio />} label="Collapsed" />
                 </RadioGroup>
               </Stack>
             </Grid>
@@ -566,28 +569,15 @@ export default function RichMenusPage() {
             {/* Display period */}
             <Grid item xs={12} md={6}>
               <Stack direction="row" spacing={2}>
-                <TextField
-                  label="Display from"
-                  type="datetime-local"
-                  size="small"
-                  value={periodFrom}
-                  onChange={(e) => setPeriodFrom(e.target.value)}
-                  sx={{ minWidth: 220 }}
-                  InputLabelProps={{ shrink: true }}
-                />
-                <TextField
-                  label="to"
-                  type="datetime-local"
-                  size="small"
-                  value={periodTo}
-                  onChange={(e) => setPeriodTo(e.target.value)}
-                  sx={{ minWidth: 220 }}
-                  InputLabelProps={{ shrink: true }}
-                />
+                <TextField label="Display from" type="datetime-local" size="small"
+                  value={periodFrom} onChange={(e) => setPeriodFrom(e.target.value)}
+                  sx={{ minWidth: 220 }} InputLabelProps={{ shrink: true }} />
+                <TextField label="to" type="datetime-local" size="small"
+                  value={periodTo} onChange={(e) => setPeriodTo(e.target.value)}
+                  sx={{ minWidth: 220 }} InputLabelProps={{ shrink: true }} />
               </Stack>
               <Typography variant="caption" color="text.secondary">
-                ถ้ากด <b>Save</b> โดย **ไม่ตั้งช่วงเวลา** ระบบจะสร้างและตั้งเป็น <b>Active (default)</b> ทันที •
-                ถ้ากด <b>Save draft</b> จะบันทึกเป็น <b>Ready</b>
+                ถ้าเว้นว่าง ระบบจะสร้างเป็น Ready โดยไม่มีตารางเวลา (ไม่ตั้ง default อัตโนมัติ)
               </Typography>
             </Grid>
           </Grid>
@@ -599,44 +589,14 @@ export default function RichMenusPage() {
         <Grid item xs={12} md={6}>
           <Card variant="outlined">
             <CardContent>
-              <Stack
-                direction="row"
-                justifyContent="space-between"
-                alignItems="center"
-                sx={{ mb: 1 }}
-              >
-                <Typography variant="subtitle1" fontWeight="bold">
-                  Menu image & areas
-                </Typography>
+              <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+                <Typography variant="subtitle1" fontWeight="bold">Menu image & areas</Typography>
                 <Stack direction="row" spacing={1}>
-                  <Button
-                    variant="outlined"
-                    onClick={() => applyTemplate(template)}
-                  >
-                    Reset to template
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    onClick={() => setTemplateOpen(true)}
-                  >
-                    Template
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    startIcon={<ImageIcon />}
-                    onClick={() => fileRef.current?.click()}
-                  >
-                    Change
-                  </Button>
-                  <input
-                    ref={fileRef}
-                    type="file"
-                    accept="image/*"
-                    hidden
-                    onChange={(e) =>
-                      e.target.files?.[0] && uploadImage(e.target.files[0])
-                    }
-                  />
+                  <Button variant="outlined" onClick={() => applyTemplate(template)}>Reset to template</Button>
+                  <Button variant="outlined" onClick={() => setTemplateOpen(true)}>Template</Button>
+                  <Button variant="outlined" startIcon={<ImageIcon />} onClick={() => fileRef.current?.click()}>Change</Button>
+                  <input ref={fileRef} type="file" accept="image/*" hidden
+                    onChange={(e) => e.target.files?.[0] && uploadImage(e.target.files[0])} />
                 </Stack>
               </Stack>
 
@@ -648,28 +608,15 @@ export default function RichMenusPage() {
                   borderRadius: 1,
                   overflow: "hidden",
                   background: "#fafafa",
-                  aspectRatio:
-                    template.size === "compact" ? "2500 / 843" : "2500 / 1686",
+                  aspectRatio: template.size === "compact" ? "2500 / 843" : "2500 / 1686",
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}
                 onMouseDown={() => setSelected(null)}
               >
                 {image ? (
-                  // Preview is fixed inside box without resizing original file
-                  <img
-                    src={image}
-                    alt=""
-                    style={{ width: "100%", height: "100%", display: "block", objectFit: "contain" }}
-                  />
+                  <img src={image} alt="" style={{ width: "100%", height: "100%", display: "block", objectFit: "contain" }} />
                 ) : (
-                  <Box
-                    sx={{
-                      position: "absolute",
-                      inset: 0,
-                      display: "grid",
-                      placeItems: "center",
-                      color: "text.secondary",
-                    }}
-                  >
+                  <Box sx={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", color: "text.secondary" }}>
                     <Typography>No image</Typography>
                   </Box>
                 )}
@@ -680,58 +627,30 @@ export default function RichMenusPage() {
                     <Box
                       key={a.id}
                       onMouseDown={(e) => startMove(a.id, e)}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelected(a.id);
-                      }}
+                      onClick={(e) => { e.stopPropagation(); setSelected(a.id); }}
                       sx={{
                         position: "absolute",
-                        left: `${pctClamp(a.x)}%`,
-                        top: `${pctClamp(a.y)}%`,
-                        width: `${pctClamp(a.w)}%`,
-                        height: `${pctClamp(a.h)}%`,
-                        border: "2px solid",
-                        borderColor: isSel
-                          ? "#2e7d32"
-                          : "rgba(46,125,50,.5)",
-                        background: isSel
-                          ? "rgba(102,187,106,.15)"
-                          : "rgba(102,187,106,.08)",
+                        left: `${pctClamp(a.x)}%`, top: `${pctClamp(a.y)}%`,
+                        width: `${pctClamp(a.w)}%`, height: `${pctClamp(a.h)}%`,
+                        border: "2px solid", borderColor: isSel ? "#2e7d32" : "rgba(46,125,50,.5)",
+                        background: isSel ? "rgba(102,187,106,.15)" : "rgba(102,187,106,.08)",
                         cursor: "move",
                       }}
                       title={`Block ${idx + 1}`}
                     >
-                      {/* resize handles */}
-                      {["nw", "n", "ne", "e", "se", "s", "sw", "w"].map((h) => (
-                        <Box
-                          key={h}
-                          onMouseDown={(e) => startResize(a.id, h, e)}
+                      {["nw","n","ne","e","se","s","sw","w"].map((h) => (
+                        <Box key={h} onMouseDown={(e) => startResize(a.id, h, e)}
                           sx={{
-                            position: "absolute",
-                            width: 10,
-                            height: 10,
-                            bgcolor: isSel ? "#2e7d32" : "#66bb6a",
-                            borderRadius: "2px",
+                            position: "absolute", width: 10, height: 10,
+                            bgcolor: isSel ? "#2e7d32" : "#66bb6a", borderRadius: "2px",
                             ...(h === "nw" && { left: -5, top: -5 }),
-                            ...(h === "n" && {
-                              left: "calc(50% - 5px)",
-                              top: -5,
-                            }),
+                            ...(h === "n"  && { left: "calc(50% - 5px)", top: -5 }),
                             ...(h === "ne" && { right: -5, top: -5 }),
-                            ...(h === "e" && {
-                              right: -5,
-                              top: "calc(50% - 5px)",
-                            }),
+                            ...(h === "e"  && { right: -5, top: "calc(50% - 5px)" }),
                             ...(h === "se" && { right: -5, bottom: -5 }),
-                            ...(h === "s" && {
-                              left: "calc(50% - 5px)",
-                              bottom: -5,
-                            }),
+                            ...(h === "s"  && { left: "calc(50% - 5px)", bottom: -5 }),
                             ...(h === "sw" && { left: -5, bottom: -5 }),
-                            ...(h === "w" && {
-                              left: -5,
-                              top: "calc(50% - 5px)",
-                            }),
+                            ...(h === "w"  && { left: -5, top: "calc(50% - 5px)" }),
                           }}
                         />
                       ))}
@@ -741,15 +660,9 @@ export default function RichMenusPage() {
               </Box>
 
               <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-                <Button startIcon={<AreaIcon />} onClick={addArea}>
-                  Add area
-                </Button>
+                <Button startIcon={<AreaIcon />} onClick={addArea}>Add area</Button>
                 {selected && (
-                  <Button
-                    color="error"
-                    startIcon={<DeleteIcon />}
-                    onClick={() => removeArea(selected)}
-                  >
+                  <Button color="error" startIcon={<DeleteIcon />} onClick={() => removeArea(selected)}>
                     Remove selected
                   </Button>
                 )}
@@ -762,23 +675,13 @@ export default function RichMenusPage() {
         <Grid item xs={12} md={6}>
           <Card variant="outlined">
             <CardContent>
-              <Typography
-                variant="subtitle1"
-                fontWeight="bold"
-                sx={{ mb: 1 }}
-              >
-                Actions
-              </Typography>
+              <Typography variant="subtitle1" fontWeight="bold" sx={{ mb: 1 }}>Actions</Typography>
               {areas.map((a, i) => (
                 <ActionEditor
                   key={a.id}
                   idx={i}
                   action={actions[i] || { type: "Select" }}
-                  onChange={(next) =>
-                    setActions((prev) =>
-                      prev.map((p, idx) => (idx === i ? next : p))
-                    )
-                  }
+                  onChange={(next) => setActions((prev) => prev.map((p, idx) => (idx === i ? next : p)))}
                 />
               ))}
             </CardContent>
@@ -786,24 +689,14 @@ export default function RichMenusPage() {
         </Grid>
       </Grid>
 
-      {/* Template modal */}
       <TemplateModal
         open={templateOpen}
         onClose={() => setTemplateOpen(false)}
         value={template}
-        onApply={(tpl) => {
-          applyTemplate(tpl);
-          setTemplateOpen(false);
-          setSnack("Template applied");
-        }}
+        onApply={(tpl) => { setTemplateOpen(false); applyTemplate(tpl); setSnack("Template applied"); }}
       />
 
-      <Snackbar
-        open={!!snack}
-        autoHideDuration={2200}
-        onClose={() => setSnack("")}
-        message={snack}
-      />
+      <Snackbar open={!!snack} autoHideDuration={2200} onClose={() => setSnack("")} message={snack} />
     </Container>
   );
 }
