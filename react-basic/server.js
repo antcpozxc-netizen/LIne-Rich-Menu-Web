@@ -551,140 +551,141 @@ app.post('/api/tenants/:id/broadcast', requireFirebaseAuth, async (req, res) => 
 });
 
 
-// 6.x) Rich menus — Send test (create + upload image + link to current user)
-app.post('/api/tenants/:id/richmenus/test', requireFirebaseAuth, async (req, res) => {
-  console.log('[richmenus/test] hit', req.params.id);
-  try {
-    const uid = req.user.uid;
-    const { id } = req.params;
+// ==============================
+// 6.x) Rich menus
+// ==============================
 
+// 6.x.1) Save draft (Firestore only)
+app.post('/api/tenants/:id/richmenus/draft', requireFirebaseAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const uid = req.user.uid;
+    const tenant = await getTenantIfMember(id, uid);
+    if (!tenant) return res.status(403).json({ error: 'not_member_of_tenant' });
+
+    const {
+      title = 'Rich menu',
+      size = 'large',
+      imageUrl = '',
+      chatBarText = 'Menu',
+      defaultBehavior = 'shown',
+      areas = [],
+      schedule = null, // { from: ISO, to: ISO|null }
+    } = req.body || {};
+
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const scheduleFrom = schedule?.from ? toTs(schedule.from) : null;
+    const scheduleTo   = schedule?.to ? toTs(schedule.to) : null;
+
+    const docRef = tenant.ref.collection('richmenus').doc();
+    await docRef.set({
+      title, size, imageUrl, chatBarText, defaultBehavior, areas,
+      schedule: schedule || null,
+      scheduleFrom, scheduleTo,
+      status: 'draft',
+      createdBy: uid,
+      createdAt: now, updatedAt: now,
+    });
+
+    return res.json({ ok: true, id: docRef.id, status: 'draft' });
+  } catch (e) {
+    console.error('[richmenus/draft] error', e);
+    return res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
+  }
+});
+
+// 6.x.2) Save → create on LINE as Ready (no default)
+app.post('/api/tenants/:id/richmenus', requireFirebaseAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const uid = req.user.uid;
     const tenant = await getTenantIfMember(id, uid);
     if (!tenant) return res.status(403).json({ error: 'not_member_of_tenant' });
 
     const accessToken = await getTenantSecretAccessToken(tenant.ref);
 
     const {
-      title = 'Test rich menu',
-      size = 'large',          // 'large' | 'compact'
+      title = 'Rich menu',
+      size = 'large',
       imageUrl,
-      chatBarText = 'Menu',    // ≤14 chars
+      chatBarText = 'Menu',
       defaultBehavior = 'shown',
-      areas = [],              // [{ xPct, yPct, wPct, hPct, action:{} }]
+      areas = [],
+      schedule = null, // { from: ISO, to: ISO|null }
     } = req.body || {};
 
     if (!imageUrl) return res.status(400).json({ error: 'image_url_required' });
 
-    const HEIGHT = size === 'compact' ? 843 : 1686;
     const WIDTH  = 2500;
+    const HEIGHT = size === 'compact' ? 843 : 1686;
+    const areasPx = toPxAreas({ areas, width: WIDTH, height: HEIGHT });
 
-    function mapAction(a = {}) {
-      switch (a.type) {
-        case 'Link':     return { type: 'uri',     label: (a.label || 'Open').slice(0, 20), uri: a.url || 'https://example.com' };
-        case 'Text':     return { type: 'message', text: a.text || 'Hello!' };
-        case 'QnA':      return { type: 'postback', data: a.data || 'qna', displayText: a.label || 'QnA' };
-        case 'Live Chat':return { type: 'message', text: a.text || '#live' };
-        default:         return { type: 'postback', data: 'noop' };
-      }
-    }
-
-    const pxAreas = areas.map(a => ({
-      bounds: {
-        x: Math.round((Number(a.xPct) || 0) * WIDTH),
-        y: Math.round((Number(a.yPct) || 0) * HEIGHT),
-        width: Math.round((Number(a.wPct) || 0) * WIDTH),
-        height: Math.round((Number(a.hPct) || 0) * HEIGHT),
-      },
-      action: mapAction(a.action),
-    }));
-
-    // 1) Create rich menu
-    const createBody = {
-      size: { width: WIDTH, height: HEIGHT },
-      selected: false,
-      name: String(title || 'RichMenu').slice(0, 300),
-      chatBarText: String(chatBarText || 'Menu').slice(0, 14),
-      areas: pxAreas,
-    };
-
-    const createResp = await fetchFn('https://api.line.me/v2/bot/richmenu', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(createBody),
+    const { richMenuId } = await createAndUploadRichMenuOnLINE({
+      accessToken, title, chatBarText, size, areasPx, imageUrl
     });
-    const createText = await createResp.text();
-    if (!createResp.ok) return res.status(createResp.status).json({ error: 'line_create_error', detail: createText });
 
-    const { richMenuId } = JSON.parse(createText);
-    if (!richMenuId) return res.status(500).json({ error: 'line_create_no_id', detail: createText });
-    console.log('[richmenu create]', { richMenuId });
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const scheduleFrom = schedule?.from ? toTs(schedule.from) : null;
+    const scheduleTo   = schedule?.to ? toTs(schedule.to) : null;
 
-    // 2) Download image (force download URL) + upload to LINE
-    const downloadUrl = withAltMedia(imageUrl);
-    const imgResp = await fetchFn(downloadUrl);
-    if (!imgResp.ok) {
-      const t = await imgResp.text().catch(() => '');
-      console.error('[richmenu image fetch] failed', imgResp.status, t);
-      return res.status(400).json({ error: 'image_fetch_failed', detail: t || imgResp.statusText });
-    }
-
-    let imgType = imgResp.headers.get('content-type') || '';
-    let imgBuf  = Buffer.from(await imgResp.arrayBuffer());
-    if (!/^image\/(png|jpeg)$/i.test(imgType)) {
-      if (imgBuf[0] === 0x89 && imgBuf[1] === 0x50) imgType = 'image/png';
-      else if (imgBuf[0] === 0xFF && imgBuf[1] === 0xD8) imgType = 'image/jpeg';
-      else imgType = 'image/jpeg';
-    }
-    console.log('[richmenu image]', { imgType, bytes: imgBuf.length });
-
-    const upResp = await fetchFn(`https://api-data.line.me/v2/bot/richmenu/${encodeURIComponent(richMenuId)}/content`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': imgType },
-      body: imgBuf,
+    const docRef = tenant.ref.collection('richmenus').doc();
+    await docRef.set({
+      title, size, imageUrl, chatBarText, defaultBehavior,
+      areas, schedule, scheduleFrom, scheduleTo,
+      lineRichMenuId: richMenuId,
+      status: 'ready', // แสดงในคอนโซลเป็น Ready
+      createdBy: uid,
+      createdAt: now, updatedAt: now,
     });
-    const upText  = await upResp.text();
-    const upReqId = upResp.headers.get('x-line-request-id') || null;
-    if (!upResp.ok) {
-      try {
-        await fetchFn(`https://api.line.me/v2/bot/richmenu/${encodeURIComponent(richMenuId)}`, {
-          method: 'DELETE', headers: { Authorization: `Bearer ${accessToken}` },
-        });
-      } catch {}
-      console.warn('[richmenu upload] failed', upResp.status, { reqId: upReqId, detail: upText });
-      return res.status(upResp.status).json({ error: 'line_error_upload', detail: upText, reqId: upReqId });
-    }
-    console.log('[richmenu upload] ok', { reqId: upReqId });
 
-    // 3) Link to current user (send test)
-    const userSnap = await admin.firestore().doc(`users/${uid}`).get();
-    const to = userSnap.get('line.userId');
-    if (!to) return res.json({ ok: true, richMenuId, linked: false });
-
-    try {
-      const linkResp = await fetchFn(
-        `https://api.line.me/v2/bot/user/${encodeURIComponent(to)}/richmenu/${encodeURIComponent(richMenuId)}`,
-        { method: 'POST', headers: { Authorization: `Bearer ${accessToken}` } }
-      );
-      const linkText  = await linkResp.text();
-      const linkReqId = linkResp.headers.get('x-line-request-id') || null;
-
-      if (!linkResp.ok) {
-        console.warn('[richmenu link] failed', linkResp.status, { reqId: linkReqId, detail: linkText });
-        return res.status(linkResp.status).json({ ok: false, error: 'line_link_error', detail: linkText, reqId: linkReqId, richMenuId });
-      }
-
-      console.log('[richmenu link] ok', { reqId: linkReqId, to });
-      return res.json({ ok: true, richMenuId, linked: true, reqId: linkReqId });
-    } catch (err) {
-      console.error('[richmenu link] exception', err);
-      return res.status(500).json({ ok: false, error: 'link_exception', detail: String(err?.message || err), richMenuId });
-    }
+    return res.json({ ok: true, id: docRef.id, richMenuId, status: 'ready' });
   } catch (e) {
-    console.error('[richmenus test] error', e);
+    console.error('[richmenus save] error', e);
     return res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
   }
 });
 
-// ตั้ง rich menu เป็นค่าเริ่มต้นทั้ง OA (ทุกคนเห็น)
+// 6.x.3) Send test (create + upload + link to current user only)
+app.post('/api/tenants/:id/richmenus/test', requireFirebaseAuth, async (req, res) => {
+  try {
+    const uid = req.user.uid;
+    const { id } = req.params;
+
+    const tenant = await getTenantIfMember(id, uid);
+    if (!tenant) return res.status(403).json({ error: 'not_member_of_tenant' });
+    const accessToken = await getTenantSecretAccessToken(tenant.ref);
+
+    const { title = 'Test rich menu', size = 'large', imageUrl, chatBarText = 'Menu', areas = [] } = req.body || {};
+    if (!imageUrl) return res.status(400).json({ error: 'image_url_required' });
+
+    const WIDTH  = 2500;
+    const HEIGHT = size === 'compact' ? 843 : 1686;
+    const areasPx = toPxAreas({ areas, width: WIDTH, height: HEIGHT });
+
+    const { richMenuId } = await createAndUploadRichMenuOnLINE({
+      accessToken, title, chatBarText, size, areasPx, imageUrl
+    });
+
+    // link to current user (test)
+    const userSnap = await admin.firestore().doc(`users/${uid}`).get();
+    const to = userSnap.get('line.userId');
+    if (!to) return res.json({ ok: true, richMenuId, linked: false });
+
+    const linkResp = await fetchFn(
+      `https://api.line.me/v2/bot/user/${encodeURIComponent(to)}/richmenu/${encodeURIComponent(richMenuId)}`,
+      { method: 'POST', headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    const linkText = await linkResp.text();
+    if (!linkResp.ok) return res.status(linkResp.status).json({ ok: false, error: 'line_link_error', detail: linkText, richMenuId });
+
+    return res.json({ ok: true, richMenuId, linked: true });
+  } catch (e) {
+    console.error('[richmenus/test] error', e);
+    return res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
+  }
+});
+
+// ตั้ง default (มีอยู่เดิม)
 app.post('/api/tenants/:id/richmenus/set-default', requireFirebaseAuth, async (req, res) => {
   try {
     const { id } = req.params;
@@ -709,7 +710,7 @@ app.post('/api/tenants/:id/richmenus/set-default', requireFirebaseAuth, async (r
   }
 });
 
-// ลบ rich menu เฉพาะบุคคลของ user ที่ล็อกอิน (ให้กลับไปใช้ default)
+// ถอน default เฉพาะบุคคลของ user ที่ล็อกอิน (กลับไปใช้ default)
 app.post('/api/tenants/:id/richmenus/unlink-me', requireFirebaseAuth, async (req, res) => {
   try {
     const { id } = req.params;
@@ -810,6 +811,101 @@ app.post('/tasks/cron/broadcast', async (req, res) => {
 });
 
 
+// ✅ ใหม่: เปลี่ยน default rich menu ตามช่วงเวลา (Display period)
+app.post('/tasks/cron/richmenus', async (req, res) => {
+  try {
+    const sentKey = (req.get('X-App-Cron-Key') || '').trim();
+    const envKey  = (process.env.CRON_KEY || '').trim();
+    if (!envKey || sentKey !== envKey) return res.status(401).json({ error: 'unauthorized' });
+
+    const db = admin.firestore();
+    const now = admin.firestore.Timestamp.now();
+
+    // ดึงเอกสาร ready ที่เริ่มแสดงแล้ว (scheduleFrom <= now) ทั้งที่มีและไม่มี scheduleTo
+    const q1 = db.collectionGroup('richmenus')
+      .where('status', '==', 'ready')
+      .where('scheduleFrom', '<=', now)
+      .where('scheduleTo', '==', null)
+      .limit(100);
+
+    const q2 = db.collectionGroup('richmenus')
+      .where('status', '==', 'ready')
+      .where('scheduleFrom', '<=', now)
+      .where('scheduleTo', '>', now)
+      .limit(100);
+
+    const [s1, s2] = await Promise.all([q1.get(), q2.get()]);
+
+    // group by tenant
+    const byTenant = new Map(); // tenantId -> [{doc, data}]
+    function pushDoc(d) {
+      const tenantRef = d.ref.parent.parent;
+      if (!tenantRef) return;
+      const arr = byTenant.get(tenantRef.id) || [];
+      arr.push({ ref: d.ref, data: d.data(), tenantRef });
+      byTenant.set(tenantRef.id, arr);
+    }
+    s1.docs.forEach(pushDoc);
+    s2.docs.forEach(pushDoc);
+
+    // ต่อ tenant: เลือกอันที่ scheduleFrom ล่าสุด (ถ้าซ้ำช่วง)
+    const results = [];
+    for (const [tid, arr] of byTenant.entries()) {
+      arr.sort((a, b) => {
+        const af = a.data.scheduleFrom?.toMillis?.() || 0;
+        const bf = b.data.scheduleFrom?.toMillis?.() || 0;
+        return bf - af; // desc
+      });
+      const winner = arr[0]; // ตัวล่าสุด
+      if (!winner) continue;
+
+      // อ่าน access token
+      const accessToken = await getTenantSecretAccessToken(winner.tenantRef);
+
+      // อ่าน default ปัจจุบันก่อน เปลี่ยนเฉพาะเมื่อจำเป็น
+      let currentDefault = null;
+      try {
+        const cur = await fetchFn('https://api.line.me/v2/bot/user/all/richmenu', {
+          headers: { Authorization: `Bearer ${accessToken}` }
+        });
+        if (cur.ok) {
+          const j = await cur.json();
+          currentDefault = j.richMenuId || null;
+        }
+      } catch {}
+
+      const want = winner.data.lineRichMenuId;
+      if (!want || currentDefault === want) {
+        results.push({ tenantId: tid, action: 'noop', want, currentDefault });
+        continue;
+      }
+
+      // ตั้ง default
+      const r = await fetchFn('https://api.line.me/v2/bot/user/all/richmenu/' + encodeURIComponent(want), {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      const t = await r.text();
+      if (!r.ok) {
+        results.push({ tenantId: tid, action: 'failed', detail: t });
+      } else {
+        // อัพเดต flag ไว้ดูย้อนหลัง (ออปชัน)
+        await winner.ref.set({
+          lastAppliedAsDefaultAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+
+        results.push({ tenantId: tid, action: 'set-default', richMenuId: want });
+      }
+    }
+
+    return res.json({ ok: true, tenantsProcessed: results.length, results });
+  } catch (e) {
+    console.error('[cron richmenus] error', e);
+    return res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
+  }
+});
+
+
 // ==============================
 // 8) Health/Admin
 // ==============================
@@ -823,6 +919,7 @@ app.get('/admin-check', (_req, res) => {
     res.status(500).json({ ok: false, error: String(e) });
   }
 });
+
 
 
 // ==============================
