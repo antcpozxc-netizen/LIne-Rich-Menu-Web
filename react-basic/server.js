@@ -766,17 +766,22 @@ app.post('/api/tenants/:id/richmenus/test', requireFirebaseAuth, async (req, res
   }
 });
 
-// ตั้ง default (มีอยู่เดิม)
+// >>> UPDATED: set-default รองรับ docId หรือ richMenuId
 app.post('/api/tenants/:id/richmenus/set-default', requireFirebaseAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    const { richMenuId } = req.body || {};
-    if (!richMenuId) return res.status(400).json({ error: 'richMenuId_required' });
+    let { richMenuId, docId } = req.body || {};
 
     const tenant = await getTenantIfMember(id, req.user.uid);
     if (!tenant) return res.status(403).json({ error: 'not_member_of_tenant' });
 
     const accessToken = await getTenantSecretAccessToken(tenant.ref);
+
+    if (!richMenuId && docId) {
+      const snap = await tenant.ref.collection('richmenus').doc(docId).get();
+      richMenuId = snap.get('lineRichMenuId');
+    }
+    if (!richMenuId) return res.status(400).json({ error: 'richMenuId_required' });
 
     const r = await fetchFn(
       'https://api.line.me/v2/bot/user/all/richmenu/' + encodeURIComponent(richMenuId),
@@ -791,31 +796,44 @@ app.post('/api/tenants/:id/richmenus/set-default', requireFirebaseAuth, async (r
   }
 });
 
-// ถอน default เฉพาะบุคคลของ user ที่ล็อกอิน (กลับไปใช้ default)
-app.post('/api/tenants/:id/richmenus/unlink-me', requireFirebaseAuth, async (req, res) => {
+// >>> NEW: ลบ rich menu (ลบบน LINE และเอกสาร)
+app.delete('/api/tenants/:id/richmenus/:docId', requireFirebaseAuth, async (req, res) => {
   try {
-    const { id } = req.params;
+    const { id, docId } = req.params;
     const tenant = await getTenantIfMember(id, req.user.uid);
     if (!tenant) return res.status(403).json({ error: 'not_member_of_tenant' });
 
     const accessToken = await getTenantSecretAccessToken(tenant.ref);
-    const userSnap = await admin.firestore().doc(`users/${req.user.uid}`).get();
-    const to = userSnap.get('line.userId');
-    if (!to) return res.status(400).json({ error: 'user_has_no_line_id' });
 
-    const r = await fetchFn(`https://api.line.me/v2/bot/user/${encodeURIComponent(to)}/richmenu`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    const t = await r.text();
-    if (!r.ok) return res.status(r.status).json({ error: 'line_unlink_error', detail: t });
+    const docRef = tenant.ref.collection('richmenus').doc(docId);
+    const snap = await docRef.get();
+    if (!snap.exists) return res.status(404).json({ error: 'not_found' });
+    const data = snap.data() || {};
+    const rmId = data.lineRichMenuId;
 
+    if (rmId) {
+      // ถ้าเป็น default ปัจจุบันให้พยายาม unset ก่อน (best-effort)
+      try {
+        const cur = await fetchFn('https://api.line.me/v2/bot/user/all/richmenu', { headers: { Authorization: `Bearer ${accessToken}` } });
+        if (cur.ok) {
+          const j = await cur.json();
+          if (j.richMenuId === rmId) {
+            await fetchFn('https://api.line.me/v2/bot/user/all/richmenu', { method: 'DELETE', headers: { Authorization: `Bearer ${accessToken}` } }).catch(()=>{});
+          }
+        }
+      } catch {}
+
+      await fetchFn('https://api.line.me/v2/bot/richmenu/' + encodeURIComponent(rmId), {
+        method: 'DELETE', headers: { Authorization: `Bearer ${accessToken}` }
+      }).catch(()=>{}); // เผื่อถูกลบไปแล้ว
+    }
+
+    await docRef.delete();
     return res.json({ ok: true });
   } catch (e) {
     return res.status(500).json({ error: 'server_error', detail: String(e) });
   }
 });
-
 
 
 // ==============================

@@ -6,8 +6,8 @@ import {
 } from '@mui/material';
 import { useOutletContext, useNavigate, useSearchParams } from 'react-router-dom';
 import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
-import { db } from '../firebase';
-import { Add as AddIcon, OpenInNew as OpenIcon } from '@mui/icons-material';
+import { db, auth } from '../firebase';
+import { Add as AddIcon, OpenInNew as OpenIcon, Delete as DeleteIcon } from '@mui/icons-material';
 
 function periodText(item) {
   const from =
@@ -17,6 +17,12 @@ function periodText(item) {
   const fmt = (d) => (d ? d.toLocaleString() : '-');
   if (from || to) return `${fmt(from)} - ${fmt(to)}`;
   return '—';
+}
+
+async function authHeader() {
+  if (!auth.currentUser) throw new Error('ยังไม่พบผู้ใช้ที่ล็อกอิน');
+  const idToken = await auth.currentUser.getIdToken();
+  return { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` };
 }
 
 export default function RichMenusListPage() {
@@ -39,7 +45,7 @@ export default function RichMenusListPage() {
     return () => off();
   }, [tenantId]);
 
-  // แท็บ "Scheduled/Active" = ready ที่มีช่วงเวลา
+  // "Scheduled/Active" = ready with schedule window set
   const scheduledActive = useMemo(
     () =>
       rows.filter(
@@ -50,7 +56,7 @@ export default function RichMenusListPage() {
     [rows]
   );
 
-  // แท็บ "Ready" = ready ที่ไม่มีช่วงเวลา
+  // "Ready" = ready without schedule
   const readyList = useMemo(
     () =>
       rows.filter(
@@ -61,6 +67,21 @@ export default function RichMenusListPage() {
   );
 
   const data = tab === 'active' ? scheduledActive : readyList;
+
+  async function deleteMenu(docId) {
+    try {
+      if (!tenantId) return alert('กรุณาเลือก OA ก่อน');
+      if (!window.confirm('ลบ rich menu นี้หรือไม่?')) return;
+      const headers = await authHeader();
+      const r = await fetch(`/api/tenants/${tenantId}/richmenus/${docId}`, { method: 'DELETE', headers });
+      if (!r.ok) {
+        const t = await r.text();
+        alert('ลบไม่สำเร็จ: ' + (t || r.status));
+      }
+    } catch (e) {
+      alert('ลบไม่สำเร็จ: ' + (e?.message || e));
+    }
+  }
 
   return (
     <Container sx={{ py: 3 }}>
@@ -93,7 +114,15 @@ export default function RichMenusListPage() {
                 direction="row"
                 alignItems="center"
                 spacing={2}
-                sx={{ p: 1, borderBottom: '1px solid #eee' }}
+                sx={{
+                  p: 1,
+                  borderBottom: '1px solid #eee',
+                  cursor: 'pointer',
+                  '&:hover': { bgcolor: 'action.hover' }
+                }}
+                onClick={() =>
+                  navigate(`/homepage/rich-menus/new?tenant=${tenant}&draft=${item.id}`)
+                }
               >
                 <Box
                   component="img"
@@ -119,15 +148,26 @@ export default function RichMenusListPage() {
                   </Stack>
                 </Box>
 
-                <Tooltip title="Open">
-                  <IconButton
-                    onClick={() =>
-                      navigate(`/homepage/rich-menus/new?tenant=${tenant}&draft=${item.id}`)
-                    }
-                  >
-                    <OpenIcon />
-                  </IconButton>
-                </Tooltip>
+                <Stack direction="row" spacing={0.5}>
+                  <Tooltip title="Open">
+                    <IconButton
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/homepage/rich-menus/new?tenant=${tenant}&draft=${item.id}`);
+                      }}
+                    >
+                      <OpenIcon />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="Delete">
+                    <IconButton
+                      color="error"
+                      onClick={(e) => { e.stopPropagation(); deleteMenu(item.id); }}
+                    >
+                      <DeleteIcon />
+                    </IconButton>
+                  </Tooltip>
+                </Stack>
               </Stack>
             ))
           )}

@@ -4,13 +4,13 @@ import {
   Box, Button, Card, CardContent, Container, Grid,
   MenuItem, Radio, RadioGroup, Select, Stack,
   TextField, Typography, Dialog, DialogTitle, DialogContent,
-  DialogActions, Paper, FormControlLabel, Snackbar, Chip
+  DialogActions, Paper, FormControlLabel, Snackbar, Chip,
+  IconButton, Tooltip
 } from '@mui/material';
 import {
   Save as SaveIcon,
   SaveAlt as SaveAltIcon,
   Image as ImageIcon,
-  Send as SendIcon,
   CropSquare as AreaIcon,
   Delete as DeleteIcon,
 } from '@mui/icons-material';
@@ -18,10 +18,10 @@ import { useOutletContext, useNavigate, useSearchParams } from 'react-router-dom
 import { ref as sref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { auth, storage } from '../firebase';
 
-// ============================= Consts =============================
+// ============================= Constants =============================
 const STORAGE_KEY = 'richMenuDraft';
 
-// -------- Template presets (6×4 grid)
+// Template presets (6×4 grid)
 const TEMPLATES = [
   // Large (2500×1686)
   { id: 'lg-1x1-1x1-1x1-1x1-1x1-1x1', label: 'Large • 6 blocks (2×2 × 6)', size: 'large',
@@ -50,10 +50,10 @@ const TEMPLATES = [
     preview: [[0,0,6,4]] },
 ];
 
-// -------- Action choices
+// Action choices
 const ACTION_OPTIONS = ['Select', 'Link', 'Text', 'QnA', 'Live Chat', 'No action'];
 
-// ---- utilities
+// Utilities
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const pctClamp = (n) => Math.round(clamp(Number(n) || 0, 0, 100) * 100) / 100;
 
@@ -152,34 +152,42 @@ function TemplateModal({ open, onClose, value, onApply }) {
   const [selected, setSelected] = useState(value?.id || TEMPLATES[0].id);
   useEffect(() => { if (value?.id) setSelected(value.id); }, [value]);
 
+  const renderTile = (t) => (
+    <Grid item xs={12} sm={6} md={4} key={t.id}>
+      <Paper
+        variant="outlined"
+        onClick={() => setSelected(t.id)}
+        sx={{ p: 1, cursor: 'pointer', outline: selected === t.id ? '2px solid #66bb6a' : 'none', borderRadius: 2 }}
+      >
+        <Typography variant="subtitle2" sx={{ mb: .5 }}>{t.label}</Typography>
+        <Box sx={{ position: 'relative', width: '100%', pt: '66%', bgcolor: '#f5f5f5', borderRadius: 1, overflow: 'hidden' }}>
+          {t.preview.map((cell, i) => {
+            const [x, y, w, h] = cell;
+            const left = (x / 6) * 100, top = (y / 4) * 100, width = (w / 6) * 100, height = (h / 4) * 100;
+            return (
+              <Box key={i} sx={{
+                position: 'absolute', left: `${left}%`, top: `${top}%`, width: `${width}%`, height: `${height}%`,
+                border: '2px solid rgba(76,175,80,.9)', background: 'rgba(76,175,80,.15)', borderRadius: 1,
+              }} />
+            );
+          })}
+        </Box>
+      </Paper>
+    </Grid>
+  );
+
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle>Select a template</DialogTitle>
       <DialogContent dividers>
+        <Typography variant="subtitle2" sx={{ mb: 1 }}>Large</Typography>
+        <Grid container spacing={2} sx={{ mb: 2 }}>
+          {TEMPLATES.filter(t => t.size === 'large').map(renderTile)}
+        </Grid>
+
+        <Typography variant="subtitle2" sx={{ mb: 1 }}>Compact</Typography>
         <Grid container spacing={2}>
-          {TEMPLATES.map((t) => (
-            <Grid item xs={12} sm={6} md={4} key={t.id}>
-              <Paper
-                variant="outlined"
-                onClick={() => setSelected(t.id)}
-                sx={{ p: 1, cursor: 'pointer', outline: selected === t.id ? '2px solid #66bb6a' : 'none', borderRadius: 2 }}
-              >
-                <Typography variant="subtitle2" sx={{ mb: .5 }}>{t.label}</Typography>
-                <Box sx={{ position: 'relative', width: '100%', pt: '66%', bgcolor: '#f5f5f5', borderRadius: 1, overflow: 'hidden' }}>
-                  {t.preview.map((cell, i) => {
-                    const [x, y, w, h] = cell;
-                    const left = (x / 6) * 100, top = (y / 4) * 100, width = (w / 6) * 100, height = (h / 4) * 100;
-                    return (
-                      <Box key={i} sx={{
-                        position: 'absolute', left: `${left}%`, top: `${top}%`, width: `${width}%`, height: `${height}%`,
-                        border: '2px solid rgba(76,175,80,.9)', background: 'rgba(76,175,80,.15)', borderRadius: 1,
-                      }} />
-                    );
-                  })}
-                </Box>
-              </Paper>
-            </Grid>
-          ))}
+          {TEMPLATES.filter(t => t.size === 'compact').map(renderTile)}
         </Grid>
       </DialogContent>
       <DialogActions>
@@ -206,16 +214,17 @@ export default function RichMenusPage() {
   const [snack, setSnack] = useState('');
   const [templateOpen, setTemplateOpen] = useState(false);
 
-  const [title, setTitle] = useState('Test rich menu');
+  // Start with empty title (no default value)
+  const [title, setTitle] = useState('');
   const [template, setTemplate] = useState(TEMPLATES.find(t => t.id === 'lg-3+3+full') || TEMPLATES[0]);
-  
+
   const [image, setImage] = useState('');  // public URL (Firebase)
   const [menuBarLabel, setMenuBarLabel] = useState('Menu');
   const [behavior, setBehavior] = useState('shown'); // 'shown' | 'collapsed'
   const [periodFrom, setPeriodFrom] = useState(''); // YYYY-MM-DDTHH:mm (local)
   const [periodTo, setPeriodTo] = useState('');
 
-  // areas (percent 0..100)
+  // Areas (percent 0..100)
   const gridToAreas = (cells) =>
     cells.map((c, i) => {
       const [x, y, w, h] = c;
@@ -232,17 +241,17 @@ export default function RichMenusPage() {
   const [areas, setAreas] = useState(() => gridToAreas(_tpl0.preview));
   const [actions, setActions] = useState(() => Array.from({ length: _tpl0.preview.length }, () => ({ type: 'Select' })));
 
-  // overlay & drag
+  // Overlay & drag
   const overlayRef = useRef(null);
   const [selected, setSelected] = useState('A1');
   const [drag, setDrag] = useState(null);
   const MIN_W = 5, MIN_H = 5;
 
-  // file upload
+  // File upload
   const fileRef = useRef(null);
 
   useEffect(() => {
-    // โหลดดราฟท์เดิม (local storage – optional)
+    // Load local draft (optional)
     const d = readDraft();
     if (d?.title) setTitle(d.title);
     if (d?.menuBarLabel != null) setMenuBarLabel(d.menuBarLabel);
@@ -377,10 +386,9 @@ export default function RichMenusPage() {
     } catch { return u; }
   };
 
-  // ส่งข้อมูลการกระทำแบบที่ backend แมปไป LINE ได้ง่าย
+  // Send areas + actions in a backend-friendly shape
   const toNormalized = (a, i) => {
     const act = actions[i] || { type: 'No action' };
-    // ไม่ convert เป็นรูปแบบ LINE ตรง ๆ ที่นี่ — ส่ง type+fields ให้ backend ตัดสินใจ
     return {
       xPct: pctClamp(a.x) / 100,
       yPct: pctClamp(a.y) / 100,
@@ -390,7 +398,6 @@ export default function RichMenusPage() {
     };
   };
 
-  // แทนที่ของเดิม
   const buildPayload = (includeSchedule = false) => ({
     title,
     size: template.size,
@@ -406,7 +413,6 @@ export default function RichMenusPage() {
       : null,
   });
 
-
   const onSaveDraft = async () => {
     try {
       if (!tenantId) return alert('กรุณาเลือก OA ก่อน');
@@ -416,7 +422,7 @@ export default function RichMenusPage() {
       const res = await fetch(`/api/tenants/${tenantId}/richmenus`, {
         method: 'POST',
         headers,
-        body: JSON.stringify(buildPayload(false)), // << ไม่ใส่ schedule
+        body: JSON.stringify(buildPayload(false)), // save as Ready
       });
 
       const text = await res.text();
@@ -429,26 +435,37 @@ export default function RichMenusPage() {
     }
   };
 
-  // Save = SCHEDULED/ACTIVE (ถ้ามีช่วงเวลา)
+  // Save: if no schedule → activate now (set-default). If has schedule → Scheduled.
   const onSaveReady = async () => {
     try {
       if (!tenantId) return alert('กรุณาเลือก OA ก่อน');
       if (!image)   return alert('กรุณาอัปโหลดรูปเมนู');
-      if (!periodFrom) return alert('กรุณาเลือก Display from ก่อนเพื่อทำ Scheduled/Active');
 
       const headers = await authHeader();
+      const hasSchedule = !!periodFrom;
 
       const res = await fetch(`/api/tenants/${tenantId}/richmenus`, {
         method: 'POST',
         headers,
-        body: JSON.stringify(buildPayload(true)), // << ใส่ schedule ถ้ากรอก
+        body: JSON.stringify(buildPayload(hasSchedule)),
       });
 
       const text = await res.text();
       if (!res.ok) throw new Error(text || 'save failed');
+      const data = JSON.parse(text || '{}');
 
-      // ข้อความแจ้งให้เข้าใจว่าไปแท็บไหน
-      setSnack(periodFrom ? 'Saved as Scheduled/Active' : 'Saved as Ready');
+      if (!hasSchedule && data?.richMenuId) {
+        // Activate immediately
+        await fetch(`/api/tenants/${tenantId}/richmenus/set-default`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ richMenuId: data.richMenuId }),
+        }).catch(() => {});
+        setSnack('Saved & Activated (Active now)');
+      } else {
+        setSnack('Saved as Scheduled');
+      }
+
       navigate(`/homepage/rich-menus?tenant=${tenantId || ''}`);
     } catch (e) {
       alert('บันทึกไม่สำเร็จ: ' + (e?.message || e));
@@ -464,7 +481,7 @@ export default function RichMenusPage() {
         alignItems="center"
         sx={{ mb: 2 }}
       >
-        {/* ซ้าย: ปุ่ม Back + Title */}
+        {/* Left: Back + Title */}
         <Stack direction="row" spacing={1} alignItems="center">
           <Button
             variant="outlined"
@@ -477,7 +494,7 @@ export default function RichMenusPage() {
           </Typography>
         </Stack>
 
-        {/* ขวา: ปุ่ม Save draft / Save */}
+        {/* Right: Save draft / Save */}
         <Stack direction="row" spacing={1}>
           <Button
             variant="outlined"
@@ -569,8 +586,8 @@ export default function RichMenusPage() {
                 />
               </Stack>
               <Typography variant="caption" color="text.secondary">
-                ถ้าเว้นว่าง ระบบจะสร้างเป็น Ready โดยไม่มีตารางเวลา (ไม่ตั้ง
-                default อัตโนมัติ)
+                ถ้ากด <b>Save</b> โดย **ไม่ตั้งช่วงเวลา** ระบบจะสร้างและตั้งเป็น <b>Active (default)</b> ทันที •
+                ถ้ากด <b>Save draft</b> จะบันทึกเป็น <b>Ready</b>
               </Typography>
             </Grid>
           </Grid>
@@ -637,10 +654,11 @@ export default function RichMenusPage() {
                 onMouseDown={() => setSelected(null)}
               >
                 {image ? (
+                  // Preview is fixed inside box without resizing original file
                   <img
                     src={image}
                     alt=""
-                    style={{ width: "100%", display: "block" }}
+                    style={{ width: "100%", height: "100%", display: "block", objectFit: "contain" }}
                   />
                 ) : (
                   <Box
@@ -774,8 +792,8 @@ export default function RichMenusPage() {
         onClose={() => setTemplateOpen(false)}
         value={template}
         onApply={(tpl) => {
-          applyTemplate(tpl); // จัดวาง areas ตาม template
-          setTemplateOpen(false); // ปิด popup ทันที
+          applyTemplate(tpl);
+          setTemplateOpen(false);
           setSnack("Template applied");
         }}
       />
@@ -788,5 +806,4 @@ export default function RichMenusPage() {
       />
     </Container>
   );
-
 }
