@@ -118,6 +118,87 @@ function withAltMedia(u) {
   }
 }
 
+// === Helpers for Rich Menu ===
+function mapActionForLINE(a = {}) {
+  switch (a.type) {
+    case 'Link':
+      return { type: 'uri', label: (a.label || 'Open').slice(0, 20), uri: a.url || 'https://example.com' };
+    case 'Text':
+      return { type: 'message', text: a.text || 'Hello!' };
+    case 'QnA':
+      return { type: 'postback', data: a.data || 'qna', displayText: a.label || 'QnA' };
+    case 'Live Chat':
+      return { type: 'message', text: a.text || '#live' };
+    default:
+      return { type: 'postback', data: 'noop' };
+  }
+}
+
+function toPxAreas({ areas = [], width = 2500, height = 1686 }) {
+  return areas.map((a) => ({
+    bounds: {
+      x: Math.round((Number(a.xPct) || 0) * width),
+      y: Math.round((Number(a.yPct) || 0) * height),
+      width: Math.round((Number(a.wPct) || 0) * width),
+      height: Math.round((Number(a.hPct) || 0) * height),
+    },
+    action: mapActionForLINE(a.action || {}),
+  }));
+}
+
+async function createAndUploadRichMenuOnLINE({ accessToken, title, chatBarText, size, areasPx, imageUrl }) {
+  const WIDTH = 2500;
+  const HEIGHT = size === 'compact' ? 843 : 1686;
+
+  // 1) Create rich menu
+  const createBody = {
+    size: { width: WIDTH, height: HEIGHT },
+    selected: false,
+    name: String(title || 'RichMenu').slice(0, 300),
+    chatBarText: String(chatBarText || 'Menu').slice(0, 14),
+    areas: areasPx,
+  };
+
+  const createResp = await fetchFn('https://api.line.me/v2/bot/richmenu', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(createBody),
+  });
+  const createText = await createResp.text();
+  if (!createResp.ok) throw new Error(`LINE create error: ${createText}`);
+  const { richMenuId } = JSON.parse(createText) || {};
+  if (!richMenuId) throw new Error('LINE create returned no richMenuId');
+
+  // 2) Download image (force bytes) and upload to LINE
+  const downloadUrl = withAltMedia(imageUrl);
+  const imgResp = await fetchFn(downloadUrl);
+  if (!imgResp.ok) throw new Error(`image fetch failed: ${await imgResp.text().catch(()=> '') || imgResp.statusText}`);
+
+  let imgType = imgResp.headers.get('content-type') || '';
+  let imgBuf = Buffer.from(await imgResp.arrayBuffer());
+  if (!/^image\/(png|jpeg)$/i.test(imgType)) {
+    if (imgBuf[0] === 0x89 && imgBuf[1] === 0x50) imgType = 'image/png';
+    else if (imgBuf[0] === 0xff && imgBuf[1] === 0xd8) imgType = 'image/jpeg';
+    else imgType = 'image/jpeg';
+  }
+
+  const upResp = await fetchFn(`https://api-data.line.me/v2/bot/richmenu/${encodeURIComponent(richMenuId)}/content`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': imgType },
+    body: imgBuf,
+  });
+  const upText = await upResp.text();
+  if (!upResp.ok) {
+    // best effort cleanup
+    await fetchFn(`https://api.line.me/v2/bot/richmenu/${encodeURIComponent(richMenuId)}`, {
+      method: 'DELETE', headers: { Authorization: `Bearer ${accessToken}` },
+    }).catch(()=>{});
+    throw new Error(`LINE upload error: ${upText}`);
+  }
+
+  return { richMenuId };
+}
+
 
 // ==============================
 // 4) LINE Login
