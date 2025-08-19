@@ -14,7 +14,7 @@ import {
   CropSquare as AreaIcon,
   Delete as DeleteIcon,
 } from '@mui/icons-material';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, useNavigate, useSearchParams } from 'react-router-dom';
 import { ref as sref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { auth, storage } from '../firebase';
 
@@ -199,12 +199,16 @@ function TemplateModal({ open, onClose, value, onApply }) {
 // ============================= Page =============================
 export default function RichMenusPage() {
   const { tenantId } = useOutletContext() || {};
+  const navigate = useNavigate();
+  const [sp] = useSearchParams();
+  const tenant = sp.get('tenant') || '';
 
   const [snack, setSnack] = useState('');
   const [templateOpen, setTemplateOpen] = useState(false);
 
   const [title, setTitle] = useState('Test rich menu');
-  const [template, setTemplate] = useState(TEMPLATES[0]);
+  const [template, setTemplate] = useState(TEMPLATES.find(t => t.id === 'lg-3+3+full') || TEMPLATES[0]);
+  
   const [image, setImage] = useState('');  // public URL (Firebase)
   const [menuBarLabel, setMenuBarLabel] = useState('Menu');
   const [behavior, setBehavior] = useState('shown'); // 'shown' | 'collapsed'
@@ -224,8 +228,9 @@ export default function RichMenusPage() {
       };
     });
 
-  const [areas, setAreas] = useState(() => gridToAreas(TEMPLATES[0].preview));
-  const [actions, setActions] = useState(() => Array.from({ length: TEMPLATES[0].preview.length }, () => ({ type: 'Select' })));
+  const _tpl0 = TEMPLATES.find(t => t.id === 'lg-3+3+full') || TEMPLATES[0];
+  const [areas, setAreas] = useState(() => gridToAreas(_tpl0.preview));
+  const [actions, setActions] = useState(() => Array.from({ length: _tpl0.preview.length }, () => ({ type: 'Select' })));
 
   // overlay & drag
   const overlayRef = useRef(null);
@@ -410,6 +415,7 @@ export default function RichMenusPage() {
       if (!res.ok) throw new Error(text || 'save draft failed');
       writeDraft({ ...buildPayload(), templateId: template.id }); // เก็บ local เฉย ๆ ด้วย
       setSnack('Draft saved');
+      navigate('/homepage/rich-menus');
     } catch (e) {
       alert('บันทึกดราฟท์ไม่สำเร็จ: ' + (e?.message || e));
     }
@@ -439,16 +445,40 @@ export default function RichMenusPage() {
   // ============================= Render =============================
   return (
     <Container sx={{ py: 3 }}>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
-        <Typography variant="h4" fontWeight="bold">Rich menu</Typography>
+      <Stack
+        direction="row"
+        justifyContent="space-between"
+        alignItems="center"
+        sx={{ mb: 2 }}
+      >
+        {/* ซ้าย: ปุ่ม Back + Title */}
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Button
+            variant="outlined"
+            onClick={() => navigate(`/homepage/rich-menus?tenant=${tenant}`)}
+          >
+            Back to list
+          </Button>
+          <Typography variant="h4" fontWeight="bold">
+            Rich menu
+          </Typography>
+        </Stack>
+
+        {/* ขวา: ปุ่ม Save draft / Save */}
         <Stack direction="row" spacing={1}>
-          <Button variant="outlined" startIcon={<SaveAltIcon />} onClick={onSaveDraft}>Save draft</Button>
+          <Button
+            variant="outlined"
+            startIcon={<SaveAltIcon />}
+            onClick={onSaveDraft}
+          >
+            Save draft
+          </Button>
           <Button
             variant="contained"
             startIcon={<SaveIcon />}
             disabled={!canSave}
             onClick={onSaveReady}
-            sx={{ bgcolor: '#66bb6a', '&:hover': { bgcolor: '#57aa5b' } }}
+            sx={{ bgcolor: "#66bb6a", "&:hover": { bgcolor: "#57aa5b" } }}
           >
             Save
           </Button>
@@ -464,22 +494,41 @@ export default function RichMenusPage() {
                 label="Title (for management)"
                 fullWidth
                 value={title}
-                onChange={(e) => setTitle((e.target.value || '').slice(0, 30))}
+                onChange={(e) => setTitle((e.target.value || "").slice(0, 30))}
                 helperText={`${title.length}/30`}
               />
             </Grid>
             <Grid item xs={12} md={6}>
-              <Stack direction="row" spacing={2} alignItems="center" sx={{ height: '100%' }}>
+              <Stack
+                direction="row"
+                spacing={2}
+                alignItems="center"
+                sx={{ height: "100%" }}
+              >
                 <TextField
                   label="Chat bar label"
                   size="small"
                   value={menuBarLabel}
-                  onChange={(e) => setMenuBarLabel((e.target.value || '').slice(0, 14))}
+                  onChange={(e) =>
+                    setMenuBarLabel((e.target.value || "").slice(0, 14))
+                  }
                   helperText={`${menuBarLabel.length}/14`}
                 />
-                <RadioGroup row value={behavior} onChange={(e) => setBehavior(e.target.value)}>
-                  <FormControlLabel value="shown" control={<Radio />} label="Shown" />
-                  <FormControlLabel value="collapsed" control={<Radio />} label="Collapsed" />
+                <RadioGroup
+                  row
+                  value={behavior}
+                  onChange={(e) => setBehavior(e.target.value)}
+                >
+                  <FormControlLabel
+                    value="shown"
+                    control={<Radio />}
+                    label="Shown"
+                  />
+                  <FormControlLabel
+                    value="collapsed"
+                    control={<Radio />}
+                    label="Collapsed"
+                  />
                 </RadioGroup>
               </Stack>
             </Grid>
@@ -507,7 +556,8 @@ export default function RichMenusPage() {
                 />
               </Stack>
               <Typography variant="caption" color="text.secondary">
-                ถ้าเว้นว่าง ระบบจะสร้างเป็น Ready โดยไม่มีตารางเวลา (ไม่ตั้ง default อัตโนมัติ)
+                ถ้าเว้นว่าง ระบบจะสร้างเป็น Ready โดยไม่มีตารางเวลา (ไม่ตั้ง
+                default อัตโนมัติ)
               </Typography>
             </Grid>
           </Grid>
@@ -519,29 +569,76 @@ export default function RichMenusPage() {
         <Grid item xs={12} md={6}>
           <Card variant="outlined">
             <CardContent>
-              <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
-                <Typography variant="subtitle1" fontWeight="bold">Menu image & areas</Typography>
+              <Stack
+                direction="row"
+                justifyContent="space-between"
+                alignItems="center"
+                sx={{ mb: 1 }}
+              >
+                <Typography variant="subtitle1" fontWeight="bold">
+                  Menu image & areas
+                </Typography>
                 <Stack direction="row" spacing={1}>
-                  <Button variant="outlined" onClick={() => applyTemplate(template)}>Reset to template</Button>
-                  <Button variant="outlined" onClick={() => setTemplateOpen(true)}>Template</Button>
-                  <Button variant="outlined" startIcon={<ImageIcon />} onClick={() => fileRef.current?.click()}>Change</Button>
-                  <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => e.target.files?.[0] && uploadImage(e.target.files[0])} />
+                  <Button
+                    variant="outlined"
+                    onClick={() => applyTemplate(template)}
+                  >
+                    Reset to template
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    onClick={() => setTemplateOpen(true)}
+                  >
+                    Template
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    startIcon={<ImageIcon />}
+                    onClick={() => fileRef.current?.click()}
+                  >
+                    Change
+                  </Button>
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept="image/*"
+                    hidden
+                    onChange={(e) =>
+                      e.target.files?.[0] && uploadImage(e.target.files[0])
+                    }
+                  />
                 </Stack>
               </Stack>
 
               <Box
                 ref={overlayRef}
                 sx={{
-                  position: 'relative', border: '1px dashed #ccc', borderRadius: 1, overflow: 'hidden',
-                  background: '#fafafa',
-                  aspectRatio: template.size === 'compact' ? '2500 / 843' : '2500 / 1686',
+                  position: "relative",
+                  border: "1px dashed #ccc",
+                  borderRadius: 1,
+                  overflow: "hidden",
+                  background: "#fafafa",
+                  aspectRatio:
+                    template.size === "compact" ? "2500 / 843" : "2500 / 1686",
                 }}
                 onMouseDown={() => setSelected(null)}
               >
                 {image ? (
-                  <img src={image} alt="" style={{ width: '100%', display: 'block' }} />
+                  <img
+                    src={image}
+                    alt=""
+                    style={{ width: "100%", display: "block" }}
+                  />
                 ) : (
-                  <Box sx={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: 'text.secondary' }}>
+                  <Box
+                    sx={{
+                      position: "absolute",
+                      inset: 0,
+                      display: "grid",
+                      placeItems: "center",
+                      color: "text.secondary",
+                    }}
+                  >
                     <Typography>No image</Typography>
                   </Box>
                 )}
@@ -552,31 +649,58 @@ export default function RichMenusPage() {
                     <Box
                       key={a.id}
                       onMouseDown={(e) => startMove(a.id, e)}
-                      onClick={(e) => { e.stopPropagation(); setSelected(a.id); }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelected(a.id);
+                      }}
                       sx={{
-                        position: 'absolute',
-                        left: `${pctClamp(a.x)}%`, top: `${pctClamp(a.y)}%`,
-                        width: `${pctClamp(a.w)}%`, height: `${pctClamp(a.h)}%`,
-                        border: '2px solid', borderColor: isSel ? '#2e7d32' : 'rgba(46,125,50,.5)',
-                        background: isSel ? 'rgba(102,187,106,.15)' : 'rgba(102,187,106,.08)',
-                        cursor: 'move',
+                        position: "absolute",
+                        left: `${pctClamp(a.x)}%`,
+                        top: `${pctClamp(a.y)}%`,
+                        width: `${pctClamp(a.w)}%`,
+                        height: `${pctClamp(a.h)}%`,
+                        border: "2px solid",
+                        borderColor: isSel
+                          ? "#2e7d32"
+                          : "rgba(46,125,50,.5)",
+                        background: isSel
+                          ? "rgba(102,187,106,.15)"
+                          : "rgba(102,187,106,.08)",
+                        cursor: "move",
                       }}
                       title={`Block ${idx + 1}`}
                     >
                       {/* resize handles */}
-                      {['nw','n','ne','e','se','s','sw','w'].map(h => (
-                        <Box key={h}
+                      {["nw", "n", "ne", "e", "se", "s", "sw", "w"].map((h) => (
+                        <Box
+                          key={h}
                           onMouseDown={(e) => startResize(a.id, h, e)}
                           sx={{
-                            position: 'absolute', width: 10, height: 10, bgcolor: isSel ? '#2e7d32' : '#66bb6a', borderRadius: '2px',
-                            ...(h === 'nw' && { left: -5, top: -5 }),
-                            ...(h === 'n'  && { left: 'calc(50% - 5px)', top: -5 }),
-                            ...(h === 'ne' && { right: -5, top: -5 }),
-                            ...(h === 'e'  && { right: -5, top: 'calc(50% - 5px)' }),
-                            ...(h === 'se' && { right: -5, bottom: -5 }),
-                            ...(h === 's'  && { left: 'calc(50% - 5px)', bottom: -5 }),
-                            ...(h === 'sw' && { left: -5, bottom: -5 }),
-                            ...(h === 'w'  && { left: -5, top: 'calc(50% - 5px)' }),
+                            position: "absolute",
+                            width: 10,
+                            height: 10,
+                            bgcolor: isSel ? "#2e7d32" : "#66bb6a",
+                            borderRadius: "2px",
+                            ...(h === "nw" && { left: -5, top: -5 }),
+                            ...(h === "n" && {
+                              left: "calc(50% - 5px)",
+                              top: -5,
+                            }),
+                            ...(h === "ne" && { right: -5, top: -5 }),
+                            ...(h === "e" && {
+                              right: -5,
+                              top: "calc(50% - 5px)",
+                            }),
+                            ...(h === "se" && { right: -5, bottom: -5 }),
+                            ...(h === "s" && {
+                              left: "calc(50% - 5px)",
+                              bottom: -5,
+                            }),
+                            ...(h === "sw" && { left: -5, bottom: -5 }),
+                            ...(h === "w" && {
+                              left: -5,
+                              top: "calc(50% - 5px)",
+                            }),
                           }}
                         />
                       ))}
@@ -586,8 +710,18 @@ export default function RichMenusPage() {
               </Box>
 
               <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-                <Button startIcon={<AreaIcon />} onClick={addArea}>Add area</Button>
-                {selected && <Button color="error" startIcon={<DeleteIcon />} onClick={() => removeArea(selected)}>Remove selected</Button>}
+                <Button startIcon={<AreaIcon />} onClick={addArea}>
+                  Add area
+                </Button>
+                {selected && (
+                  <Button
+                    color="error"
+                    startIcon={<DeleteIcon />}
+                    onClick={() => removeArea(selected)}
+                  >
+                    Remove selected
+                  </Button>
+                )}
               </Stack>
             </CardContent>
           </Card>
@@ -597,13 +731,23 @@ export default function RichMenusPage() {
         <Grid item xs={12} md={6}>
           <Card variant="outlined">
             <CardContent>
-              <Typography variant="subtitle1" fontWeight="bold" sx={{ mb: 1 }}>Actions</Typography>
+              <Typography
+                variant="subtitle1"
+                fontWeight="bold"
+                sx={{ mb: 1 }}
+              >
+                Actions
+              </Typography>
               {areas.map((a, i) => (
                 <ActionEditor
                   key={a.id}
                   idx={i}
-                  action={actions[i] || { type: 'Select' }}
-                  onChange={(next) => setActions(prev => prev.map((p, idx) => idx === i ? next : p))}
+                  action={actions[i] || { type: "Select" }}
+                  onChange={(next) =>
+                    setActions((prev) =>
+                      prev.map((p, idx) => (idx === i ? next : p))
+                    )
+                  }
                 />
               ))}
             </CardContent>
@@ -616,10 +760,20 @@ export default function RichMenusPage() {
         open={templateOpen}
         onClose={() => setTemplateOpen(false)}
         value={template}
-        onApply={applyTemplate}
+        onApply={(tpl) => {
+          applyTemplate(tpl); // จัดวาง areas ตาม template
+          setTemplateOpen(false); // ปิด popup ทันที
+          setSnack("Template applied");
+        }}
       />
 
-      <Snackbar open={!!snack} autoHideDuration={2200} onClose={() => setSnack('')} message={snack} />
+      <Snackbar
+        open={!!snack}
+        autoHideDuration={2200}
+        onClose={() => setSnack("")}
+        message={snack}
+      />
     </Container>
   );
+
 }

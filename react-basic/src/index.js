@@ -19,10 +19,12 @@ import RichMessageListPage from './pages/RichMessageListPage';
 import RichMessageCreatePage from './pages/RichMessageCreatePage';
 import RichMessageDetailPage from './pages/RichMessageDetailPage';
 
+// Rich Menus
+import RichMenusPage from './pages/RichMenusPage';
+import RichMenusListPage from './pages/RichMenusListPage';
 
 // อื่นๆ
 import GreetingMessagePage from './pages/GreetingMessagePage';
-import RichMenusPage from './pages/RichMenusPage';
 import TemplateRichMenusPage from './pages/TemplateRichMenusPage';
 
 import FriendsPage from './pages/FriendsPage';
@@ -68,10 +70,13 @@ root.render(
           <Route path="rich-message" element={<RichMessageListPage />} />
           <Route path="rich-message/new" element={<RichMessageCreatePage />} />
           <Route path="rich-message/:id" element={<RichMessageDetailPage />} />
+          {/* Rich Menus */}
+          <Route path="rich-menus/new" element={<RichMenusPage />} />
+          <Route path="rich-menus" element={<RichMenusListPage />} />
+          <Route path="template-rich-menus" element={<TemplateRichMenusPage />} />
+          
           {/* Others */}
           <Route path="greeting-message" element={<GreetingMessagePage />} />
-          <Route path="rich-menus" element={<RichMenusPage />} />
-          <Route path="template-rich-menus" element={<TemplateRichMenusPage />} />
           <Route path="friends" element={<FriendsPage />} />
         </Route>
       </Route>
