@@ -172,7 +172,7 @@ function TemplateEditor({ open, onClose, initial }) {
 export default function AdminTemplatesPage() {
   const navigate = useNavigate();
   const [sp] = useSearchParams();
-  
+  const tenantId = sp.get('tenant') || '';
   const [items, setItems] = useState([]);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);

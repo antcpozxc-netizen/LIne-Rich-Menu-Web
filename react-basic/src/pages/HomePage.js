@@ -46,12 +46,12 @@ export default function HomePage() {
     (async () => {
       try {
         const res = await user.getIdTokenResult(true);
-        setIsAdmin(!!res.claims?.admin);
+        setIsAdmin(!!res.claims?.admin || !!profile?.isAdmin);
       } catch {
         setIsAdmin(false);
       }
     })();
-  }, [user]);
+  }, [user, profile]);
 
   // --- profile from Firestore ---
   const [profile, setProfile] = useState(null);

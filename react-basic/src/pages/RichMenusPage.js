@@ -224,6 +224,9 @@ export default function RichMenusPage() {
   const [periodFrom, setPeriodFrom] = useState('');
   const [periodTo, setPeriodTo] = useState('');
 
+  const location = useLocation();
+  const prefill = location.state?.prefill;
+
   // areas
   const gridToAreas = (cells) =>
     cells.map((c, i) => {
@@ -304,6 +307,28 @@ export default function RichMenusPage() {
   // โหลดดราฟท์จาก localStorage (กรณีสร้างใหม่)
   useEffect(() => {
     if (draftId) return; // มี draft -> ข้าม
+    if (prefill) {
+      // apply prefill จาก template
+      setTitle(prefill.title || '');
+      if (prefill.size && template.size !== prefill.size) {
+        const found = TEMPLATES.find(t => t.size === prefill.size) || template;
+        setTemplate(found);
+      }
+      if (prefill.imageUrl) setImage(prefill.imageUrl);
+      if (prefill.chatBarText) setMenuBarLabel(prefill.chatBarText);
+      if (Array.isArray(prefill.areas) && prefill.areas.length) {
+        // แปลง areas (0..1 → 0..100)
+        const toPct = (v)=> Math.round(((Number(v)||0)*100)*100)/100;
+        const aPct = prefill.areas.map((a,i)=>({
+          id:`A${i+1}`,
+          x: toPct(a.xPct), y: toPct(a.yPct),
+          w: toPct(a.wPct), h: toPct(a.hPct),
+        }));
+        setAreas(aPct);
+        setActions(prefill.areas.map(a => a.action || { type:'Select' }));
+      }
+      return; // ไม่ต้องโหลดจาก localStorage แล้ว
+    }
     const d = readDraft();
     if (d?.title) setTitle(d.title);
     if (d?.menuBarLabel != null) setMenuBarLabel(d.menuBarLabel);
