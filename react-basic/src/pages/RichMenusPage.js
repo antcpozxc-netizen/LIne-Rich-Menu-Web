@@ -309,16 +309,34 @@ export default function RichMenusPage() {
     const nextAreas = gridToAreas(tpl.preview);
     setAreas(nextAreas);
     setActions((prev) => {
-      const base = prev.concat(Array.from({ length: Math.max(0, nextAreas.length - prev.length) }, () => ({ type: 'Select' })));
+      const base = prev.concat(
+        Array.from({ length: Math.max(0, nextAreas.length - prev.length) }, () => ({ type: 'Select' }))
+      );
       return base.slice(0, nextAreas.length);
     });
     setSelected(nextAreas[0]?.id || null);
   };
 
+
   const fileRef = useRef(null);
   const uploadImage = async (file) => {
     if (!tenantId) return setSnack('กรุณาเลือก OA ก่อน');
-    const targetH = template.size === 'compact' ? 843 : 1686;
+
+    // ⬇ เดาระหว่าง compact/large จากอัตราส่วนรูป
+    const tmpURL = URL.createObjectURL(file);
+    await new Promise((done) => {
+      const img = new Image();
+      img.onload = () => {
+        const ratio = img.height / img.width;      // ~0.337 = compact, ~0.674 = large
+        const nearest = Math.abs(ratio - 0.337) < Math.abs(ratio - 0.674) ? 'compact' : 'large';
+        setTemplate((prev) => (prev.size === nearest ? prev : (TEMPLATES.find(t => t.size === nearest) || prev)));
+        URL.revokeObjectURL(tmpURL);
+        done();
+      };
+      img.src = tmpURL;
+    });
+
+    const targetH = (template.size === 'compact') ? 843 : 1686;
     try {
       const blob = await drawToSize(file, 2500, targetH, 'image/jpeg');
       if (!blob) return setSnack('แปลงรูปไม่สำเร็จ');

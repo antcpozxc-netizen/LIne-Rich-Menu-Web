@@ -55,50 +55,98 @@ function TemplateModal({ open, onClose, value, onApply }) {
   const [selected, setSelected] = useState(value?.id || TEMPLATES[0].id);
   useEffect(() => { if (value?.id) setSelected(value.id); }, [value]);
 
-  const render = (t) => (
-    <Grid key={t.id} item xs={12} sm={6} md={4}>
+  const Thumb = ({ t }) => {
+    const isSel = selected === t.id;
+    const isCompact = t.size === 'compact';
+    // สัดส่วนคร่าว ๆ ให้ดูคล้ายตัวอย่าง
+    const pt = isCompact ? '33%' : '45%';
+
+    return (
       <Paper
         variant="outlined"
         onClick={() => setSelected(t.id)}
-        sx={{ p: 1, cursor: 'pointer', outline: selected === t.id ? '2px solid #66bb6a' : 'none', borderRadius: 2 }}
+        sx={{
+          p: 1,
+          cursor: 'pointer',
+          borderRadius: 2,
+          outline: isSel ? '2px solid #66bb6a' : 'none',
+        }}
       >
-        <Typography variant="subtitle2" sx={{ mb: .5 }}>{t.label}</Typography>
-        <Box sx={{ position: 'relative', width: '100%', pt: '66%', bgcolor: '#f5f5f5', borderRadius: 1, overflow: 'hidden' }}>
-          {t.preview.map((c, i) => {
-            const [x, y, w, h] = c;
+        <Box sx={{ fontSize: 12, color: 'text.secondary', mb: 0.5 }}>
+          {t.label}
+        </Box>
+        <Box
+          sx={{
+            position: 'relative',
+            width: '100%',
+            pt,                          // รักษาสัดส่วน
+            bgcolor: '#f1f3f4',
+            borderRadius: 1,
+            overflow: 'hidden',
+          }}
+        >
+          {/* วาดเส้นบาง ๆ ให้เหมือน wireframe */}
+          {t.preview.map((cell, i) => {
+            const [x, y, w, h] = cell;
+            const left = (x / 6) * 100;
+            const top = (y / 4) * 100;
+            const width = (w / 6) * 100;
+            const height = (h / 4) * 100;
             return (
-              <Box key={i} sx={{
-                position: 'absolute',
-                left: `${(x / 6) * 100}%`, top: `${(y / 4) * 100}%`,
-                width: `${(w / 6) * 100}%`, height: `${(h / 4) * 100}%`,
-                border: '2px solid rgba(76,175,80,.9)', background: 'rgba(76,175,80,.15)', borderRadius: 1
-              }} />
+              <Box
+                key={i}
+                sx={{
+                  position: 'absolute',
+                  left: `${left}%`,
+                  top: `${top}%`,
+                  width: `${width}%`,
+                  height: `${height}%`,
+                  border: '1px solid #cfd8dc',   // เส้นบาง สีเทาอ่อน
+                  background: 'rgba(0,0,0,0.02)', // เติมนิด ๆ ให้เห็นแยกบล็อก
+                  borderRadius: 0.5,
+                }}
+              />
             );
           })}
         </Box>
       </Paper>
-    </Grid>
-  );
+    );
+  };
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle>Select a template</DialogTitle>
       <DialogContent dividers>
-        <Typography variant="subtitle1" sx={{ mb: 1 }}>Large</Typography>
-        <Grid container spacing={2} sx={{ mb: 2 }}>
-          {TEMPLATES.filter(t => t.size === 'large').map(render)}
+        <Typography sx={{ fontWeight: 600, mb: 0.5 }}>Large</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          A larger menu for displaying more items.
+        </Typography>
+        <Grid container spacing={2} sx={{ mb: 3 }}>
+          {TEMPLATES.filter(t => t.size === 'large').map(t => (
+            <Grid item xs={12} sm={6} md={3} key={t.id}>
+              <Thumb t={t} />
+            </Grid>
+          ))}
         </Grid>
-        <Typography variant="subtitle1" sx={{ mb: 1 }}>Compact</Typography>
+
+        <Typography sx={{ fontWeight: 600, mb: 0.5 }}>Compact</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          A less obtrusive menu to be used together with chat functions.
+        </Typography>
         <Grid container spacing={2}>
-          {TEMPLATES.filter(t => t.size === 'compact').map(render)}
+          {TEMPLATES.filter(t => t.size === 'compact').map(t => (
+            <Grid item xs={12} sm={6} md={3} key={t.id}>
+              <Thumb t={t} />
+            </Grid>
+          ))}
         </Grid>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Cancel</Button>
+        <Button onClick={onClose} variant="outlined">Cancel</Button>
         <Button
           variant="contained"
           onClick={() => onApply(TEMPLATES.find(x => x.id === selected) || TEMPLATES[0])}
-          sx={{ bgcolor: '#66bb6a', '&:hover': { bgcolor: '#57aa5b' } }}
+          sx={{ bgcolor: '#43a047', '&:hover': { bgcolor: '#388e3c' } }}
         >
           Apply
         </Button>
@@ -106,6 +154,7 @@ function TemplateModal({ open, onClose, value, onApply }) {
     </Dialog>
   );
 }
+
 
 // inline action editor
 function ActionEditor({ action, onChange }) {
@@ -156,14 +205,15 @@ export default function AdminTemplateEditorPage() {
 
   const applyTemplate = (tpl) => {
     setTplValue(tpl);
-    // map 6x4 grid → pct + seed default actions
-    const areas = tpl.preview.map((c) => {
-      const [x, y, w, h] = c;
-      return { xPct: x / 6, yPct: y / 4, wPct: w / 6, hPct: h / 4, action: { type: 'Link' } };
-    });
+    const areas = tpl.preview.map(([x,y,w,h]) => ({
+        xPct: x/6, yPct: y/4, wPct: w/6, hPct: h/4,
+        action: { type: 'Link' }                    // ใส่ action เริ่มต้น
+    }));
     setForm(f => ({ ...f, size: tpl.size, areas }));
     setSelectedIndex(0);
   };
+
+
 
   // เมื่อเปลี่ยน size จาก dropdown ให้ sync ค่า template ที่โชว์ใน modal ด้วย
   useEffect(() => {
