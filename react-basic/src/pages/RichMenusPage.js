@@ -136,7 +136,14 @@ function ActionEditor({ idx, action, onChange }) {
                     <Stack direction="row" alignItems="center" spacing={1}>
                       <Chip size="small" label={`#${i+1}`} />
                       <Box sx={{ flex: 1 }} />
-                      <Button size="small" color="error" startIcon={<Delete as={DeleteIcon} />} onClick={() => removeItem(i)}>Remove</Button>
+                      <Button
+                        size="small"
+                        color="error"
+                        startIcon={<DeleteIcon />}
+                        onClick={() => removeItem(i)}
+                      >
+                        Remove
+                      </Button>
                     </Stack>
                     <TextField label={`Question ${i+1}`} value={it.q || ''} onChange={(e) => updateItem(i, { q: e.target.value })} fullWidth />
                     <TextField label="Answer" value={it.a || ''} onChange={(e) => updateItem(i, { a: e.target.value })} fullWidth multiline />
