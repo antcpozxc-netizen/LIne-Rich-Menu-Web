@@ -20,6 +20,23 @@ async function authedFetch(url, opts = {}) {
   return txt ? JSON.parse(txt) : {};
 }
 
+async function drawToSize(file, targetW, targetH, mime='image/jpeg') {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((res, rej) => {
+      const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url;
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width = targetW; canvas.height = targetH;
+    const ctx = canvas.getContext('2d');
+    // cover: ขยายจนเต็มแล้วครอปส่วนเกิน
+    const scale = Math.max(targetW / img.width, targetH / img.height);
+    const dw = img.width * scale, dh = img.height * scale;
+    const dx = (targetW - dw) / 2, dy = (targetH - dh) / 2;
+    ctx.drawImage(img, dx, dy, dw, dh);
+    return await new Promise(r => canvas.toBlob(r, mime, 0.9));
+  } finally { URL.revokeObjectURL(url); }
+}
 const clamp01 = (n) => Math.max(0, Math.min(1, Number(n) || 0));
 const pct = (n) => Math.round(Math.max(0, Math.min(100, Number(n) || 0)) * 100) / 100;
 
@@ -246,7 +263,7 @@ export default function AdminTemplateEditorPage() {
   const fileRef = useRef(null);
   const uploadImage = async (file) => {
     try {
-      // เดา size จากสัดส่วนรูปก่อนอัปโหลด เพื่อให้ preview ปรับอัตโนมัติ
+      // เดาสัดส่วนรูปก่อน เพื่อเลือก large/compact ให้ตรง
       const urlObj = URL.createObjectURL(file);
       await new Promise((resolve) => {
         const img = new Image();
@@ -260,9 +277,13 @@ export default function AdminTemplateEditorPage() {
         img.src = urlObj;
       });
 
-      const path = `public/admin-templates/${Date.now()}-${file.name.replace(/\s+/g, '-')}`;
-      const r = sref(storage, path);
-      await uploadBytes(r, file);
+      // แปลงรูปให้เป็นสัดส่วน LINE แล้วค่อยอัปโหลด
+      const targetH = (form.size === 'compact') ? 843 : 1686;
+      const blob = await drawToSize(file, 2500, targetH, 'image/jpeg');
+      const safe = `${Date.now()}-${file.name.replace(/\s+/g,'-').replace(/\.[^.]+$/, '')}.jpg`;
+      const r = sref(storage, `public/admin-templates/${safe}`);
+      await uploadBytes(r, blob, { contentType: 'image/jpeg' });
+      
       const url = await getDownloadURL(r);
       setForm(f => ({ ...f, imageUrl: url }));
     } catch (e) { alert('อัปโหลดรูปไม่สำเร็จ: ' + (e?.message || e)); }
@@ -405,12 +426,27 @@ export default function AdminTemplateEditorPage() {
               sx={{
                 width: '100%', maxWidth: 900, height: previewHeight, mx: 'auto',
                 bgcolor: '#f7f7f7', border: '1px dashed #ccc', borderRadius: 1,
-                position: 'relative',
-                backgroundImage: form.imageUrl ? `url(${form.imageUrl})` : 'none',
-                backgroundRepeat: 'no-repeat', backgroundPosition: 'center', backgroundSize: 'contain'
+                position: 'relative'
               }}
               onMouseDown={() => setSelectedIndex(0)}
             >
+              {form.imageUrl ? (
+                <img
+                  src={form.imageUrl}
+                  alt=""
+                  style={{
+                    position: 'absolute', inset: 0,
+                    width: '100%', height: '100%',
+                    objectFit: 'cover',          // ให้เต็มกรอบ
+                    pointerEvents: 'none'        // ไม่บังการลาก area
+                  }}
+                />
+              ) : (
+                <Stack alignItems="center" justifyContent="center"
+                       style={{position:'absolute', inset:0, color:'#888'}}>
+                  <Typography>No image</Typography>
+                </Stack>
+              )}
               {!form.imageUrl && (
                 <Stack alignItems="center" justifyContent="center" sx={{ position: 'absolute', inset: 0, color: '#888' }}>
                   <Typography>No image</Typography>
