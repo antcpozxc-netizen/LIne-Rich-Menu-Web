@@ -46,11 +46,6 @@ const makeAreasFromTpl = (tpl) =>
     action: { type: 'Link' },
   }));
 
-const applyTemplate = (tpl) => {
-  setTplValue(tpl);
-  setForm(f => ({ ...f, size: tpl.size, areas: makeAreasFromTpl(tpl) }));
-  setSelectedIndex(0);
-};
 // ---------- Preset templates ----------
 const TEMPLATES = [
   // Large
