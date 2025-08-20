@@ -9,6 +9,7 @@ import { useNavigate, useSearchParams, useOutletContext } from 'react-router-dom
 import { auth } from '../firebase';
 import { CATEGORY_OPTIONS } from '../constants/categories';
 
+// ---- helper ----
 async function authedFetch(url, opts = {}) {
   const token = await auth.currentUser?.getIdToken();
   const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}), Authorization: `Bearer ${token}` };
@@ -24,10 +25,10 @@ export default function AdminTemplatesPage() {
   const { tenantId: ctxTenantId } = useOutletContext() || {};
   const tenantId = ctxTenantId || sp.get('tenant') || '';
 
-  const [items, setItems] = useState([]);
+  const [items, setItems]   = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [cat, setCat] = useState('');
+  const [error, setError]   = useState('');
+  const [cat, setCat]       = useState('');
 
   const load = async () => {
     const j = await authedFetch('/api/admin/templates');
@@ -61,7 +62,7 @@ export default function AdminTemplatesPage() {
     await load();
   };
 
-  // ⬇⬇ เปลี่ยนชื่อจาก useTemplate → applyTemplate เพื่อลด false positive ของกฎ hooks
+  // ✅ เปลี่ยนชื่อจาก useTemplate → applyTemplate เพื่อไม่ให้ eslint คิดว่าเป็น Hook
   const applyTemplate = (t) => {
     if (!tenantId) { alert('กรุณาเลือก OA ก่อน'); return; }
     navigate(`/homepage/rich-menus/new?tenant=${tenantId}`, {
@@ -77,30 +78,20 @@ export default function AdminTemplatesPage() {
     });
   };
 
-  const toCreate = () => navigate(`/homepage/admin/templates/new${tenantId ? `?tenant=${tenantId}` : ''}`);
   const toEdit   = (t) => navigate(`/homepage/admin/templates/${t.id}${tenantId ? `?tenant=${tenantId}` : ''}`);
+  const toCreate = ()   => navigate(`/homepage/admin/templates/new${tenantId ? `?tenant=${tenantId}` : ''}`);
 
   return (
     <Container sx={{ py: 3 }}>
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
         <Typography variant="h5" fontWeight="bold">Admin: Rich Menu Templates</Typography>
-        <Stack direction="row" spacing={1}>
-          <TextField
-            size="small"
-            label="ค้นหาชื่อ"
-            onChange={(e) => {
-              const q = (e.target.value || '').toLowerCase();
-              setItems((prev) => prev.map(x => ({ ...x, _match: (x.title || '').toLowerCase().includes(q) })));
-            }}
-            sx={{ display: { xs: 'none', sm: 'block' } }}
-          />
-          <Button variant="contained" onClick={toCreate}>+ New Template</Button>
-        </Stack>
+        <Button variant="contained" onClick={toCreate}>+ New Template</Button>
       </Stack>
 
+      {/* Category filter */}
       <Stack direction="row" spacing={1} sx={{ mb: 2, flexWrap: 'wrap' }}>
-        <Chip label="All" clickable onClick={() => setCat('')} color={!cat ? 'success' : 'default'}
-              variant={!cat ? 'filled' : 'outlined'} />
+        <Chip label="All" clickable onClick={() => setCat('')}
+              color={!cat ? 'success' : 'default'} variant={!cat ? 'filled' : 'outlined'} />
         {cats.map(c => (
           <Chip key={c} label={c} clickable onClick={() => setCat(c)}
                 color={cat === c ? 'success' : 'default'}
@@ -136,7 +127,7 @@ export default function AdminTemplatesPage() {
                   </Box>
                   <Box>
                     <Tooltip title="Use this template">
-                      {/* ⬇⬇ เปลี่ยนจุดเรียก */}
+                      {/* ⬇ เรียก applyTemplate แทน useTemplate */}
                       <IconButton color="success" onClick={() => applyTemplate(t)}>▶</IconButton>
                     </Tooltip>
                     <Tooltip title="Edit">
@@ -151,7 +142,7 @@ export default function AdminTemplatesPage() {
             </Grid>
           ))}
           {filtered.length === 0 && (
-            <Box sx={{ p: 4, color: 'text.secondary' }}>No templates yet.</Box>
+            <Box sx={{ color: 'text.secondary', p: 4 }}>No templates yet.</Box>
           )}
         </Grid>
       )}
