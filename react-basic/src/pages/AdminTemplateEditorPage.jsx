@@ -269,45 +269,18 @@ export default function AdminTemplateEditorPage() {
   const fileRef = useRef(null);
   const uploadImage = async (file) => {
     try {
-        // เดาสัดส่วนรูป
-        let nearest = 'large';
-        const urlObj = URL.createObjectURL(file);
-        await new Promise((resolve) => {
-        const img = new Image();
-        img.onload = () => {
-            const ratio = img.height / img.width;     // ~0.337=compact, ~0.674=large
-            nearest = Math.abs(ratio - 0.337) < Math.abs(ratio - 0.674) ? 'compact' : 'large';
-            URL.revokeObjectURL(urlObj);
-            resolve();
-        };
-        img.src = urlObj;
-        });
-
-        // ตั้งเทมเพลต/พื้นที่ตามขนาดนั้น
-        const tpl = TEMPLATES.find(t => t.size === nearest) || TEMPLATES[0];
-        setTplValue(tpl);
-        setForm(f => ({ ...f, size: nearest, areas: makeAreasFromTpl(tpl) }));
-        setSelectedIndex(0);
-
-        // แปลง & อัปโหลดตาม spec
-        const targetH = (nearest === 'compact') ? 843 : 1686;
-        const blob = await drawToSize(file, 2500, targetH, 'image/jpeg');
-        const safe = `${Date.now()}-${file.name.replace(/\s+/g,'-').replace(/\.[^.]+$/, '')}.jpg`;
-        const r = sref(storage, `public/admin-templates/${safe}`);
-        await uploadBytes(r, blob, { contentType: 'image/jpeg' });
-        const url = await getDownloadURL(r);
-        setForm(f => ({ ...f, imageUrl: url }));
+      // รีไซซ์ตาม "ขนาดที่ผู้ใช้เลือกไว้" เท่านั้น
+      const targetH = (form.size === 'compact') ? 843 : 1686;
+      const blob = await drawToSize(file, 2500, targetH, 'image/jpeg');
+      const safe = `${Date.now()}-${file.name.replace(/\s+/g,'-').replace(/\.[^.]+$/, '')}.jpg`;
+      const r = sref(storage, `public/admin-templates/${safe}`);
+      await uploadBytes(r, blob, { contentType: 'image/jpeg' });
+      const url = await getDownloadURL(r);
+      setForm(f => ({ ...f, imageUrl: url }));   // ❌ ไม่เปลี่ยน size / areas อัตโนมัติ
     } catch (e) {
-        alert('อัปโหลดรูปไม่สำเร็จ: ' + (e?.message || e));
+      alert('อัปโหลดรูปไม่สำเร็จ: ' + (e?.message || e));
     }
-    };
-
-
-  const previewWidth = 900;
-  const baseW = 2500;
-  const effectiveSize = form.size || tplValue.size;   // ใช้จาก state/เทมเพลต
-  const baseH = effectiveSize === 'compact' ? 843 : 1686;
-  const previewHeight = Math.round(previewWidth * baseH / baseW);
+  };
 
   // drag & resize
   const MIN_W = 0.05, MIN_H = 0.05; // 5%
@@ -434,9 +407,15 @@ export default function AdminTemplateEditorPage() {
             <Box
               ref={overlayRef}
               sx={{
-                width: '100%', maxWidth: 900, height: previewHeight, mx: 'auto',
-                bgcolor: '#f7f7f7', border: '1px dashed #ccc', borderRadius: 1,
-                position: 'relative'
+                position: 'relative',
+                width: '100%',
+                maxWidth: 900,
+                mx: 'auto',
+                border: '1px dashed #ccc',
+                borderRadius: 1,
+                bgcolor: '#f7f7f7',
+                overflow: 'hidden',
+                aspectRatio: form.size === 'compact' ? '2500 / 843' : '2500 / 1686',
               }}
               onMouseDown={() => setSelectedIndex(0)}
             >
@@ -444,12 +423,7 @@ export default function AdminTemplateEditorPage() {
                 <img
                   src={form.imageUrl}
                   alt=""
-                  style={{
-                    position: 'absolute', inset: 0,
-                    width: '100%', height: '100%',
-                    objectFit:'contain',         
-                    pointerEvents: 'none'        // ไม่บังการลาก area
-                  }}
+                  style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'contain', pointerEvents:'none' }}
                 />
               ) : (
                 <Stack alignItems="center" justifyContent="center"
