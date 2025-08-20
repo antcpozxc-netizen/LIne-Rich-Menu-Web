@@ -923,6 +923,98 @@ app.delete('/api/tenants/:id/richmenus/:docId', requireFirebaseAuth, async (req,
 });
 
 
+
+// ==============================
+// 6.y) Admin Templates (global)
+// ==============================
+function requireAdmin(req, res, next) {
+  admin.firestore().doc(`users/${req.user.uid}`).get()
+    .then(snap => {
+      const isAdmin = !!snap.get('isAdmin');
+      if (!isAdmin) return res.status(403).json({ error: 'not_admin' });
+      next();
+    })
+    .catch(() => res.status(500).json({ error: 'server_error' }));
+}
+// Create template
+app.post('/api/admin/templates', requireFirebaseAuth, requireAdmin, async (req, res) => {
+  try {
+    const {
+      title = '',
+      size = 'large',
+      imageUrl = '',
+      chatBarText = 'Menu',
+      areas = [],
+      category = '',
+      tags = [],
+      note = '',
+    } = req.body || {};
+
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const ref = admin.firestore().collection('admin_templates').doc();
+    await ref.set({
+      title, size, imageUrl, chatBarText, areas,
+      category, tags, note,
+      createdBy: req.user.uid,
+      createdAt: now, updatedAt: now,
+    });
+
+    res.json({ ok: true, id: ref.id });
+  } catch (e) {
+    res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
+  }
+});
+
+// Update template
+app.put('/api/admin/templates/:tid', requireFirebaseAuth, requireAdmin, async (req, res) => {
+  try {
+    const { tid } = req.params;
+    const payload = req.body || {};
+    payload.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+    await admin.firestore().collection('admin_templates').doc(tid).set(payload, { merge: true });
+    res.json({ ok: true, id: tid });
+  } catch (e) {
+    res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
+  }
+});
+
+// Delete template
+app.delete('/api/admin/templates/:tid', requireFirebaseAuth, requireAdmin, async (req, res) => {
+  try {
+    const { tid } = req.params;
+    await admin.firestore().collection('admin_templates').doc(tid).delete();
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
+  }
+});
+
+// List templates (any logged-in user)
+app.get('/api/admin/templates', requireFirebaseAuth, async (_req, res) => {
+  try {
+    const snap = await admin.firestore().collection('admin_templates')
+      .orderBy('updatedAt', 'desc')
+      .limit(200).get();
+    const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    res.json({ ok: true, items });
+  } catch (e) {
+    res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
+  }
+});
+
+// Get one template
+app.get('/api/admin/templates/:tid', requireFirebaseAuth, async (req, res) => {
+  try {
+    const { tid } = req.params;
+    const snap = await admin.firestore().collection('admin_templates').doc(tid).get();
+    if (!snap.exists) return res.status(404).json({ error: 'not_found' });
+    res.json({ id: snap.id, ...snap.data() });
+  } catch (e) {
+    res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
+  }
+});
+
+
 // ==============================
 // 7) Cron (schedule runner)
 // ==============================
