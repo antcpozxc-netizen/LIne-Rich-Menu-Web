@@ -6,7 +6,7 @@ import {
 import { Delete as DeleteIcon, Edit as EditIcon, Image as ImageIcon } from '@mui/icons-material';
 import { auth, storage } from '../firebase';
 import { ref as sref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { useNavigate, useOutletContext } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 // ====== helpers ======
 async function authedFetch(url, opts={}) {
@@ -171,6 +171,8 @@ function TemplateEditor({ open, onClose, initial }) {
 
 export default function AdminTemplatesPage() {
   const navigate = useNavigate();
+  const [sp] = useSearchParams();
+  
   const [items, setItems] = useState([]);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -189,7 +191,6 @@ export default function AdminTemplatesPage() {
 
   const onUse = (t) => {
     // พรีฟิลล์ไปหน้า create
-    const tenantId = new URLSearchParams(location.search).get('tenant') || '';
     navigate(`/homepage/rich-menus/new?tenant=${tenantId}`, {
       state: {
         prefill: {
