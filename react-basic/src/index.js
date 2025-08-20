@@ -36,7 +36,6 @@ import TemplateRichMenusPage from './pages/TemplateRichMenusPage';
 
 import FriendsPage from './pages/FriendsPage';
 
-import RequireAuth from './routes/RequireAuth';
 
 function RedirectBroadcastIdToNew() {
   const { id } = useParams();
