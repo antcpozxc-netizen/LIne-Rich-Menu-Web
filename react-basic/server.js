@@ -948,21 +948,21 @@ app.put('/api/tenants/:id/richmenus/:rid', requireFirebaseAuth, async (req, res)
   }
 });
 
-// 6.x.5) Delete rich menu doc (ลบเฉพาะใน Firestore)
-// หมายเหตุ: ถ้าต้องการลบบน LINE ด้วย ให้เรียก DELETE /v2/bot/richmenu/{id} เพิ่มได้
-app.delete('/api/tenants/:id/richmenus/:rid', requireFirebaseAuth, async (req, res) => {
-  try {
-    const { id, rid } = req.params;
-    const tenant = await getTenantIfMember(id, req.user.uid);
-    if (!tenant) return res.status(403).json({ error: 'not_member_of_tenant' });
+// // 6.x.5) Delete rich menu doc (ลบเฉพาะใน Firestore)
+// // หมายเหตุ: ถ้าต้องการลบบน LINE ด้วย ให้เรียก DELETE /v2/bot/richmenu/{id} เพิ่มได้
+// app.delete('/api/tenants/:id/richmenus/:rid', requireFirebaseAuth, async (req, res) => {
+//   try {
+//     const { id, rid } = req.params;
+//     const tenant = await getTenantIfMember(id, req.user.uid);
+//     if (!tenant) return res.status(403).json({ error: 'not_member_of_tenant' });
 
-    await tenant.ref.collection('richmenus').doc(rid).delete();
-    return res.json({ ok: true });
-  } catch (e) {
-    console.error('[richmenus delete] error', e);
-    return res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
-  }
-});
+//     await tenant.ref.collection('richmenus').doc(rid).delete();
+//     return res.json({ ok: true });
+//   } catch (e) {
+//     console.error('[richmenus delete] error', e);
+//     return res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
+//   }
+// });
 
 
 // >>> UPDATED: set-default รองรับ docId หรือ richMenuId
@@ -1118,6 +1118,7 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
       }]);
     }
   }
+  
 
   // ระหว่างโหมด QnA
   if (ev.type === 'message' && ev.message?.type === 'text') {
@@ -1151,7 +1152,7 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
       }]);
     }
   }
-
+}
 
 
 // ==============================
@@ -1452,4 +1453,3 @@ app.listen(PORT, () => {
   console.log(`BASE_APP_URL: ${BASE_APP_URL}`);
   console.log(`LINE redirect_uri: ${REDIRECT_URI}`);
 });
-}
