@@ -1,24 +1,21 @@
-// src/pages/HomePage.js
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   AppBar, Toolbar, Typography, Box, Avatar, Drawer, List, ListItem,
   ListItemButton, ListItemIcon, ListItemText, Collapse, Button,
   Tabs, Tab, Divider, IconButton, Dialog, DialogTitle, DialogContent,
-  ListItemAvatar, ListItemSecondaryAction, Tooltip, Chip
+  ListItemAvatar, Chip
 } from '@mui/material';
 import {
   ExpandLess, ExpandMore, Send as SendIcon, Image as ImageIcon,
   Chat as ChatIcon, TableChart as TableChartIcon,
-  Logout as LogoutIcon, Menu as MenuIcon, Group as GroupIcon, SwapHoriz as SwapIcon
+  Logout as LogoutIcon, Menu as MenuIcon, SwapHoriz as SwapIcon
 } from '@mui/icons-material';
-// NEW: ไอคอนสำหรับเมนูแอดมิน
-import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 
 import { useNavigate, useLocation, useSearchParams, Outlet } from 'react-router-dom';
 import { auth, db } from '../firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import {
-  collection, doc, getDoc, onSnapshot, query, where
+  collection, doc, onSnapshot, query, where
 } from 'firebase/firestore';
 
 const drawerWidthExpanded = 240;
@@ -39,6 +36,9 @@ export default function HomePage() {
   const [user, setUser] = useState(null);
   const [ready, setReady] = useState(false);
 
+  // --- profile from Firestore (state) ---  ← ย้ายขึ้นมาก่อนใช้งาน
+  const [profile, setProfile] = useState(null);
+
   // === NEW: เช็ค custom claim admin จาก ID token ===
   const [isAdmin, setIsAdmin] = useState(false);
   useEffect(() => {
@@ -53,11 +53,9 @@ export default function HomePage() {
     })();
   }, [user, profile]);
 
-  // --- profile from Firestore ---
-  const [profile, setProfile] = useState(null);
-
+  // subscribe โปรไฟล์จาก Firestore: users/{uid}
   useEffect(() => {
-    if (!user) return;
+    if (!user) { setProfile(null); return; }
     const ref = doc(db, 'users', user.uid);
     const unsub = onSnapshot(ref, (snap) => setProfile(snap.data() || null));
     return () => unsub();
@@ -79,14 +77,6 @@ export default function HomePage() {
       if (!u) navigate('/', { replace: true });
     });
   }, [navigate]);
-
-  // --- subscribe โปรไฟล์จาก Firestore: users/{uid} ---
-  useEffect(() => {
-    if (!user) { setProfile(null); return; }
-    const ref = doc(db, 'users', user.uid);
-    const unsub = onSnapshot(ref, (snap) => setProfile(snap.data() || null));
-    return () => unsub();
-  }, [user]);
 
   // --- อ่าน tenantId จาก URL, ถ้าไม่มีลองเอาจาก localStorage ---
   useEffect(() => {
@@ -125,6 +115,12 @@ export default function HomePage() {
     return () => unsub();
   }, [activeTenantId]);
 
+  const mergeUnique = (a, b) => {
+    const m = new Map();
+    [...a, ...b].forEach(x => m.set(x.id, x));
+    return Array.from(m.values()).sort((x, y) => (x.displayName || '').localeCompare(y.displayName || ''));
+  };
+
   // --- load OA list ที่ฉันเข้าถึง (owner หรือ member) สำหรับ dialog switch ---
   useEffect(() => {
     if (!user) return;
@@ -140,12 +136,6 @@ export default function HomePage() {
     }));
     return () => unsubs.forEach(u => u());
   }, [user]);
-
-  const mergeUnique = (a, b) => {
-    const m = new Map();
-    [...a, ...b].forEach(x => m.set(x.id, x));
-    return Array.from(m.values()).sort((x, y) => (x.displayName || '').localeCompare(y.displayName || ''));
-  };
 
   // Tabs
   const tabValue = location.pathname.includes('/homepage/insight') ? 1 : 0;
@@ -396,11 +386,14 @@ export default function HomePage() {
         <DialogContent dividers>
           <List dense>
             {myTenants.map((t) => (
-              <ListItem key={t.id} secondaryAction={
-                <Button size="small" variant="outlined" onClick={() => switchTenant(t)}>
-                  ใช้ตัวนี้
-                </Button>
-              }>
+              <ListItem
+                key={t.id}
+                secondaryAction={
+                  <Button size="small" variant="outlined" onClick={() => switchTenant(t)}>
+                    ใช้ตัวนี้
+                  </Button>
+                }
+              >
                 <ListItemAvatar>
                   <Avatar src={t.pictureUrl || undefined}>{!t.pictureUrl && (t.displayName?.[0] || 'O')}</Avatar>
                 </ListItemAvatar>
