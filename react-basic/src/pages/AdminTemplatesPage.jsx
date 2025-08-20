@@ -24,10 +24,10 @@ export default function AdminTemplatesPage() {
   const { tenantId: ctxTenantId } = useOutletContext() || {};
   const tenantId = ctxTenantId || sp.get('tenant') || '';
 
-  const [items, setItems]   = useState([]);
+  const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState('');
-  const [cat, setCat]         = useState('');
+  const [error, setError] = useState('');
+  const [cat, setCat] = useState('');
 
   const load = async () => {
     const j = await authedFetch('/api/admin/templates');
@@ -61,15 +61,24 @@ export default function AdminTemplatesPage() {
     await load();
   };
 
-  const toCreate = () => navigate(`/homepage/admin/templates/new${tenantId ? `?tenant=${tenantId}` : ''}`);
-  const toEdit   = (t) => navigate(`/homepage/admin/templates/${t.id}${tenantId ? `?tenant=${tenantId}` : ''}`);
-
-  const useTemplate = (t) => {
+  // ⬇⬇ เปลี่ยนชื่อจาก useTemplate → applyTemplate เพื่อลด false positive ของกฎ hooks
+  const applyTemplate = (t) => {
     if (!tenantId) { alert('กรุณาเลือก OA ก่อน'); return; }
     navigate(`/homepage/rich-menus/new?tenant=${tenantId}`, {
-      state: { prefill: { size: t.size, imageUrl: t.imageUrl, chatBarText: t.chatBarText, areas: t.areas, title: t.title } }
+      state: {
+        prefill: {
+          size: t.size,
+          imageUrl: t.imageUrl,
+          chatBarText: t.chatBarText,
+          areas: t.areas,
+          title: t.title,
+        }
+      }
     });
   };
+
+  const toCreate = () => navigate(`/homepage/admin/templates/new${tenantId ? `?tenant=${tenantId}` : ''}`);
+  const toEdit   = (t) => navigate(`/homepage/admin/templates/${t.id}${tenantId ? `?tenant=${tenantId}` : ''}`);
 
   return (
     <Container sx={{ py: 3 }}>
@@ -127,7 +136,8 @@ export default function AdminTemplatesPage() {
                   </Box>
                   <Box>
                     <Tooltip title="Use this template">
-                      <IconButton color="success" onClick={() => useTemplate(t)}>▶</IconButton>
+                      {/* ⬇⬇ เปลี่ยนจุดเรียก */}
+                      <IconButton color="success" onClick={() => applyTemplate(t)}>▶</IconButton>
                     </Tooltip>
                     <Tooltip title="Edit">
                       <IconButton onClick={() => toEdit(t)}><EditIcon/></IconButton>
