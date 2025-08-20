@@ -263,27 +263,28 @@ export default function AdminTemplateEditorPage() {
   const fileRef = useRef(null);
   const uploadImage = async (file) => {
     try {
-      // เดาสัดส่วนรูปก่อน เพื่อเลือก large/compact ให้ตรง
+      // เดาสัดส่วนรูปก่อน เพื่อเลือก large/compact ให้ตรง (เก็บไว้ใน nearest)
+      let nearest = form.size;
       const urlObj = URL.createObjectURL(file);
       await new Promise((resolve) => {
         const img = new Image();
         img.onload = () => {
           const ratio = img.height / img.width;
-          const nearest = Math.abs(ratio - 0.337) < Math.abs(ratio - 0.674) ? 'compact' : 'large';
-          setForm(f => ({ ...f, size: nearest }));
+          nearest = Math.abs(ratio - 0.337) < Math.abs(ratio - 0.674) ? 'compact' : 'large';
+          setForm(f => ({ ...f, size: nearest }));   // ให้ UI ตามมาทีหลัง
           URL.revokeObjectURL(urlObj);
           resolve();
         };
         img.src = urlObj;
       });
 
-      // แปลงรูปให้เป็นสัดส่วน LINE แล้วค่อยอัปโหลด
-      const targetH = (form.size === 'compact') ? 843 : 1686;
+      // ✅ แปลงรูปให้เป็นสัดส่วน LINE โดยอิง nearest ที่เพิ่งคำนวณ
+      const targetH = (nearest === 'compact') ? 843 : 1686;
       const blob = await drawToSize(file, 2500, targetH, 'image/jpeg');
       const safe = `${Date.now()}-${file.name.replace(/\s+/g,'-').replace(/\.[^.]+$/, '')}.jpg`;
       const r = sref(storage, `public/admin-templates/${safe}`);
       await uploadBytes(r, blob, { contentType: 'image/jpeg' });
-      
+
       const url = await getDownloadURL(r);
       setForm(f => ({ ...f, imageUrl: url }));
     } catch (e) { alert('อัปโหลดรูปไม่สำเร็จ: ' + (e?.message || e)); }
@@ -437,7 +438,7 @@ export default function AdminTemplateEditorPage() {
                   style={{
                     position: 'absolute', inset: 0,
                     width: '100%', height: '100%',
-                    objectFit: 'cover',          // ให้เต็มกรอบ
+                    objectFit:'contain',          
                     pointerEvents: 'none'        // ไม่บังการลาก area
                   }}
                 />
@@ -534,16 +535,29 @@ export default function AdminTemplateEditorPage() {
 
               <Divider sx={{ my: 1 }} />
 
-              <Typography fontWeight="bold">Action (Block {form.areas.length ? (selectedIndex + 1) : '-'})</Typography>
+              <Typography fontWeight="bold" sx={{ mb: 1 }}>Actions</Typography>
               {form.areas.length ? (
-                <ActionEditor
-                  action={form.areas[selectedIndex]?.action || { type: 'Link' }}
-                  onChange={(next) => setForm(f => {
-                    const A = [...f.areas]; A[selectedIndex] = { ...A[selectedIndex], action: next };
-                    return { ...f, areas: A };
-                  })}
-                />
-              ) : (
+                <Stack spacing={1.5}>
+                  {form.areas.map((a, i) => (
+                    <Paper key={i} variant="outlined" sx={{ p: 1.5, borderColor: i===selectedIndex ? '#66bb6a' : undefined }}>
+                        <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
+                        <Chip size="small" label={`Block ${i+1}`} />
+                        <Box sx={{ flex: 1 }} />
+                        {/* คลิกเพื่อเลือกบล็อกในแคนวาสได้ด้วย */}
+                        <Button size="small" onClick={() => setSelectedIndex(i)}>Select</Button>
+                        </Stack>
+                        <ActionEditor
+                        action={a.action || { type: 'Link' }}
+                        onChange={(next) => setForm(f => {
+                            const A = [...f.areas];
+                            A[i] = { ...A[i], action: next };
+                            return { ...f, areas: A };
+                        })}
+                        />
+                    </Paper>
+                    ))}
+                </Stack>
+                ) : (
                 <Typography variant="body2" color="text.secondary">ยังไม่มีพื้นที่ — กด “Add area” ทางซ้าย</Typography>
               )}
             </Stack>
