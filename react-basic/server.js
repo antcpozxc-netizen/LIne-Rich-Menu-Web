@@ -1452,3 +1452,4 @@ app.listen(PORT, () => {
   console.log(`BASE_APP_URL: ${BASE_APP_URL}`);
   console.log(`LINE redirect_uri: ${REDIRECT_URI}`);
 });
+}
