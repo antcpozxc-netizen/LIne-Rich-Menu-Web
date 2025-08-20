@@ -12,6 +12,7 @@ import {
   Image as ImageIcon,
   CropSquare as AreaIcon,
   Delete as DeleteIcon,
+  Add as AddIcon,
 } from '@mui/icons-material';
 import { useOutletContext, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { ref as sref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -106,15 +107,52 @@ function ActionEditor({ idx, action, onChange }) {
         </Stack>
       )}
 
-      {action.type === 'QnA' && (
-        <Stack spacing={1}>
-          <TextField label="QnA key / id" value={action.qnaKey || ''} onChange={(e) => update({ qnaKey: e.target.value })} />
-          <TextField label="Display text (optional)" value={action.displayText || ''} onChange={(e) => update({ displayText: (e.target.value || '').slice(0, 300) })} />
-          <Typography variant="caption" color="text.secondary">
-            จะส่งเป็น <Chip size="small" label="postback" /> data: <code>{`qna:${action.qnaKey || '...'}`}</code>
-          </Typography>
-        </Stack>
-      )}
+      {action.type === 'QnA' && (() => {
+        const items = Array.isArray(action.items) ? action.items : [];
+        const setItems = (next) => update({ items: next });
+        const addItem = () => setItems([ ...items, { q:'', a:'' } ]);
+        const updateItem = (i, patch) => setItems(items.map((it, idx) => idx===i ? { ...it, ...patch } : it));
+        const removeItem = (i) => setItems(items.filter((_, idx) => idx !== i));
+
+        return (
+          <Stack spacing={1.25}>
+            <TextField label="QnA key / id" value={action.qnaKey || ''} onChange={(e) => update({ qnaKey: e.target.value })} />
+            <TextField label="Heading/Display text (optional)" value={action.displayText || ''} onChange={(e) => update({ displayText: (e.target.value || '').slice(0, 300) })} />
+            <TextField label="Fallback reply (ถ้าไม่เจอคำตอบ)" value={action.fallbackReply || ''} onChange={(e) => update({ fallbackReply: (e.target.value || '').slice(0, 300) })} />
+            <Typography variant="caption" color="text.secondary" sx={{ mt: .5 }}>
+              จะส่งเป็น <Chip size="small" label="postback" /> data: <code>{`qna:${action.qnaKey || '...'}`}</code>
+            </Typography>
+
+            <Divider sx={{ my: 1 }} />
+            <Stack direction="row" alignItems="center" justifyContent="space-between">
+              <Typography variant="subtitle2">รายการคำถามยอดฮิต</Typography>
+              <Button size="small" startIcon={<AddIcon />} onClick={addItem}>Add question</Button>
+            </Stack>
+
+            <Stack spacing={1}>
+              {items.map((it, i) => (
+                <Paper key={i} variant="outlined" sx={{ p: 1.25 }}>
+                  <Stack spacing={1}>
+                    <Stack direction="row" alignItems="center" spacing={1}>
+                      <Chip size="small" label={`#${i+1}`} />
+                      <Box sx={{ flex: 1 }} />
+                      <Button size="small" color="error" startIcon={<Delete as={DeleteIcon} />} onClick={() => removeItem(i)}>Remove</Button>
+                    </Stack>
+                    <TextField label={`Question ${i+1}`} value={it.q || ''} onChange={(e) => updateItem(i, { q: e.target.value })} fullWidth />
+                    <TextField label="Answer" value={it.a || ''} onChange={(e) => updateItem(i, { a: e.target.value })} fullWidth multiline />
+                  </Stack>
+                </Paper>
+              ))}
+              {!items.length && <Typography variant="body2" color="text.secondary">ยังไม่มีคำถาม กด “Add question” เพื่อเพิ่ม</Typography>}
+            </Stack>
+
+            <Typography variant="caption" color="text.secondary">
+              ผู้ใช้สามารถพิมพ์หมายเลข 1–{Math.max(1, items.length)} หรือพิมพ์คำถาม/คำหลักที่ “คล้าย” กับรายการ เพื่อรับคำตอบ
+            </Typography>
+          </Stack>
+        );
+      })()}
+
 
       {action.type === 'Live Chat' && (
         <Stack spacing={1}>

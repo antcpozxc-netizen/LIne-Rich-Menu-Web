@@ -9,6 +9,7 @@ const path = require('path');
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const admin = require('firebase-admin');
+const crypto = require('crypto'); 
 
 // Node 18+ has global fetch; fallback to node-fetch for older envs
 const fetchFn = (...args) =>
@@ -49,7 +50,10 @@ if (!admin.apps.length) {
 // ==============================
 // 2) Middleware
 // ==============================
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({
+  limit: '1mb',
+  verify: (req, _res, buf) => { req.rawBody = buf; } // เก็บ raw body
+}));
 
 async function requireFirebaseAuth(req, res, next) {
   try {
@@ -118,6 +122,110 @@ function withAltMedia(u) {
   }
 }
 
+async function getTenantByChannelId(channelId) {
+  const snap = await admin.firestore().collection('tenants')
+    .where('channelId', '==', channelId).limit(1).get();
+  if (snap.empty) return null;
+  const ref = snap.docs[0].ref;
+  return { id: ref.id, ref };
+}
+
+function verifyLineSignature(req, channelSecret) {
+  const signature = req.get('x-line-signature') || '';
+  const hmac = crypto.createHmac('sha256', channelSecret)
+    .update(req.rawBody)
+    .digest('base64');
+  try {
+    return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(hmac));
+  } catch { return false; }
+}
+
+// ---------- QnA helpers ----------
+const normalize = (s) => (s || '').toLowerCase().trim();
+
+function listMessage(heading, items) {
+  const lines = (items || []).map((it, i) => `${i + 1}. ${it.q}`);
+  return [heading || 'คำถามยอดฮิต', ...lines].join('\n');
+}
+function toQuickReplies(items) {
+  return {
+    items: (items || []).slice(0, 13).map((_, i) => ({
+      type: 'action',
+      action: { type: 'message', label: String(i + 1), text: String(i + 1) }
+    }))
+  };
+}
+
+// session เก็บต่อ user ต่อ tenant
+function userSessRef(tenantRef, userId) {
+  return tenantRef.collection('userSessions').doc(userId);
+}
+async function setSession(tenantRef, userId, s) {
+  await userSessRef(tenantRef, userId).set(
+    { ...s, updatedAt: admin.firestore.FieldValue.serverTimestamp() },
+    { merge: true }
+  );
+}
+async function getSession(tenantRef, userId) {
+  const snap = await userSessRef(tenantRef, userId).get();
+  return snap.exists ? snap.data() : null;
+}
+async function clearSession(tenantRef, userId) {
+  await userSessRef(tenantRef, userId).delete().catch(() => {});
+}
+
+// ดึงชุด QnA จาก rich menu ที่ ready/ใช้งานอยู่ (เลือกตามช่วงเวลา ถ้ามี)
+async function findQnaSetByKey(tenantRef, key) {
+  const nowMs = Date.now();
+  const q = await tenantRef
+    .collection('richmenus')
+    .where('status', '==', 'ready')
+    .orderBy('updatedAt', 'desc')
+    .limit(20)
+    .get();
+
+  for (const d of q.docs) {
+    const data = d.data() || {};
+    const from = data.scheduleFrom?.toDate?.() || null;
+    const to   = data.scheduleTo?.toDate?.()   || null;
+    if (from && from.getTime() > nowMs) continue;
+    if (to && to.getTime() < nowMs) continue;
+
+    for (const a of data.areas || []) {
+      const act = a.action || {};
+      if (act.type === 'QnA' && (act.qnaKey || '') === key) {
+        return {
+          items: Array.isArray(act.items) ? act.items : [],
+          displayText: act.displayText || null,
+          fallbackReply: act.fallbackReply || 'ยังไม่พบคำตอบ ลองเลือกหมายเลขจากรายการนะคะ'
+        };
+      }
+    }
+  }
+  return null;
+}
+
+async function lineReply(accessToken, replyToken, messages) {
+  const r = await fetchFn('https://api.line.me/v2/bot/message/reply', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ replyToken, messages }),
+  });
+  if (!r.ok) {
+    const t = await r.text().catch(()=>'');
+    console.error('[lineReply] error', r.status, t);
+  }
+}
+
+// ไม่ต้องเช็คสิทธิ์สมาชิก เพราะ webhook มาจาก LINE
+async function getTenantById(tid) {
+  const ref = admin.firestore().collection('tenants').doc(tid);
+  const snap = await ref.get();
+  if (!snap.exists) return null;
+  return { id: snap.id, ...snap.data(), ref };
+}
+
+
 // === Helpers for Rich Menu ===
 function mapActionForLINE(a = {}) {
   switch (a.type) {
@@ -126,7 +234,11 @@ function mapActionForLINE(a = {}) {
     case 'Text':
       return { type: 'message', text: a.text || 'Hello!' };
     case 'QnA':
-      return { type: 'postback', data: a.data || 'qna', displayText: a.label || 'QnA' };
+      return {
+       type: 'postback',
+       data: `qna:${a.qnaKey || ''}`,
+       displayText: a.displayText || a.label || 'QnA'
+     };
     case 'Live Chat':
       return { type: 'message', text: a.text || '#live' };
     default:
@@ -921,6 +1033,124 @@ app.delete('/api/tenants/:id/richmenus/:docId', requireFirebaseAuth, async (req,
     return res.status(500).json({ error: 'server_error', detail: String(e) });
   }
 });
+
+
+// ==============================
+// 6.z) LINE Webhook (QnA mode)
+// ==============================
+// ใช้ URL เดียวสำหรับทุก OA: /webhook/line
+app.post('/webhook/line', async (req, res) => {
+  try {
+    const { destination, events = [] } = req.body || {};
+    if (!destination) return res.status(200).send('ok'); // กันเคส verify/ping
+
+    // หา tenant จาก channelId ที่ LINE ส่งมาใน destination
+    const tenant = await getTenantByChannelId(destination);
+    if (!tenant) return res.status(200).send('ok'); // OA ยังไม่ได้ Add ในระบบเรา
+
+    const sec = await tenant.ref.collection('secret').doc('v1').get();
+    const channelSecret = sec.get('channelSecret');
+    const accessToken   = sec.get('accessToken');
+
+    // ตรวจลายเซ็นให้ตรงกับ OA นั้น ๆ
+    if (!verifyLineSignature(req, channelSecret)) {
+      console.warn('[webhook] bad signature for channelId', destination);
+      return res.status(403).send('bad signature');
+    }
+
+    // ใช้ handler เดิมของคุณ
+    await Promise.all(events.map(ev => handleLineEvent(ev, tenant.ref, accessToken)));
+
+    res.status(200).send('ok');
+  } catch (e) {
+    console.error('[webhook/line] error', e);
+    res.status(200).send('ok'); // อย่าตอบ 5xx ให้ LINE
+  }
+});
+
+app.post('/webhook/:tenantId', async (req, res) => {
+  try {
+    const { tenantId } = req.params;
+    const body = req.body || {};
+    const events = body.events || [];
+
+    const tenant = await getTenantById(tenantId);
+    if (!tenant) return res.status(404).send('tenant_not_found');
+
+    const accessToken = await getTenantSecretAccessToken(tenant.ref);
+
+    // จัดการแต่ละ event
+    for (const ev of events) {
+      await handleLineEvent(ev, tenant.ref, accessToken);
+    }
+
+    res.sendStatus(200);
+  } catch (e) {
+    console.error('[webhook] error', e);
+    res.sendStatus(200); // ตอบ 200 เพื่อไม่ให้ LINE รีทรายรัว ๆ
+  }
+});
+
+async function handleLineEvent(ev, tenantRef, accessToken) {
+  const replyToken = ev.replyToken;
+  const userId = ev.source?.userId;
+  if (!replyToken || !userId) return;
+
+  // เริ่มโหมด QnA จาก postback qna:<key>
+  if (ev.type === 'postback' && typeof ev.postback?.data === 'string') {
+    const data = ev.postback.data;
+    if (data.startsWith('qna:')) {
+      const key = data.slice(4);
+      const qna = await findQnaSetByKey(tenantRef, key);
+      if (!qna || !qna.items.length) {
+        return lineReply(accessToken, replyToken, [{ type: 'text', text: 'ยังไม่มีคำถามสำหรับหัวข้อนี้ค่ะ' }]);
+      }
+      await setSession(tenantRef, userId, {
+        mode: 'qna',
+        key,
+        items: qna.items,
+        fallback: qna.fallbackReply || 'ยังไม่พบคำตอบ ลองเลือกหมายเลขจากรายการนะคะ',
+      });
+      return lineReply(accessToken, replyToken, [{
+        type: 'text',
+        text: listMessage(qna.displayText, qna.items),
+        quickReply: toQuickReplies(qna.items),
+      }]);
+    }
+  }
+
+  // ระหว่างโหมด QnA
+  if (ev.type === 'message' && ev.message?.type === 'text') {
+    const text = (ev.message.text || '').trim();
+    const ss = await getSession(tenantRef, userId);
+
+    if (ss?.mode === 'qna' && Array.isArray(ss.items)) {
+      if (text === '#exit' || text === 'จบ') {
+        await clearSession(tenantRef, userId);
+        return lineReply(accessToken, replyToken, [{ type: 'text', text: 'ออกจากโหมด QnA แล้วค่ะ' }]);
+      }
+
+      // ตัวเลข 1..N
+      const n = parseInt(text, 10);
+      if (!isNaN(n) && n >= 1 && n <= ss.items.length) {
+        return lineReply(accessToken, replyToken, [{ type: 'text', text: ss.items[n - 1].a || '—' }]);
+      }
+
+      // จับคู่ข้อความแบบง่าย ๆ
+      const t = normalize(text);
+      const idx = ss.items.findIndex(it => normalize(it.q).includes(t));
+      if (idx >= 0) {
+        return lineReply(accessToken, replyToken, [{ type: 'text', text: ss.items[idx].a || '—' }]);
+      }
+
+      // ไม่เจอ → fallback + โชว์ลิสต์อีกครั้ง
+      return lineReply(accessToken, replyToken, [{
+        type: 'text',
+        text: ss.fallback || 'ยังไม่พบคำตอบ',
+        quickReply: toQuickReplies(ss.items),
+      }]);
+    }
+  }
 
 
 
