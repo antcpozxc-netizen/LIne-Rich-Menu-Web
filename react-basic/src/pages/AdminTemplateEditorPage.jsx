@@ -10,7 +10,7 @@ import { auth, storage } from '../firebase';
 import { ref as sref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { CATEGORY_OPTIONS } from '../constants/categories';
 
-// fetch helper
+// helper
 async function authedFetch(url, opts = {}) {
   const token = await auth.currentUser?.getIdToken();
   const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}), Authorization: `Bearer ${token}` };
@@ -23,7 +23,7 @@ async function authedFetch(url, opts = {}) {
 const clamp01 = (n) => Math.max(0, Math.min(1, Number(n) || 0));
 const pct = (n) => Math.round(Math.max(0, Math.min(100, Number(n) || 0)) * 100) / 100;
 
-// ---------- Preset templates (เหมือนหน้า RichMenusPage) ----------
+// ---------- Preset templates ----------
 const TEMPLATES = [
   // Large
   { id: 'lg-1x1-1x1-1x1-1x1-1x1-1x1', label: 'Large • 6 blocks (2×2 × 6)', size: 'large',
@@ -156,14 +156,20 @@ export default function AdminTemplateEditorPage() {
 
   const applyTemplate = (tpl) => {
     setTplValue(tpl);
-    // map 6x4 grid → pct
-    const areas = tpl.preview.map((c, i) => {
+    // map 6x4 grid → pct + seed default actions
+    const areas = tpl.preview.map((c) => {
       const [x, y, w, h] = c;
       return { xPct: x / 6, yPct: y / 4, wPct: w / 6, hPct: h / 4, action: { type: 'Link' } };
     });
     setForm(f => ({ ...f, size: tpl.size, areas }));
     setSelectedIndex(0);
   };
+
+  // เมื่อเปลี่ยน size จาก dropdown ให้ sync ค่า template ที่โชว์ใน modal ด้วย
+  useEffect(() => {
+    const firstOfSize = TEMPLATES.find(t => t.size === form.size);
+    if (firstOfSize && firstOfSize.id !== tplValue.id) setTplValue(firstOfSize);
+  }, [form.size]); // eslint-disable-line
 
   // load when editing
   useEffect(() => {
@@ -190,6 +196,20 @@ export default function AdminTemplateEditorPage() {
   const fileRef = useRef(null);
   const uploadImage = async (file) => {
     try {
+      // เดา size จากสัดส่วนรูปก่อนอัปโหลด เพื่อให้ preview ปรับอัตโนมัติ
+      const urlObj = URL.createObjectURL(file);
+      await new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          const ratio = img.height / img.width;
+          const nearest = Math.abs(ratio - 0.337) < Math.abs(ratio - 0.674) ? 'compact' : 'large';
+          setForm(f => ({ ...f, size: nearest }));
+          URL.revokeObjectURL(urlObj);
+          resolve();
+        };
+        img.src = urlObj;
+      });
+
       const path = `public/admin-templates/${Date.now()}-${file.name.replace(/\s+/g, '-')}`;
       const r = sref(storage, path);
       await uploadBytes(r, file);
@@ -203,31 +223,73 @@ export default function AdminTemplateEditorPage() {
   const baseH = form.size === 'compact' ? 843 : 1686;
   const previewHeight = Math.round(previewWidth * baseH / baseW);
 
-  // drag move
+  // drag & resize
+  const MIN_W = 0.05, MIN_H = 0.05; // 5%
   const overlayRef = useRef(null);
   const dragRef = useRef(null);
-  const onMouseDown = (i, e) => {
+
+  const startMove = (i, e) => {
     const rect = overlayRef.current.getBoundingClientRect();
     dragRef.current = {
-      i, startX: e.clientX, startY: e.clientY, boxW: rect.width, boxH: rect.height,
+      i, mode: 'move',
+      startX: e.clientX, startY: e.clientY,
+      boxW: rect.width, boxH: rect.height,
       start: form.areas[i]
     };
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
   };
+
+  const startResize = (i, handle, e) => {
+    e.stopPropagation();
+    const rect = overlayRef.current.getBoundingClientRect();
+    dragRef.current = {
+      i, mode: 'resize', handle,
+      startX: e.clientX, startY: e.clientY,
+      boxW: rect.width, boxH: rect.height,
+      start: form.areas[i]
+    };
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  };
+
   const onMouseMove = (e) => {
     const d = dragRef.current; if (!d) return;
     const dx = ((e.clientX - d.startX) / d.boxW);
     const dy = ((e.clientY - d.startY) / d.boxH);
     const s  = d.start;
-    const nx = clamp01((Number(s.xPct) || 0) + dx);
-    const ny = clamp01((Number(s.yPct) || 0) + dy);
-    setForm(f => {
-      const A = [...f.areas];
-      A[d.i] = { ...A[d.i], xPct: nx, yPct: ny };
-      return { ...f, areas: A };
-    });
+
+    if (d.mode === 'move') {
+      let nx = clamp01((Number(s.xPct)||0) + dx);
+      let ny = clamp01((Number(s.yPct)||0) + dy);
+      nx = Math.max(0, Math.min(nx, 1 - (s.wPct||0)));
+      ny = Math.max(0, Math.min(ny, 1 - (s.hPct||0)));
+      setForm(f => {
+        const A = [...f.areas];
+        A[d.i] = { ...A[d.i], xPct: nx, yPct: ny };
+        return { ...f, areas: A };
+      });
+    } else {
+      let { xPct:x, yPct:y, wPct:w=0.4, hPct:h=0.2 } = s;
+      const has = (k) => d.handle.includes(k);
+
+      if (has('e')) w = Math.max(MIN_W, Math.min(1 - x, (s.wPct||0) + dx));
+      if (has('s')) h = Math.max(MIN_H, Math.min(1 - y, (s.hPct||0) + dy));
+      if (has('w')) { const nx = clamp01(x + dx); const nw = (s.wPct||0) - (nx - x); x = nx; w = Math.max(MIN_W, nw); }
+      if (has('n')) { const ny = clamp01(y + dy); const nh = (s.hPct||0) - (ny - y); y = ny; h = Math.max(MIN_H, nh); }
+
+      // keep in bounds
+      x = Math.max(0, Math.min(x, 1 - w));
+      y = Math.max(0, Math.min(y, 1 - h));
+
+      setForm(f => {
+        const A = [...f.areas];
+        A[d.i] = { ...A[d.i], xPct:x, yPct:y, wPct:w, hPct:h };
+        return { ...f, areas: A };
+      });
+    }
   };
+
   const onMouseUp = () => {
     dragRef.current = null;
     window.removeEventListener('mousemove', onMouseMove);
@@ -275,7 +337,7 @@ export default function AdminTemplateEditorPage() {
               <Typography fontWeight="bold">Preview</Typography>
               <Stack direction="row" spacing={1}>
                 <TextField size="small" select label="Size" value={form.size}
-                  SelectProps={{ native: true }} onChange={(e) => setForm(f => ({ ...f, size: e.target.value }))} sx={{ width: 160 }}>
+                  SelectProps={{ native: true }} onChange={(e) => setForm(f => ({ ...f, size: e.target.value }))} sx={{ width: 180 }}>
                   <option value="large">large (2500×1686)</option>
                   <option value="compact">compact (2500×843)</option>
                 </TextField>
@@ -297,6 +359,7 @@ export default function AdminTemplateEditorPage() {
                 backgroundImage: form.imageUrl ? `url(${form.imageUrl})` : 'none',
                 backgroundRepeat: 'no-repeat', backgroundPosition: 'center', backgroundSize: 'contain'
               }}
+              onMouseDown={() => setSelectedIndex(0)}
             >
               {!form.imageUrl && (
                 <Stack alignItems="center" justifyContent="center" sx={{ position: 'absolute', inset: 0, color: '#888' }}>
@@ -304,32 +367,54 @@ export default function AdminTemplateEditorPage() {
                 </Stack>
               )}
 
-              {form.areas.map((a, i) => (
-                <Box
-                  key={i}
-                  onMouseDown={(e) => onMouseDown(i, e)}
-                  onClick={() => setSelectedIndex(i)}
-                  title={`Block ${i + 1}`}
-                  sx={{
-                    position: 'absolute',
-                    left: `${pct(a.xPct * 100)}%`,
-                    top: `${pct(a.yPct * 100)}%`,
-                    width: `${pct((a.wPct || .4) * 100)}%`,
-                    height: `${pct((a.hPct || .2) * 100)}%`,
-                    border: `2px solid ${selectedIndex === i ? '#2e7d32' : 'rgba(46,125,50,.7)'}`,
-                    bgcolor: selectedIndex === i ? 'rgba(102,187,106,.18)' : 'rgba(102,187,106,.12)',
-                    cursor: 'move'
-                  }}
-                >
-                  <Chip size="small" label={`Block ${i + 1}`} sx={{ position: 'absolute', left: 4, top: 4 }} />
-                  <Chip size="small" variant="outlined" label={a.action?.type || 'Link'} sx={{ position: 'absolute', left: 4, bottom: 4 }} />
-                </Box>
-              ))}
+              {form.areas.map((a, i) => {
+                const sel = selectedIndex === i;
+                return (
+                  <Box
+                    key={i}
+                    onMouseDown={(e) => { setSelectedIndex(i); startMove(i, e); }}
+                    onClick={(e) => { e.stopPropagation(); setSelectedIndex(i); }}
+                    title={`Block ${i + 1}`}
+                    sx={{
+                      position: 'absolute',
+                      left: `${pct((a.xPct||0)*100)}%`,
+                      top:  `${pct((a.yPct||0)*100)}%`,
+                      width:`${pct(((a.wPct??.4)*100))}%`,
+                      height:`${pct(((a.hPct??.2)*100))}%`,
+                      border: `2px solid ${sel ? '#2e7d32' : 'rgba(46,125,50,.7)'}`,
+                      bgcolor: sel ? 'rgba(102,187,106,.18)' : 'rgba(102,187,106,.12)',
+                      cursor:'move'
+                    }}
+                  >
+                    <Chip size="small" label={`Block ${i+1}`} sx={{ position:'absolute', left:4, top:4 }} />
+                    <Chip size="small" variant="outlined" label={a.action?.type || 'Link'} sx={{ position:'absolute', left:4, bottom:4 }} />
+
+                    {['nw','n','ne','e','se','s','sw','w'].map((h) => (
+                      <Box key={h} onMouseDown={(e) => startResize(i, h, e)}
+                        sx={{
+                          position:'absolute', width:10, height:10,
+                          bgcolor: sel ? '#2e7d32' : '#66bb6a', borderRadius:'2px',
+                          ...(h==='nw' && { left:-5, top:-5 }),
+                          ...(h==='n'  && { left:'calc(50% - 5px)', top:-5 }),
+                          ...(h==='ne' && { right:-5, top:-5 }),
+                          ...(h==='e'  && { right:-5, top:'calc(50% - 5px)' }),
+                          ...(h==='se' && { right:-5, bottom:-5 }),
+                          ...(h==='s'  && { left:'calc(50% - 5px)', bottom:-5 }),
+                          ...(h==='sw' && { left:-5, bottom:-5 }),
+                          ...(h==='w'  && { left:-5, top:'calc(50% - 5px)' }),
+                          cursor: (h==='n' || h==='s') ? 'ns-resize'
+                                 : (h==='e' || h==='w') ? 'ew-resize'
+                                 : (h==='ne' || h==='sw') ? 'nesw-resize' : 'nwse-resize'
+                        }}
+                      />
+                    ))}
+                  </Box>
+                );
+              })}
             </Box>
 
             <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
               <Button onClick={() => applyTemplate(tplValue)}>Reset to template</Button>
-              <Button onClick={() => setTplOpen(true)}>Choose template…</Button>
               {!!form.areas.length && (
                 <Button color="error" onClick={() => removeArea(selectedIndex)} startIcon={<DeleteIcon />}>
                   Remove selected
@@ -340,7 +425,7 @@ export default function AdminTemplateEditorPage() {
           </Paper>
         </Grid>
 
-        {/* RIGHT: Form */}
+        {/* RIGHT: Details & Action editor */}
         <Grid item xs={12} md={4}>
           <Paper variant="outlined" sx={{ p: 2 }}>
             <Typography fontWeight="bold" sx={{ mb: 1 }}>Details</Typography>
