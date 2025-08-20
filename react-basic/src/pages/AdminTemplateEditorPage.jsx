@@ -40,6 +40,17 @@ async function drawToSize(file, targetW, targetH, mime='image/jpeg') {
 const clamp01 = (n) => Math.max(0, Math.min(1, Number(n) || 0));
 const pct = (n) => Math.round(Math.max(0, Math.min(100, Number(n) || 0)) * 100) / 100;
 
+const makeAreasFromTpl = (tpl) =>
+  tpl.preview.map(([x,y,w,h]) => ({
+    xPct: x/6, yPct: y/4, wPct: w/6, hPct: h/4,
+    action: { type: 'Link' },
+  }));
+
+const applyTemplate = (tpl) => {
+  setTplValue(tpl);
+  setForm(f => ({ ...f, size: tpl.size, areas: makeAreasFromTpl(tpl) }));
+  setSelectedIndex(0);
+};
 // ---------- Preset templates ----------
 const TEMPLATES = [
   // Large
@@ -263,42 +274,44 @@ export default function AdminTemplateEditorPage() {
   const fileRef = useRef(null);
   const uploadImage = async (file) => {
     try {
-      // 1) เดาสัดส่วนรูป => nearest ('compact' หรือ 'large')
-      let nearest = form.size;
-      const urlObj = URL.createObjectURL(file);
-      await new Promise((resolve) => {
+        // เดาสัดส่วนรูป
+        let nearest = 'large';
+        const urlObj = URL.createObjectURL(file);
+        await new Promise((resolve) => {
         const img = new Image();
         img.onload = () => {
-          const ratio = img.height / img.width; // ~0.337 = compact, ~0.674 = large
-          nearest = Math.abs(ratio - 0.337) < Math.abs(ratio - 0.674) ? 'compact' : 'large';
-          URL.revokeObjectURL(urlObj);
-          resolve();
+            const ratio = img.height / img.width;     // ~0.337=compact, ~0.674=large
+            nearest = Math.abs(ratio - 0.337) < Math.abs(ratio - 0.674) ? 'compact' : 'large';
+            URL.revokeObjectURL(urlObj);
+            resolve();
         };
         img.src = urlObj;
-    });
+        });
 
-      // 2) แปลงรูปเป็นสัดส่วน LINE โดยอิง nearest (ไม่พึ่ง state ที่ยังไม่อัปเดต)
-      const targetH = (nearest === 'compact') ? 843 : 1686;
-      const blob = await drawToSize(file, 2500, targetH, 'image/jpeg');
-      const safe = `${Date.now()}-${file.name.replace(/\s+/g,'-').replace(/\.[^.]+$/, '')}.jpg`;
-      const r = sref(storage, `public/admin-templates/${safe}`);
-      await uploadBytes(r, blob, { contentType: 'image/jpeg' });
+        // ตั้งเทมเพลต/พื้นที่ตามขนาดนั้น
+        const tpl = TEMPLATES.find(t => t.size === nearest) || TEMPLATES[0];
+        setTplValue(tpl);
+        setForm(f => ({ ...f, size: nearest, areas: makeAreasFromTpl(tpl) }));
+        setSelectedIndex(0);
 
-      const url = await getDownloadURL(r);
-      // 3) เซ็ต size + รูป + รีเซ็ต layout areas ตาม template ของ size ใหม่นั้น
-      const tpl = TEMPLATES.find(t => t.size === nearest) || TEMPLATES[0];
-      const nextAreas = tpl.preview.map(([x,y,w,h]) => ({
-        xPct: x/6, yPct: y/4, wPct: w/6, hPct: h/4,
-        action: { type: 'Link' },
-      }));  
-      setForm(f => ({ ...f, size: nearest, imageUrl: url, areas: nextAreas }));
-      setSelectedIndex(0);
-    } catch (e) { alert('อัปโหลดรูปไม่สำเร็จ: ' + (e?.message || e)); }
-  };
+        // แปลง & อัปโหลดตาม spec
+        const targetH = (nearest === 'compact') ? 843 : 1686;
+        const blob = await drawToSize(file, 2500, targetH, 'image/jpeg');
+        const safe = `${Date.now()}-${file.name.replace(/\s+/g,'-').replace(/\.[^.]+$/, '')}.jpg`;
+        const r = sref(storage, `public/admin-templates/${safe}`);
+        await uploadBytes(r, blob, { contentType: 'image/jpeg' });
+        const url = await getDownloadURL(r);
+        setForm(f => ({ ...f, imageUrl: url }));
+    } catch (e) {
+        alert('อัปโหลดรูปไม่สำเร็จ: ' + (e?.message || e));
+    }
+    };
+
 
   const previewWidth = 900;
   const baseW = 2500;
-  const baseH = form.size === 'compact' ? 843 : 1686;
+  const effectiveSize = form.size || tplValue.size;   // ใช้จาก state/เทมเพลต
+  const baseH = effectiveSize === 'compact' ? 843 : 1686;
   const previewHeight = Math.round(previewWidth * baseH / baseW);
 
   // drag & resize
@@ -414,11 +427,6 @@ export default function AdminTemplateEditorPage() {
             <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
               <Typography fontWeight="bold">Preview</Typography>
               <Stack direction="row" spacing={1}>
-                <TextField size="small" select label="Size" value={form.size}
-                  SelectProps={{ native: true }} onChange={(e) => setForm(f => ({ ...f, size: e.target.value }))} sx={{ width: 180 }}>
-                  <option value="large">large (2500×1686)</option>
-                  <option value="compact">compact (2500×843)</option>
-                </TextField>
                 <Button variant="outlined" onClick={() => setTplOpen(true)}>Template</Button>
                 <Button variant="outlined" startIcon={<ImageIcon />} onClick={() => fileRef.current?.click()}>
                   {form.imageUrl ? 'Change image' : 'Upload image'}
