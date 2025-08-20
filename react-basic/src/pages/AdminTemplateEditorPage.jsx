@@ -263,22 +263,21 @@ export default function AdminTemplateEditorPage() {
   const fileRef = useRef(null);
   const uploadImage = async (file) => {
     try {
-      // เดาสัดส่วนรูปก่อน เพื่อเลือก large/compact ให้ตรง (เก็บไว้ใน nearest)
+      // 1) เดาสัดส่วนรูป => nearest ('compact' หรือ 'large')
       let nearest = form.size;
       const urlObj = URL.createObjectURL(file);
       await new Promise((resolve) => {
         const img = new Image();
         img.onload = () => {
-          const ratio = img.height / img.width;
+          const ratio = img.height / img.width; // ~0.337 = compact, ~0.674 = large
           nearest = Math.abs(ratio - 0.337) < Math.abs(ratio - 0.674) ? 'compact' : 'large';
-          setForm(f => ({ ...f, size: nearest }));   // ให้ UI ตามมาทีหลัง
           URL.revokeObjectURL(urlObj);
           resolve();
         };
         img.src = urlObj;
-      });
+    });
 
-      // ✅ แปลงรูปให้เป็นสัดส่วน LINE โดยอิง nearest ที่เพิ่งคำนวณ
+      // 2) แปลงรูปเป็นสัดส่วน LINE โดยอิง nearest (ไม่พึ่ง state ที่ยังไม่อัปเดต)
       const targetH = (nearest === 'compact') ? 843 : 1686;
       const blob = await drawToSize(file, 2500, targetH, 'image/jpeg');
       const safe = `${Date.now()}-${file.name.replace(/\s+/g,'-').replace(/\.[^.]+$/, '')}.jpg`;
@@ -286,7 +285,14 @@ export default function AdminTemplateEditorPage() {
       await uploadBytes(r, blob, { contentType: 'image/jpeg' });
 
       const url = await getDownloadURL(r);
-      setForm(f => ({ ...f, imageUrl: url }));
+      // 3) เซ็ต size + รูป + รีเซ็ต layout areas ตาม template ของ size ใหม่นั้น
+      const tpl = TEMPLATES.find(t => t.size === nearest) || TEMPLATES[0];
+      const nextAreas = tpl.preview.map(([x,y,w,h]) => ({
+        xPct: x/6, yPct: y/4, wPct: w/6, hPct: h/4,
+        action: { type: 'Link' },
+      }));  
+      setForm(f => ({ ...f, size: nearest, imageUrl: url, areas: nextAreas }));
+      setSelectedIndex(0);
     } catch (e) { alert('อัปโหลดรูปไม่สำเร็จ: ' + (e?.message || e)); }
   };
 
@@ -438,7 +444,7 @@ export default function AdminTemplateEditorPage() {
                   style={{
                     position: 'absolute', inset: 0,
                     width: '100%', height: '100%',
-                    objectFit:'contain',          
+                    objectFit:'contain',         
                     pointerEvents: 'none'        // ไม่บังการลาก area
                   }}
                 />
