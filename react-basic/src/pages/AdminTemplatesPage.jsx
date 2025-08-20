@@ -1,9 +1,13 @@
-import React, { useEffect, useRef, useState } from 'react';
+// src/pages/AdminTemplatesPage.jsx
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import {
   Box, Button, Card, CardActionArea, CardContent, Chip, Container, Dialog, DialogActions, DialogContent,
   DialogTitle, Grid, IconButton, Stack, TextField, Typography, Tooltip
 } from '@mui/material';
 import { Delete as DeleteIcon, Edit as EditIcon, Image as ImageIcon } from '@mui/icons-material';
+import { Autocomplete } from '@mui/material';
+import { CATEGORY_OPTIONS } from '../constants/categories';
+
 import { auth, storage } from '../firebase';
 import { ref as sref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useNavigate, useSearchParams, useOutletContext } from 'react-router-dom';
@@ -53,20 +57,30 @@ function ActionEditor({ idx, action, onChange }) {
 // ====== Editor dialog ======
 function TemplateEditor({ open, onClose, initial }) {
   const fileRef = useRef(null);
-  const [form, setForm] = useState(initial || { title: '', size: 'large', imageUrl: '', chatBarText: 'Menu', category: '', tags: '', note: '', areas: [] });
+  const [form, setForm] = useState(
+    initial || { title: '', size: 'large', imageUrl: '', chatBarText: 'Menu', category: '', tags: '', note: '', areas: [] }
+  );
   const [drag, setDrag] = useState(null);
   const overlayRef = useRef(null);
 
-  useEffect(() => setForm(initial || { title: '', size: 'large', imageUrl: '', chatBarText: 'Menu', category: '', tags: '', note: '', areas: [] }), [initial]);
+  useEffect(() => {
+    setForm(initial || { title: '', size: 'large', imageUrl: '', chatBarText: 'Menu', category: '', tags: '', note: '', areas: [] });
+  }, [initial]);
 
   const uploadImage = async (file) => {
-    const r = sref(storage, `public/admin-templates/${Date.now()}-${file.name.replace(/\s+/g, '-')}`);
-    await uploadBytes(r, file);
-    const url = await getDownloadURL(r);
-    setForm(f => ({ ...f, imageUrl: url }));
+    try {
+      const r = sref(storage, `public/admin-templates/${Date.now()}-${file.name.replace(/\s+/g, '-')}`);
+      await uploadBytes(r, file);
+      const url = await getDownloadURL(r);
+      setForm(f => ({ ...f, imageUrl: url }));
+    } catch (e) {
+      console.error(e);
+      alert('อัปโหลดรูปไม่สำเร็จ: ' + (e?.message || e));
+    }
   };
 
-  const addArea = () => setForm(f => ({ ...f, areas: [...f.areas, { xPct: .05, yPct: .05, wPct: .4, hPct: .2, action: { type: 'Link' } }] }));
+  const addArea = () =>
+    setForm(f => ({ ...f, areas: [...f.areas, { xPct: .05, yPct: .05, wPct: .4, hPct: .2, action: { type: 'Link' } }] }));
   const removeArea = (idx) => setForm(f => ({ ...f, areas: f.areas.filter((_, i) => i !== idx) }));
 
   const startMove = (idx, e) => {
@@ -94,10 +108,21 @@ function TemplateEditor({ open, onClose, initial }) {
   }, [drag]);
 
   const onSave = async () => {
-    const payload = { ...form, tags: (form.tags || '').split(',').map(s => s.trim()).filter(Boolean) };
-    if (initial?.id) await authedFetch(`/api/admin/templates/${initial.id}`, { method: 'PUT', body: JSON.stringify(payload) });
-    else await authedFetch('/api/admin/templates', { method: 'POST', body: JSON.stringify(payload) });
-    onClose(true);
+    const payload = {
+      ...form,
+      // แปลงเป็น array ก่อนส่งไป API
+      tags: (form.tags || '').split(',').map(s => s.trim()).filter(Boolean),
+    };
+    try {
+      if (initial?.id) {
+        await authedFetch(`/api/admin/templates/${initial.id}`, { method: 'PUT', body: JSON.stringify(payload) });
+      } else {
+        await authedFetch('/api/admin/templates', { method: 'POST', body: JSON.stringify(payload) });
+      }
+      onClose(true);
+    } catch (e) {
+      alert('บันทึกไม่สำเร็จ: ' + (e?.message || e));
+    }
   };
 
   return (
@@ -111,7 +136,14 @@ function TemplateEditor({ open, onClose, initial }) {
             <TextField label="Chat bar" value={form.chatBarText} onChange={e => setForm(f => ({ ...f, chatBarText: (e.target.value || '').slice(0, 14) }))} sx={{ maxWidth: 200 }} />
           </Stack>
           <Stack direction="row" spacing={2}>
-            <TextField label="Category" value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} fullWidth />
+            <Autocomplete
+              options={CATEGORY_OPTIONS}
+              freeSolo
+              value={form.category || null}
+              onChange={(_, v) => setForm(f => ({ ...f, category: v || '' }))}
+              onInputChange={(_, v) => setForm(f => ({ ...f, category: v || '' }))}
+              renderInput={(params) => <TextField {...params} label="Category" fullWidth />}
+            />
             <TextField label="Tags (comma)" value={form.tags} onChange={e => setForm(f => ({ ...f, tags: e.target.value }))} fullWidth />
           </Stack>
           <TextField label="Note" value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} fullWidth multiline />
@@ -123,16 +155,20 @@ function TemplateEditor({ open, onClose, initial }) {
           </Stack>
 
           {/* Preview + overlay (fixed-in-box) */}
-          <Box ref={overlayRef} sx={{
-            width: '100%', maxWidth: 620, mx: 'auto',
-            height: form.size === 'compact' ? 169 * 2 : 338 * 2,
-            bgcolor: '#fafafa', border: '1px dashed #ccc', borderRadius: 1,
-            backgroundImage: form.imageUrl ? `url(${form.imageUrl})` : 'none',
-            backgroundRepeat: 'no-repeat', backgroundPosition: 'center', backgroundSize: 'contain',
-            position: 'relative',
-          }}>
+          <Box
+            ref={overlayRef}
+            sx={{
+              width: '100%', maxWidth: 620, mx: 'auto',
+              height: form.size === 'compact' ? 169 * 2 : 338 * 2,
+              bgcolor: '#fafafa', border: '1px dashed #ccc', borderRadius: 1,
+              backgroundImage: form.imageUrl ? `url(${form.imageUrl})` : 'none',
+              backgroundRepeat: 'no-repeat', backgroundPosition: 'center', backgroundSize: 'contain',
+              position: 'relative',
+            }}
+          >
             {form.areas.map((a, i) => (
-              <Box key={i}
+              <Box
+                key={i}
                 onMouseDown={(e) => startMove(i, e)}
                 sx={{
                   position: 'absolute',
@@ -177,14 +213,15 @@ function TemplateEditor({ open, onClose, initial }) {
 export default function AdminTemplatesPage() {
   const navigate = useNavigate();
   const [sp] = useSearchParams();
-  const [items, setItems] = useState([]);
-  const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState(null);
   const { tenantId: ctxTenantId } = useOutletContext() || {};
   const tenantId = ctxTenantId || sp.get('tenant') || '';
 
+  const [items, setItems] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [cat, setCat] = useState(''); // ตัวกรองหมวดหมู่
 
   const load = async () => {
     const j = await authedFetch('/api/admin/templates');
@@ -204,6 +241,15 @@ export default function AdminTemplatesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const cats = useMemo(
+     () => Array.from(new Set([...CATEGORY_OPTIONS, ...items.map(i => i.category).filter(Boolean)])),
+     [items]
+  );
+  const filtered = useMemo(
+    () => items.filter(i => !cat || i.category === cat),
+    [items, cat]
+  );
+
   const onDelete = async (id) => {
     if (!window.confirm('Delete this template?')) return;
     await authedFetch(`/api/admin/templates/${id}`, { method: 'DELETE' });
@@ -211,7 +257,6 @@ export default function AdminTemplatesPage() {
   };
 
   const onUse = (t) => {
-    // พรีฟิลล์ไปหน้า create
     if (!tenantId) { alert('กรุณาเลือก OA ก่อน'); return; }
     navigate(`/homepage/rich-menus/new?tenant=${tenantId}`, {
       state: {
@@ -233,23 +278,40 @@ export default function AdminTemplatesPage() {
         <Button variant="contained" onClick={() => { setEditing(null); setOpen(true); }}>+ New Template</Button>
       </Stack>
 
+      {/* Category filter */}
+      <Stack direction="row" spacing={1} sx={{ mb: 2, flexWrap: 'wrap' }}>
+        <Chip label="All" clickable onClick={() => setCat('')} color={!cat ? 'success' : 'default'} variant={!cat ? 'filled' : 'outlined'} />
+        {cats.map(c => (
+          <Chip
+            key={c}
+            label={c}
+            clickable
+            onClick={() => setCat(c)}
+            color={cat === c ? 'success' : 'default'}
+            variant={cat === c ? 'filled' : 'outlined'}
+          />
+        ))}
+      </Stack>
+
       {loading && <Box sx={{ p: 4 }}>Loading templates…</Box>}
       {!!error && !loading && <Box sx={{ p: 4, color: 'error.main' }}>เปิดรายการเทมเพลตไม่ได้: {error}</Box>}
 
       {!loading && !error && (
         <Grid container spacing={2}>
-          {items.map(t => (
+          {filtered.map(t => (
             <Grid item key={t.id} xs={12} sm={6} md={4} lg={3}>
               <Card variant="outlined">
                 <CardActionArea onClick={() => { setEditing(t); setOpen(true); }}>
-                  <Box sx={{
-                    height: 160,
-                    backgroundImage: t.imageUrl ? `url(${t.imageUrl})` : 'none',
-                    backgroundRepeat: 'no-repeat',
-                    backgroundPosition: 'center',
-                    backgroundSize: 'contain',
-                    bgcolor: '#f5f5f5'
-                  }} />
+                  <Box
+                    sx={{
+                      height: 160,
+                      backgroundImage: t.imageUrl ? `url(${t.imageUrl})` : 'none',
+                      backgroundRepeat: 'no-repeat',
+                      backgroundPosition: 'center',
+                      backgroundSize: 'contain',
+                      bgcolor: '#f5f5f5'
+                    }}
+                  />
                 </CardActionArea>
                 <CardContent sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Box sx={{ minWidth: 0 }}>
@@ -274,7 +336,7 @@ export default function AdminTemplatesPage() {
               </Card>
             </Grid>
           ))}
-          {items.length === 0 && (
+          {filtered.length === 0 && (
             <Box sx={{ color: 'text.secondary', p: 4 }}>No templates yet.</Box>
           )}
         </Grid>

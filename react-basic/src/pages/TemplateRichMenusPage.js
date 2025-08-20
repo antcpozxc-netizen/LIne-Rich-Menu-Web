@@ -1,11 +1,16 @@
+// src/pages/TemplateRichMenusPage.js
 import React, { useEffect, useMemo, useState } from 'react';
-import { Box, Button, Card, CardActionArea, CardContent, Container, Grid, Stack, Typography, Chip } from '@mui/material';
+import {
+  Box, Button, Card, CardActionArea, CardContent, Container,
+  Grid, Stack, Typography, Chip
+} from '@mui/material';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { auth } from '../firebase';
+import { CATEGORY_OPTIONS } from '../constants/categories';
 
-async function authedFetch(url, opts={}) {
+async function authedFetch(url, opts = {}) {
   const token = await auth.currentUser?.getIdToken();
-  const headers = { 'Content-Type': 'application/json', ...(opts.headers||{}), Authorization: `Bearer ${token}` };
+  const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}), Authorization: `Bearer ${token}` };
   const res = await fetch(url, { ...opts, headers });
   const txt = await res.text();
   if (!res.ok) throw new Error(txt || res.statusText);
@@ -14,56 +19,126 @@ async function authedFetch(url, opts={}) {
 
 export default function TemplateRichMenusPage() {
   const navigate = useNavigate();
-  const [sp] = useSearchParams();
+  const [sp, setSp] = useSearchParams();
   const tenantId = sp.get('tenant') || '';
-  const [items, setItems] = useState([]);
-  const [cat, setCat] = useState('');
 
-  useEffect(()=>{ (async ()=>{ const j = await authedFetch('/api/admin/templates'); setItems(j.items||[]); })(); },[]);
-  const cats = useMemo(()=> Array.from(new Set(items.map(i=>i.category).filter(Boolean))), [items]);
-  const filtered = useMemo(()=> items.filter(i=> !cat || i.category===cat), [items, cat]);
+  // sync category filter กับ URL ?cat=
+  const [cat, setCat] = useState(sp.get('cat') || '');
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const j = await authedFetch('/api/admin/templates');
+        setItems(j.items || []);
+      } catch (e) {
+        setErr(e?.message || String(e));
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  // อัปเดต URL เมื่อเปลี่ยน cat (แต่คงค่า tenant เดิม)
+  const setCatAndUrl = (next) => {
+    setCat(next);
+    const nextSp = new URLSearchParams(sp.toString());
+    if (next) nextSp.set('cat', next); else nextSp.delete('cat');
+    setSp(nextSp, { replace: true });
+  };
+
+  const cats = useMemo(
+    () => Array.from(new Set([...CATEGORY_OPTIONS, ...items.map(i => i.category).filter(Boolean)])),
+    [items]
+  );
+  const filtered = useMemo(
+    () => items.filter(i => !cat || i.category === cat),
+    [items, cat]
+  );
 
   const onUse = (tpl) => {
+    if (!tenantId) {
+      alert('กรุณาเลือก OA ก่อน');
+      return;
+    }
     navigate(`/homepage/rich-menus/new?tenant=${tenantId}`, {
-      state: { prefill: { size: tpl.size, imageUrl: tpl.imageUrl, chatBarText: tpl.chatBarText, areas: tpl.areas, title: tpl.title } }
+      state: {
+        prefill: {
+          size: tpl.size,
+          imageUrl: tpl.imageUrl,
+          chatBarText: tpl.chatBarText,
+          areas: tpl.areas,
+          title: tpl.title,
+        }
+      }
     });
   };
 
   return (
     <Container sx={{ py: 3 }}>
-      <Stack direction="row" spacing={1} alignItems="center" sx={{mb:2, flexWrap:'wrap'}}>
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2, flexWrap: 'wrap' }}>
         <Typography variant="h5" fontWeight="bold">Template Rich Menus</Typography>
-        <Box sx={{flex:1}}/>
-        <Chip label="All" clickable onClick={()=>setCat('')} color={!cat?'success':'default'} variant={!cat?'filled':'outlined'}/>
-        {cats.map(c=> <Chip key={c} label={c} clickable onClick={()=>setCat(c)} color={cat===c?'success':'default'} variant={cat===c?'filled':'outlined'} sx={{ml:1}}/>)}
+        <Box sx={{ flex: 1 }} />
+        <Chip
+          label="All"
+          clickable
+          onClick={() => setCatAndUrl('')}
+          color={!cat ? 'success' : 'default'}
+          variant={!cat ? 'filled' : 'outlined'}
+        />
+        {cats.map(c => (
+          <Chip
+            key={c}
+            label={c}
+            clickable
+            onClick={() => setCatAndUrl(c)}
+            color={cat === c ? 'success' : 'default'}
+            variant={cat === c ? 'filled' : 'outlined'}
+            sx={{ ml: 1 }}
+          />
+        ))}
       </Stack>
 
-      <Grid container spacing={2}>
-        {filtered.map(t=>(
-          <Grid key={t.id} item xs={12} sm={6} md={4} lg={3}>
-            <Card variant="outlined">
-              <CardActionArea onClick={()=>onUse(t)}>
-                <Box sx={{
-                  height: 160,
-                  backgroundImage: t.imageUrl?`url(${t.imageUrl})`:'none',
-                  backgroundRepeat:'no-repeat', backgroundPosition:'center', backgroundSize:'contain', bgcolor:'#f5f5f5'
-                }}/>
-              </CardActionArea>
-              <CardContent sx={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                <Box>
-                  <Typography variant="subtitle2" noWrap>{t.title||'(Untitled)'}</Typography>
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <Chip size="small" label={t.size||'large'}/>
-                    {t.category && <Chip size="small" variant="outlined" label={t.category}/>}
-                  </Stack>
-                </Box>
-                <Button size="small" variant="contained" onClick={()=>onUse(t)}>Use</Button>
-              </CardContent>
-            </Card>
-          </Grid>
-        ))}
-        {filtered.length===0 && <Box sx={{p:4, color:'text.secondary'}}>No templates.</Box>}
-      </Grid>
+      {loading && <Box sx={{ p: 4 }}>Loading templates…</Box>}
+      {!!err && !loading && <Box sx={{ p: 4, color: 'error.main' }}>โหลดเทมเพลตไม่สำเร็จ: {err}</Box>}
+
+      {!loading && !err && (
+        <Grid container spacing={2}>
+          {filtered.map(t => (
+            <Grid key={t.id} item xs={12} sm={6} md={4} lg={3}>
+              <Card variant="outlined">
+                <CardActionArea onClick={() => onUse(t)}>
+                  <Box
+                    sx={{
+                      height: 160,
+                      backgroundImage: t.imageUrl ? `url(${t.imageUrl})` : 'none',
+                      backgroundRepeat: 'no-repeat',
+                      backgroundPosition: 'center',
+                      backgroundSize: 'contain',
+                      bgcolor: '#f5f5f5'
+                    }}
+                  />
+                </CardActionArea>
+                <CardContent sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Box>
+                    <Typography variant="subtitle2" noWrap>{t.title || '(Untitled)'}</Typography>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <Chip size="small" label={t.size || 'large'} />
+                      {t.category && <Chip size="small" variant="outlined" label={t.category} />}
+                    </Stack>
+                  </Box>
+                  <Button size="small" variant="contained" onClick={() => onUse(t)}>Use</Button>
+                </CardContent>
+              </Card>
+            </Grid>
+          ))}
+          {filtered.length === 0 && (
+            <Box sx={{ p: 4, color: 'text.secondary' }}>No templates.</Box>
+          )}
+        </Grid>
+      )}
     </Container>
   );
 }
