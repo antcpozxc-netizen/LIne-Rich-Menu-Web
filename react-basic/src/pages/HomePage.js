@@ -354,8 +354,8 @@ export default function HomePage() {
             {/* === NEW: Admin Templates (เห็นเฉพาะ admin) === */}
             {isAdmin && (
               <ListItem disablePadding>
-                <ListItemButton onClick={() => navigate(`/admin/templates`)}>
-                  <ListItemIcon><AdminPanelSettingsIcon /></ListItemIcon>
+                <ListItemButton onClick={() => navigate(`/homepage/admin/templates${activeTenantId ? `?tenant=${activeTenantId}` : ''}`)}>
+                  <ListItemIcon><TableChartIcon /></ListItemIcon>
                   {sidebarOpen && <ListItemText primary="Admin: Templates" />}
                 </ListItemButton>
               </ListItem>

@@ -5,8 +5,11 @@ import './index.css';
 import App from './App';
 import { BrowserRouter, Routes, Route, Navigate, useParams, useLocation } from 'react-router-dom';
 
-// Admin
+// Guards
 import RequireAdmin from './routes/RequireAdmin';
+import RequireAuth from './routes/RequireAuth';
+
+// Admin
 import AdminTemplatesPage from './pages/AdminTemplatesPage';
 
 import AccountsPage from './pages/AccountsPage';
@@ -55,10 +58,10 @@ const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <BrowserRouter>
     <Routes>
-      {/* Public */}
+      {/* Landing */}
       <Route path="/" element={<App />} />
 
-      {/* ต้องล็อกอินก่อนทุกอย่างในบล็อกนี้ */}
+      {/* ต้องล็อกอินก่อน */}
       <Route element={<RequireAuth />}>
         <Route path="/accounts" element={<AccountsPage />} />
 
@@ -66,30 +69,34 @@ root.render(
         <Route path="/homepage" element={<HomePage />}>
           <Route index element={<DashboardHome />} />
           <Route path="insight" element={<InsightPage />} />
+
           {/* Broadcast */}
           <Route path="broadcast" element={<BroadcastListPage />} />
           <Route path="broadcast/new" element={<BroadcastPage />} />
           <Route path="broadcast/:id" element={<RedirectBroadcastIdToNew />} />
+
           {/* Rich Message */}
           <Route path="rich-message" element={<RichMessageListPage />} />
           <Route path="rich-message/new" element={<RichMessageCreatePage />} />
           <Route path="rich-message/:id" element={<RichMessageDetailPage />} />
+
           {/* Rich Menus */}
           <Route path="rich-menus/new" element={<RichMenusPage />} />
           <Route path="rich-menus" element={<RichMenusListPage />} />
           <Route path="template-rich-menus" element={<TemplateRichMenusPage />} />
+
           {/* Others */}
           <Route path="greeting-message" element={<GreetingMessagePage />} />
           <Route path="friends" element={<FriendsPage />} />
-        </Route>
 
-        {/* ต้องล็อกอิน + เป็นแอดมิน */}
-        <Route element={<RequireAdmin />}>
-          <Route path="/admin/templates" element={<AdminTemplatesPage />} />
+          {/* 🔐 Admin routes (อยู่ใต้ HomePage เพื่อใช้ layout เดียวกัน) */}
+          <Route element={<RequireAdmin />}>
+            <Route path="admin/templates" element={<AdminTemplatesPage />} />
+          </Route>
         </Route>
       </Route>
 
-      {/* 404 → กลับหน้าแรก */}
+      {/* fallback */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   </BrowserRouter>
