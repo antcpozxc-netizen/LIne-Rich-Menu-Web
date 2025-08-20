@@ -58,11 +58,12 @@ export default function TemplateRichMenusPage() {
     [items, cat]
   );
 
+  // แยก Large / Compact
+  const large   = useMemo(() => filtered.filter(t => (t.size || 'large') === 'large'), [filtered]);
+  const compact = useMemo(() => filtered.filter(t => t.size === 'compact'), [filtered]);
+
   const onUse = (tpl) => {
-    if (!tenantId) {
-      alert('กรุณาเลือก OA ก่อน');
-      return;
-    }
+    if (!tenantId) { alert('กรุณาเลือก OA ก่อน'); return; }
     navigate(`/homepage/rich-menus/new?tenant=${tenantId}`, {
       state: {
         prefill: {
@@ -75,6 +76,39 @@ export default function TemplateRichMenusPage() {
       }
     });
   };
+
+  const renderGrid = (list) => (
+    <Grid container spacing={2}>
+      {list.map(t => (
+        <Grid key={t.id} item xs={12} sm={6} md={4} lg={3}>
+          <Card variant="outlined">
+            <CardActionArea onClick={() => onUse(t)}>
+              <Box
+                sx={{
+                  height: 160,
+                  backgroundImage: t.imageUrl ? `url(${t.imageUrl})` : 'none',
+                  backgroundRepeat: 'no-repeat',
+                  backgroundPosition: 'center',
+                  backgroundSize: 'contain',
+                  bgcolor: '#f5f5f5'
+                }}
+              />
+            </CardActionArea>
+            <CardContent sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Box>
+                <Typography variant="subtitle2" noWrap>{t.title || '(Untitled)'}</Typography>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Chip size="small" label={t.size || 'large'} />
+                  {t.category && <Chip size="small" variant="outlined" label={t.category} />}
+                </Stack>
+              </Box>
+              <Button size="small" variant="contained" onClick={() => onUse(t)}>Use</Button>
+            </CardContent>
+          </Card>
+        </Grid>
+      ))}
+    </Grid>
+  );
 
   return (
     <Container sx={{ py: 3 }}>
@@ -105,40 +139,27 @@ export default function TemplateRichMenusPage() {
       {!!err && !loading && <Box sx={{ p: 4, color: 'error.main' }}>โหลดเทมเพลตไม่สำเร็จ: {err}</Box>}
 
       {!loading && !err && (
-        <Grid container spacing={2}>
-          {filtered.map(t => (
-            <Grid key={t.id} item xs={12} sm={6} md={4} lg={3}>
-              <Card variant="outlined">
-                <CardActionArea onClick={() => onUse(t)}>
-                  <Box
-                    sx={{
-                      height: 160,
-                      backgroundImage: t.imageUrl ? `url(${t.imageUrl})` : 'none',
-                      backgroundRepeat: 'no-repeat',
-                      backgroundPosition: 'center',
-                      backgroundSize: 'contain',
-                      bgcolor: '#f5f5f5'
-                    }}
-                  />
-                </CardActionArea>
-                <CardContent sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Box>
-                    <Typography variant="subtitle2" noWrap>{t.title || '(Untitled)'}</Typography>
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <Chip size="small" label={t.size || 'large'} />
-                      {t.category && <Chip size="small" variant="outlined" label={t.category} />}
-                    </Stack>
-                  </Box>
-                  <Button size="small" variant="contained" onClick={() => onUse(t)}>Use</Button>
-                </CardContent>
-              </Card>
-            </Grid>
-          ))}
-          {filtered.length === 0 && (
+        <Box>
+          {large.length > 0 && (
+            <Box sx={{ mb: 3 }}>
+              <Typography variant="subtitle1" sx={{ mb: 1 }}>Large</Typography>
+              {renderGrid(large)}
+            </Box>
+          )}
+
+          {compact.length > 0 && (
+            <Box sx={{ mb: 3 }}>
+              <Typography variant="subtitle1" sx={{ mb: 1 }}>Compact</Typography>
+              {renderGrid(compact)}
+            </Box>
+          )}
+
+          {large.length === 0 && compact.length === 0 && (
             <Box sx={{ p: 4, color: 'text.secondary' }}>No templates.</Box>
           )}
-        </Grid>
+        </Box>
       )}
     </Container>
   );
 }
+

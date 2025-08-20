@@ -2,14 +2,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Box, Button, Card, CardActionArea, CardContent, Chip, Container,
-  Grid, IconButton, Stack, TextField, Typography, Tooltip
+  Grid, IconButton, Stack, Typography, Tooltip
 } from '@mui/material';
 import { Delete as DeleteIcon, Edit as EditIcon } from '@mui/icons-material';
 import { useNavigate, useSearchParams, useOutletContext } from 'react-router-dom';
 import { auth } from '../firebase';
 import { CATEGORY_OPTIONS } from '../constants/categories';
 
-// ---- helper ----
 async function authedFetch(url, opts = {}) {
   const token = await auth.currentUser?.getIdToken();
   const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}), Authorization: `Bearer ${token}` };
@@ -37,13 +36,9 @@ export default function AdminTemplatesPage() {
 
   useEffect(() => {
     (async () => {
-      try {
-        await load();
-      } catch (e) {
-        setError(e?.message || String(e));
-      } finally {
-        setLoading(false);
-      }
+      try { await load(); }
+      catch (e) { setError(e?.message || String(e)); }
+      finally { setLoading(false); }
     })();
   }, []);
 
@@ -56,30 +51,65 @@ export default function AdminTemplatesPage() {
     [items, cat]
   );
 
+  const large   = filtered.filter(t => (t.size || 'large') === 'large');
+  const compact = filtered.filter(t => t.size === 'compact');
+
   const onDelete = async (id) => {
     if (!window.confirm('Delete this template?')) return;
     await authedFetch(`/api/admin/templates/${id}`, { method: 'DELETE' });
     await load();
   };
 
-  // ✅ เปลี่ยนชื่อจาก useTemplate → applyTemplate เพื่อไม่ให้ eslint คิดว่าเป็น Hook
   const applyTemplate = (t) => {
     if (!tenantId) { alert('กรุณาเลือก OA ก่อน'); return; }
     navigate(`/homepage/rich-menus/new?tenant=${tenantId}`, {
-      state: {
-        prefill: {
-          size: t.size,
-          imageUrl: t.imageUrl,
-          chatBarText: t.chatBarText,
-          areas: t.areas,
-          title: t.title,
-        }
-      }
+      state: { prefill: { size: t.size, imageUrl: t.imageUrl, chatBarText: t.chatBarText, areas: t.areas, title: t.title } }
     });
   };
 
   const toEdit   = (t) => navigate(`/homepage/admin/templates/${t.id}${tenantId ? `?tenant=${tenantId}` : ''}`);
   const toCreate = ()   => navigate(`/homepage/admin/templates/new${tenantId ? `?tenant=${tenantId}` : ''}`);
+
+  const renderGrid = (list) => (
+    <Grid container spacing={2}>
+      {list.map(t => (
+        <Grid item key={t.id} xs={12} sm={6} md={4} lg={3}>
+          <Card variant="outlined">
+            <CardActionArea onClick={() => toEdit(t)}>
+              <Box sx={{
+                height: 160,
+                backgroundImage: t.imageUrl ? `url(${t.imageUrl})` : 'none',
+                backgroundRepeat: 'no-repeat',
+                backgroundPosition: 'center',
+                backgroundSize: 'contain',
+                bgcolor: '#f5f5f5'
+              }}/>
+            </CardActionArea>
+            <CardContent sx={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="subtitle2" noWrap>{t.title || '(Untitled)'}</Typography>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Chip size="small" label={t.size || 'large'} />
+                  {t.category && <Chip size="small" variant="outlined" label={t.category} />}
+                </Stack>
+              </Box>
+              <Box>
+                <Tooltip title="Use this template">
+                  <IconButton color="success" onClick={() => applyTemplate(t)}>▶</IconButton>
+                </Tooltip>
+                <Tooltip title="Edit">
+                  <IconButton onClick={() => toEdit(t)}><EditIcon/></IconButton>
+                </Tooltip>
+                <Tooltip title="Delete">
+                  <IconButton color="error" onClick={() => onDelete(t.id)}><DeleteIcon/></IconButton>
+                </Tooltip>
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
+      ))}
+    </Grid>
+  );
 
   return (
     <Container sx={{ py: 3 }}>
@@ -103,48 +133,23 @@ export default function AdminTemplatesPage() {
       {!!error && !loading && <Box sx={{ p: 4, color: 'error.main' }}>เปิดรายการเทมเพลตไม่ได้: {error}</Box>}
 
       {!loading && !error && (
-        <Grid container spacing={2}>
-          {filtered.map(t => (
-            <Grid item key={t.id} xs={12} sm={6} md={4} lg={3}>
-              <Card variant="outlined">
-                <CardActionArea onClick={() => toEdit(t)}>
-                  <Box sx={{
-                    height: 160,
-                    backgroundImage: t.imageUrl ? `url(${t.imageUrl})` : 'none',
-                    backgroundRepeat: 'no-repeat',
-                    backgroundPosition: 'center',
-                    backgroundSize: 'contain',
-                    bgcolor: '#f5f5f5'
-                  }}/>
-                </CardActionArea>
-                <CardContent sx={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                  <Box sx={{ minWidth: 0 }}>
-                    <Typography variant="subtitle2" noWrap>{t.title || '(Untitled)'}</Typography>
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <Chip size="small" label={t.size || 'large'} />
-                      {t.category && <Chip size="small" variant="outlined" label={t.category} />}
-                    </Stack>
-                  </Box>
-                  <Box>
-                    <Tooltip title="Use this template">
-                      {/* ⬇ เรียก applyTemplate แทน useTemplate */}
-                      <IconButton color="success" onClick={() => applyTemplate(t)}>▶</IconButton>
-                    </Tooltip>
-                    <Tooltip title="Edit">
-                      <IconButton onClick={() => toEdit(t)}><EditIcon/></IconButton>
-                    </Tooltip>
-                    <Tooltip title="Delete">
-                      <IconButton color="error" onClick={() => onDelete(t.id)}><DeleteIcon/></IconButton>
-                    </Tooltip>
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-          ))}
-          {filtered.length === 0 && (
+        <Box>
+          {large.length > 0 && (
+            <Box sx={{ mb: 3 }}>
+              <Typography variant="subtitle1" sx={{ mb: 1 }}>Large</Typography>
+              {renderGrid(large)}
+            </Box>
+          )}
+          {compact.length > 0 && (
+            <Box sx={{ mb: 3 }}>
+              <Typography variant="subtitle1" sx={{ mb: 1 }}>Compact</Typography>
+              {renderGrid(compact)}
+            </Box>
+          )}
+          {large.length === 0 && compact.length === 0 && (
             <Box sx={{ color: 'text.secondary', p: 4 }}>No templates yet.</Box>
           )}
-        </Grid>
+        </Box>
       )}
     </Container>
   );

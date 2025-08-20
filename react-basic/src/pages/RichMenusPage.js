@@ -18,10 +18,9 @@ import { ref as sref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { auth, storage, db } from '../firebase';
 import { doc, getDoc } from 'firebase/firestore';
 
-// ============================= Consts =============================
 const STORAGE_KEY = 'richMenuDraft';
 
-// -------- Template presets (6×4 grid)
+// ---------- Template presets ----------
 const TEMPLATES = [
   // Large
   { id: 'lg-1x1-1x1-1x1-1x1-1x1-1x1', label: 'Large • 6 blocks (2×2 × 6)', size: 'large',
@@ -36,7 +35,6 @@ const TEMPLATES = [
     preview: [[0,0,2,4],[2,0,4,4]] },
   { id: 'lg-1', label: 'Large • 1 block (full)', size: 'large',
     preview: [[0,0,6,4]] },
-
   // Compact
   { id: 'cp-3+3+3+3', label: 'Compact • 4 blocks (3×2 × 4)', size: 'compact',
     preview: [[0,0,3,2],[3,0,3,2],[0,2,3,2],[3,2,3,2]] },
@@ -50,37 +48,26 @@ const TEMPLATES = [
     preview: [[0,0,6,4]] },
 ];
 
-// -------- Action choices
 const ACTION_OPTIONS = ['Select', 'Link', 'Text', 'QnA', 'Live Chat', 'No action'];
 
-// ---- utilities
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const pctClamp = (n) => Math.round(clamp(Number(n) || 0, 0, 100) * 100) / 100;
 
 const readDraft = () => { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch { return {}; } };
-// eslint-disable-next-line no-unused-vars
 const writeDraft = (obj) => localStorage.setItem(STORAGE_KEY, JSON.stringify(obj));
 
-// Convert local file to 2500x(1686|843) JPEG <= ~1MB (สำหรับอัปโหลดจริง)
+// --- resize to LINE spec ---
 async function drawToSize(file, targetW, targetH, mime='image/jpeg') {
   const url = URL.createObjectURL(file);
   try {
-    const img = await new Promise((res, rej) => {
-      const i = new Image();
-      i.onload = () => res(i);
-      i.onerror = rej;
-      i.src = url;
-    });
-
+    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
     const canvas = document.createElement('canvas');
     canvas.width = targetW; canvas.height = targetH;
     const ctx = canvas.getContext('2d');
-
     const scale = Math.max(targetW / img.width, targetH / img.height);
     const dw = img.width * scale, dh = img.height * scale;
     const dx = (targetW - dw) / 2, dy = (targetH - dh) / 2;
     ctx.drawImage(img, dx, dy, dw, dh);
-
     const qualities = [0.9, 0.8, 0.75, 0.7, 0.65, 0.6];
     for (const q of qualities) {
       const blob = await new Promise(r => canvas.toBlob(r, mime, q));
@@ -88,15 +75,12 @@ async function drawToSize(file, targetW, targetH, mime='image/jpeg') {
       if (blob.size <= 1024 * 1024) return blob;
       if (q === qualities[qualities.length - 1]) return blob;
     }
-  } finally {
-    URL.revokeObjectURL(url);
-  }
+  } finally { URL.revokeObjectURL(url); }
 }
 
-// ============================= Action Editor =============================
+// -------- Action Editor --------
 function ActionEditor({ idx, action, onChange }) {
   const update = (patch) => onChange({ ...action, ...patch });
-
   return (
     <Paper variant="outlined" sx={{ p: 2, mb: 1.5 }}>
       <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
@@ -111,14 +95,14 @@ function ActionEditor({ idx, action, onChange }) {
         <Stack spacing={1}>
           <TextField label="URL" value={action.url || ''} onChange={(e) => update({ url: e.target.value })} />
           <TextField label="Label (≤20)" value={action.label || ''} onChange={(e) => update({ label: (e.target.value || '').slice(0, 20) })} />
-          <Typography variant="caption" color="text.secondary">จะถูกส่งเป็น <Chip size="small" label="URI action" /> ใน LINE</Typography>
+          <Typography variant="caption" color="text.secondary">จะถูกส่งเป็น <Chip size="small" label="URI action" /></Typography>
         </Stack>
       )}
 
       {action.type === 'Text' && (
         <Stack spacing={1}>
           <TextField fullWidth label="Message text" value={action.text || ''} onChange={(e) => update({ text: (e.target.value || '').slice(0, 300) })} />
-          <Typography variant="caption" color="text.secondary">จะถูกส่งเป็น <Chip size="small" label="Message" /> ให้ผู้ใช้</Typography>
+          <Typography variant="caption" color="text.secondary">จะถูกส่งเป็น <Chip size="small" label="Message" /></Typography>
         </Stack>
       )}
 
@@ -139,14 +123,12 @@ function ActionEditor({ idx, action, onChange }) {
         </Stack>
       )}
 
-      {action.type === 'No action' && (
-        <Typography variant="body2" color="text.secondary">บล็อกนี้จะไม่ทำอะไร</Typography>
-      )}
+      {action.type === 'No action' && <Typography variant="body2" color="text.secondary">บล็อกนี้จะไม่ทำอะไร</Typography>}
     </Paper>
   );
 }
 
-// ============================= Template Picker =============================
+// -------- Template picker (grouped Large/Compact) --------
 function TemplateModal({ open, onClose, value, onApply }) {
   const [selected, setSelected] = useState(value?.id || TEMPLATES[0].id);
   useEffect(() => { if (value?.id) setSelected(value.id); }, [value]);
@@ -191,11 +173,8 @@ function TemplateModal({ open, onClose, value, onApply }) {
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>
-        <Button
-          variant="contained"
-          onClick={() => onApply(TEMPLATES.find(x => x.id === selected) || TEMPLATES[0])}
-          sx={{ bgcolor: '#66bb6a', '&:hover': { bgcolor: '#57aa5b' } }}
-        >
+        <Button variant="contained" onClick={() => onApply(TEMPLATES.find(x => x.id === selected) || TEMPLATES[0])}
+          sx={{ bgcolor: '#66bb6a', '&:hover': { bgcolor: '#57aa5b' } }}>
           Apply
         </Button>
       </DialogActions>
@@ -214,7 +193,6 @@ export default function RichMenusPage() {
   const [snack, setSnack] = useState('');
   const [templateOpen, setTemplateOpen] = useState(false);
 
-  // ค่าเริ่มต้น: title ว่าง
   const [title, setTitle] = useState('');
   const [template, setTemplate] = useState(TEMPLATES.find(t => t.id === 'lg-3+3+full') || TEMPLATES[0]);
 
@@ -227,44 +205,33 @@ export default function RichMenusPage() {
   const location = useLocation();
   const prefill = location.state?.prefill;
 
-  // areas
   const gridToAreas = (cells) =>
     cells.map((c, i) => {
       const [x, y, w, h] = c;
-      return {
-        id: `A${i + 1}`,
-        x: pctClamp((x / 6) * 100),
-        y: pctClamp((y / 4) * 100),
-        w: pctClamp((w / 6) * 100),
-        h: pctClamp((h / 4) * 100),
-      };
+      return { id: `A${i + 1}`, x: pctClamp((x / 6) * 100), y: pctClamp((y / 4) * 100), w: pctClamp((w / 6) * 100), h: pctClamp((h / 4) * 100) };
     });
 
   const _tpl0 = TEMPLATES.find(t => t.id === 'lg-3+3+full') || TEMPLATES[0];
   const [areas, setAreas] = useState(() => gridToAreas(_tpl0.preview));
   const [actions, setActions] = useState(() => Array.from({ length: _tpl0.preview.length }, () => ({ type: 'Select' })));
 
-  // overlay & drag
   const overlayRef = useRef(null);
   const [selected, setSelected] = useState('A1');
+  const selectedIndex = Math.max(0, areas.findIndex(a => a.id === selected));
   const [drag, setDrag] = useState(null);
   const MIN_W = 5, MIN_H = 5;
 
-  // file upload
-  const fileRef = useRef(null);
+  const actionRefs = useRef([]);
 
-  // --- helper: ISO/Timestamp -> datetime-local string
+  // ... (unchanged: firestore load / prefill / draft load)
   const toInputLocal = (v) => {
     if (!v) return '';
-    let d = v;
-    if (v?.toDate) d = v.toDate();
-    if (typeof v === 'string') d = new Date(v);
+    let d = v; if (v?.toDate) d = v.toDate(); if (typeof v === 'string') d = new Date(v);
     if (!(d instanceof Date) || isNaN(d.getTime())) return '';
     const pad = (n) => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   };
 
-  // โหลด “รายละเอียดจาก Firestore” เมื่อมี ?draft= และมี tenantId
   useEffect(() => {
     const run = async () => {
       if (!tenantId || !draftId) return;
@@ -272,16 +239,12 @@ export default function RichMenusPage() {
         const snap = await getDoc(doc(db, 'tenants', tenantId, 'richmenus', draftId));
         if (!snap.exists()) return;
         const data = snap.data() || {};
-
-        // ขนาดเมนู / template (เดาเลย์เอาต์จากจำนวนพื้นที่เดิมไม่ได้ จึงคงพื้นที่เดิมไว้)
         setTemplate((prev) => (prev.size === data.size ? prev : (TEMPLATES.find(t => t.size === data.size) || prev)));
-
         setTitle(data.title || '');
         setImage(data.imageUrl || '');
         setMenuBarLabel(data.chatBarText || 'Menu');
         setBehavior(data.defaultBehavior || 'shown');
 
-        // areas & actions
         const areasIn = Array.isArray(data.areas) ? data.areas : [];
         const areasPct = areasIn.map((a, i) => ({
           id: `A${i+1}`,
@@ -292,23 +255,17 @@ export default function RichMenusPage() {
         }));
         setAreas(areasPct);
         setActions(areasIn.map((a)=>a.action || { type:'Select' }));
-
-        // schedule
         setPeriodFrom(toInputLocal(data.scheduleFrom || data.schedule?.from));
         setPeriodTo(toInputLocal(data.scheduleTo || data.schedule?.to));
-      } catch (e) {
-        console.warn('load draft failed', e);
-      }
+      } catch {}
     };
     run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId, draftId]);
 
-  // โหลดดราฟท์จาก localStorage (กรณีสร้างใหม่)
   useEffect(() => {
-    if (draftId) return; // มี draft -> ข้าม
+    if (draftId) return;
     if (prefill) {
-      // apply prefill จาก template
       setTitle(prefill.title || '');
       if (prefill.size && template.size !== prefill.size) {
         const found = TEMPLATES.find(t => t.size === prefill.size) || template;
@@ -317,17 +274,12 @@ export default function RichMenusPage() {
       if (prefill.imageUrl) setImage(prefill.imageUrl);
       if (prefill.chatBarText) setMenuBarLabel(prefill.chatBarText);
       if (Array.isArray(prefill.areas) && prefill.areas.length) {
-        // แปลง areas (0..1 → 0..100)
         const toPct = (v)=> Math.round(((Number(v)||0)*100)*100)/100;
-        const aPct = prefill.areas.map((a,i)=>({
-          id:`A${i+1}`,
-          x: toPct(a.xPct), y: toPct(a.yPct),
-          w: toPct(a.wPct), h: toPct(a.hPct),
-        }));
+        const aPct = prefill.areas.map((a,i)=>({ id:`A${i+1}`, x:toPct(a.xPct), y:toPct(a.yPct), w:toPct(a.wPct), h:toPct(a.hPct) }));
         setAreas(aPct);
         setActions(prefill.areas.map(a => a.action || { type:'Select' }));
       }
-      return; // ไม่ต้องโหลดจาก localStorage แล้ว
+      return;
     }
     const d = readDraft();
     if (d?.title) setTitle(d.title);
@@ -342,7 +294,13 @@ export default function RichMenusPage() {
     }
     if (d?.periodFrom) setPeriodFrom(d.periodFrom);
     if (d?.periodTo) setPeriodTo(d.periodTo);
-  }, [draftId]);
+  }, [draftId, prefill, template.size]);
+
+  useEffect(() => {
+    // เลื่อนให้เห็น Action ของบล็อคที่เลือก
+    const el = actionRefs.current[selectedIndex];
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [selectedIndex]);
 
   const canSave = useMemo(() => title.trim().length > 0 && !!image, [title, image]);
 
@@ -357,12 +315,13 @@ export default function RichMenusPage() {
     setSelected(nextAreas[0]?.id || null);
   };
 
+  const fileRef = useRef(null);
   const uploadImage = async (file) => {
-    if (!tenantId) { setSnack('กรุณาเลือก OA ก่อน'); return; }
+    if (!tenantId) return setSnack('กรุณาเลือก OA ก่อน');
     const targetH = template.size === 'compact' ? 843 : 1686;
     try {
       const blob = await drawToSize(file, 2500, targetH, 'image/jpeg');
-      if (!blob) { setSnack('แปลงรูปไม่สำเร็จ'); return; }
+      if (!blob) return setSnack('แปลงรูปไม่สำเร็จ');
       const base = (file.name || 'menu').replace(/\.[^.]+$/, '');
       const safeName = `${base.replace(/\s+/g, '-')}.jpg`;
       const r = sref(storage, `tenants/${tenantId}/rich-menus/${Date.now()}-${safeName}`);
@@ -370,10 +329,7 @@ export default function RichMenusPage() {
       const url = await getDownloadURL(r);
       setImage(url);
       setSnack(`อัปโหลดรูปสำเร็จ (${Math.round(blob.size/1024)} KB)`);
-    } catch (e) {
-      console.error(e);
-      setSnack('อัปโหลดรูปไม่สำเร็จ');
-    }
+    } catch { setSnack('อัปโหลดรูปไม่สำเร็จ'); }
   };
 
   const updateArea = (id, patch) => setAreas(prev => prev.map(a => a.id === id ? { ...a, ...patch } : a));
@@ -394,23 +350,14 @@ export default function RichMenusPage() {
     e.stopPropagation();
     const a = areas.find(x => x.id === id); if (!a) return;
     const rect = overlayRef.current.getBoundingClientRect();
-    setDrag({
-      id, mode: 'move', startX: e.clientX, startY: e.clientY,
-      startRect: { x: a.x, y: a.y, w: a.w, h: a.h },
-      box: { w: rect.width, h: rect.height },
-    });
+    setDrag({ id, mode: 'move', startX: e.clientX, startY: e.clientY, startRect: { x: a.x, y: a.y, w: a.w, h: a.h }, box: { w: rect.width, h: rect.height } });
     setSelected(id);
   };
   const startResize = (id, handle, e) => {
     e.stopPropagation();
     const a = areas.find(x => x.id === id); if (!a) return;
     const rect = overlayRef.current.getBoundingClientRect();
-    setDrag({
-      id, mode: 'resize', handle,
-      startX: e.clientX, startY: e.clientY,
-      startRect: { x: a.x, y: a.y, w: a.w, h: a.h },
-      box: { w: rect.width, h: rect.height },
-    });
+    setDrag({ id, mode: 'resize', handle, startX: e.clientX, startY: e.clientY, startRect: { x: a.x, y: a.y, w: a.w, h: a.h }, box: { w: rect.width, h: rect.height } });
     setSelected(id);
   };
   useEffect(() => {
@@ -442,13 +389,12 @@ export default function RichMenusPage() {
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
   }, [drag]); // eslint-disable-line
 
-  // ============================= Save / API =============================
+  // --- save helpers (unchanged) ---
   const authHeader = async () => {
     if (!auth.currentUser) throw new Error('ยังไม่พบผู้ใช้ที่ล็อกอิน');
     const idToken = await auth.currentUser.getIdToken();
     return { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` };
   };
-
   const normalizeImageUrl = (u) => {
     try {
       if (String(u).startsWith('data:')) throw new Error('กรุณาอัปโหลดภาพขึ้น Storage ให้ได้ URL ก่อน');
@@ -462,31 +408,14 @@ export default function RichMenusPage() {
       return url.toString();
     } catch { return u; }
   };
-
-  const toNormalized = (a, i) => {
-    const act = actions[i] || { type: 'No action' };
-    return {
-      xPct: pctClamp(a.x) / 100,
-      yPct: pctClamp(a.y) / 100,
-      wPct: pctClamp(a.w) / 100,
-      hPct: pctClamp(a.h) / 100,
-      action: act,
-    };
-  };
-
+  const toNormalized = (a, i) => ({
+    xPct: pctClamp(a.x) / 100, yPct: pctClamp(a.y) / 100, wPct: pctClamp(a.w) / 100, hPct: pctClamp(a.h) / 100,
+    action: actions[i] || { type: 'No action' },
+  });
   const buildPayload = (includeSchedule = false) => ({
-    title,
-    size: template.size,
-    imageUrl: normalizeImageUrl(image),
-    chatBarText: menuBarLabel || 'Menu',
-    defaultBehavior: behavior,
-    areas: areas.map(toNormalized),
-    schedule: includeSchedule && periodFrom
-      ? {
-          from: new Date(periodFrom).toISOString(),
-          to: periodTo ? new Date(periodTo).toISOString() : null,
-        }
-      : null,
+    title, size: template.size, imageUrl: normalizeImageUrl(image), chatBarText: menuBarLabel || 'Menu',
+    defaultBehavior: behavior, areas: areas.map(toNormalized),
+    schedule: includeSchedule && periodFrom ? { from: new Date(periodFrom).toISOString(), to: periodTo ? new Date(periodTo).toISOString() : null } : null,
   });
 
   const onSaveDraft = async () => {
@@ -494,78 +423,44 @@ export default function RichMenusPage() {
       if (!tenantId) return alert('กรุณาเลือก OA ก่อน');
       if (!image)   return alert('กรุณาอัปโหลดรูปเมนู');
       const headers = await authHeader();
-
       let res;
       if (isEditing) {
-        res = await fetch(`/api/tenants/${tenantId}/richmenus/${draftId}`, {
-          method: 'PUT',
-          headers,
-          body: JSON.stringify({ ...buildPayload(false), action: 'draft' }),
-        });
+        res = await fetch(`/api/tenants/${tenantId}/richmenus/${draftId}`, { method: 'PUT', headers, body: JSON.stringify({ ...buildPayload(false), action: 'draft' }) });
       } else {
-        res = await fetch(`/api/tenants/${tenantId}/richmenus`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(buildPayload(false)),
-        });
+        res = await fetch(`/api/tenants/${tenantId}/richmenus`, { method: 'POST', headers, body: JSON.stringify(buildPayload(false)) });
       }
-
       const text = await res.text();
       if (!res.ok) throw new Error(text || 'save failed');
-
       setSnack('Saved as Ready');
       navigate(`/homepage/rich-menus?tenant=${tenantId || ''}`);
-    } catch (e) {
-      alert('บันทึกไม่สำเร็จ: ' + (e?.message || e));
-    }
+    } catch (e) { alert('บันทึกไม่สำเร็จ: ' + (e?.message || e)); }
   };
-
-  // Save = ถ้าไม่มีช่วงเวลา -> Active เดี๋ยวนี้ (call /set-default)
   const onSaveReady = async () => {
     try {
       if (!tenantId) return alert('กรุณาเลือก OA ก่อน');
       if (!image)   return alert('กรุณาอัปโหลดรูปเมนู');
       if (!periodFrom) return alert('กรุณาเลือก Display from ก่อน');
-
       const headers = await authHeader();
-
       let res;
       if (isEditing) {
-        res = await fetch(`/api/tenants/${tenantId}/richmenus/${draftId}`, {
-          method: 'PUT',
-          headers,
-          body: JSON.stringify({ ...buildPayload(true), action: 'save' }),
-        });
+        res = await fetch(`/api/tenants/${tenantId}/richmenus/${draftId}`, { method: 'PUT', headers, body: JSON.stringify({ ...buildPayload(true), action: 'save' }) });
       } else {
-        res = await fetch(`/api/tenants/${tenantId}/richmenus`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(buildPayload(true)),
-        });
+        res = await fetch(`/api/tenants/${tenantId}/richmenus`, { method: 'POST', headers, body: JSON.stringify(buildPayload(true)) });
       }
-
       const text = await res.text();
       if (!res.ok) throw new Error(text || 'save failed');
-
       setSnack('Saved as Scheduled');
       navigate(`/homepage/rich-menus?tenant=${tenantId || ''}`);
-    } catch (e) {
-      alert('บันทึกไม่สำเร็จ: ' + (e?.message || e));
-    }
+    } catch (e) { alert('บันทึกไม่สำเร็จ: ' + (e?.message || e)); }
   };
 
-
-  // ============================= Render =============================
   return (
     <Container sx={{ py: 3 }}>
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
         <Stack direction="row" spacing={1} alignItems="center">
-          <Button variant="outlined" onClick={() => navigate(`/homepage/rich-menus?tenant=${tenantId || ''}`)}>
-            Back to list
-          </Button>
+          <Button variant="outlined" onClick={() => navigate(`/homepage/rich-menus?tenant=${tenantId || ''}`)}>Back to list</Button>
           <Typography variant="h4" fontWeight="bold">Rich menu</Typography>
         </Stack>
-
         <Stack direction="row" spacing={1}>
           <Button variant="outlined" startIcon={<SaveAltIcon />} onClick={onSaveDraft}>Save draft</Button>
           <Button variant="contained" startIcon={<SaveIcon />} disabled={!canSave} onClick={onSaveReady}
@@ -575,55 +470,35 @@ export default function RichMenusPage() {
         </Stack>
       </Stack>
 
-      {/* Main settings */}
+      {/* Main settings (unchanged) */}
       <Card variant="outlined" sx={{ mb: 2 }}>
         <CardContent>
           <Grid container spacing={2}>
             <Grid item xs={12} md={6}>
-              <TextField
-                label="Title (for management)"
-                fullWidth
-                value={title}
-                onChange={(e) => setTitle((e.target.value || "").slice(0, 30))}
-                helperText={`${title.length}/30`}
-              />
+              <TextField label="Title (for management)" fullWidth value={title} onChange={(e) => setTitle((e.target.value || "").slice(0, 30))} helperText={`${title.length}/30`} />
             </Grid>
             <Grid item xs={12} md={6}>
               <Stack direction="row" spacing={2} alignItems="center" sx={{ height: "100%" }}>
-                <TextField
-                  label="Chat bar label"
-                  size="small"
-                  value={menuBarLabel}
-                  onChange={(e) => setMenuBarLabel((e.target.value || "").slice(0, 14))}
-                  helperText={`${menuBarLabel.length}/14`}
-                />
+                <TextField label="Chat bar label" size="small" value={menuBarLabel} onChange={(e) => setMenuBarLabel((e.target.value || "").slice(0, 14))} helperText={`${menuBarLabel.length}/14`} />
                 <RadioGroup row value={behavior} onChange={(e) => setBehavior(e.target.value)}>
                   <FormControlLabel value="shown" control={<Radio />} label="Shown" />
                   <FormControlLabel value="collapsed" control={<Radio />} label="Collapsed" />
                 </RadioGroup>
               </Stack>
             </Grid>
-
-            {/* Display period */}
             <Grid item xs={12} md={6}>
               <Stack direction="row" spacing={2}>
-                <TextField label="Display from" type="datetime-local" size="small"
-                  value={periodFrom} onChange={(e) => setPeriodFrom(e.target.value)}
-                  sx={{ minWidth: 220 }} InputLabelProps={{ shrink: true }} />
-                <TextField label="to" type="datetime-local" size="small"
-                  value={periodTo} onChange={(e) => setPeriodTo(e.target.value)}
-                  sx={{ minWidth: 220 }} InputLabelProps={{ shrink: true }} />
+                <TextField label="Display from" type="datetime-local" size="small" value={periodFrom} onChange={(e) => setPeriodFrom(e.target.value)} sx={{ minWidth: 220 }} InputLabelProps={{ shrink: true }} />
+                <TextField label="to" type="datetime-local" size="small" value={periodTo} onChange={(e) => setPeriodTo(e.target.value)} sx={{ minWidth: 220 }} InputLabelProps={{ shrink: true }} />
               </Stack>
-              <Typography variant="caption" color="text.secondary">
-                ถ้าเว้นว่าง ระบบจะสร้างเป็น Ready โดยไม่มีตารางเวลา (ไม่ตั้ง default อัตโนมัติ)
-              </Typography>
+              <Typography variant="caption" color="text.secondary">ถ้าเว้นว่าง ระบบจะสร้างเป็น Ready โดยไม่มีตารางเวลา (ไม่ตั้ง default อัตโนมัติ)</Typography>
             </Grid>
           </Grid>
         </CardContent>
       </Card>
 
       <Grid container spacing={2} alignItems="flex-start">
-        {/* LEFT: preview + image + overlay */}
+        {/* LEFT: preview + overlay */}
         <Grid item xs={12} md={6}>
           <Card variant="outlined">
             <CardContent>
@@ -633,8 +508,7 @@ export default function RichMenusPage() {
                   <Button variant="outlined" onClick={() => applyTemplate(template)}>Reset to template</Button>
                   <Button variant="outlined" onClick={() => setTemplateOpen(true)}>Template</Button>
                   <Button variant="outlined" startIcon={<ImageIcon />} onClick={() => fileRef.current?.click()}>Change</Button>
-                  <input ref={fileRef} type="file" accept="image/*" hidden
-                    onChange={(e) => e.target.files?.[0] && uploadImage(e.target.files[0])} />
+                  <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => e.target.files?.[0] && uploadImage(e.target.files[0])} />
                 </Stack>
               </Stack>
 
@@ -676,6 +550,10 @@ export default function RichMenusPage() {
                       }}
                       title={`Block ${idx + 1}`}
                     >
+                      {/* label block + action */}
+                      <Chip size="small" label={`Block ${idx+1}`} sx={{ position:'absolute', left:4, top:4 }} />
+                      <Chip size="small" variant="outlined" label={actions[idx]?.type || 'Select'} sx={{ position:'absolute', left:4, bottom:4 }} />
+
                       {["nw","n","ne","e","se","s","sw","w"].map((h) => (
                         <Box key={h} onMouseDown={(e) => startResize(a.id, h, e)}
                           sx={{
@@ -699,11 +577,7 @@ export default function RichMenusPage() {
 
               <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
                 <Button startIcon={<AreaIcon />} onClick={addArea}>Add area</Button>
-                {selected && (
-                  <Button color="error" startIcon={<DeleteIcon />} onClick={() => removeArea(selected)}>
-                    Remove selected
-                  </Button>
-                )}
+                {selected && <Button color="error" startIcon={<DeleteIcon />} onClick={() => removeArea(selected)}>Remove selected</Button>}
               </Stack>
             </CardContent>
           </Card>
@@ -713,26 +587,27 @@ export default function RichMenusPage() {
         <Grid item xs={12} md={6}>
           <Card variant="outlined">
             <CardContent>
-              <Typography variant="subtitle1" fontWeight="bold" sx={{ mb: 1 }}>Actions</Typography>
+              <Typography variant="subtitle1" fontWeight="bold" sx={{ mb: 1 }}>
+                Actions — {areas.length ? `Block ${selectedIndex+1} selected` : 'No block selected'}
+              </Typography>
               {areas.map((a, i) => (
-                <ActionEditor
-                  key={a.id}
-                  idx={i}
-                  action={actions[i] || { type: "Select" }}
-                  onChange={(next) => setActions((prev) => prev.map((p, idx) => (idx === i ? next : p)))}
-                />
+                <Box key={a.id} ref={el => (actionRefs.current[i] = el)}
+                  sx={{ outline: i===selectedIndex ? '2px solid #66bb6a' : 'none', borderRadius: 2 }}>
+                  <ActionEditor
+                    idx={i}
+                    action={actions[i] || { type: "Select" }}
+                    onChange={(next) => setActions((prev) => prev.map((p, idx) => (idx === i ? next : p)))}
+                  />
+                </Box>
               ))}
             </CardContent>
           </Card>
         </Grid>
       </Grid>
 
-      <TemplateModal
-        open={templateOpen}
-        onClose={() => setTemplateOpen(false)}
+      <TemplateModal open={templateOpen} onClose={() => setTemplateOpen(false)}
         value={template}
-        onApply={(tpl) => { setTemplateOpen(false); applyTemplate(tpl); setSnack("Template applied"); }}
-      />
+        onApply={(tpl) => { setTemplateOpen(false); applyTemplate(tpl); setSnack("Template applied"); }} />
 
       <Snackbar open={!!snack} autoHideDuration={2200} onClose={() => setSnack("")} message={snack} />
     </Container>
