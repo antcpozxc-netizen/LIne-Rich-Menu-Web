@@ -11,6 +11,7 @@ import RequireAuth from './routes/RequireAuth';
 
 // Admin
 import AdminTemplatesPage from './pages/AdminTemplatesPage';
+import AdminTemplateEditorPage from './pages/AdminTemplateEditorPage';
 
 import AccountsPage from './pages/AccountsPage';
 import HomePage from './pages/HomePage';          // Layout
@@ -91,6 +92,8 @@ root.render(
           {/* 🔐 Admin routes (อยู่ใต้ HomePage เพื่อใช้ layout เดียวกัน) */}
           <Route element={<RequireAdmin />}>
             <Route path="admin/templates" element={<AdminTemplatesPage />} />
+            <Route path="admin/templates/new" element={<AdminTemplateEditorPage />} />
+            <Route path="admin/templates/:id" element={<AdminTemplateEditorPage />} />
           </Route>
         </Route>
       </Route>
