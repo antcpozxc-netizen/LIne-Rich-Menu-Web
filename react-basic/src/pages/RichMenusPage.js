@@ -13,7 +13,7 @@ import {
   CropSquare as AreaIcon,
   Delete as DeleteIcon,
 } from '@mui/icons-material';
-import { useOutletContext, useNavigate, useSearchParams } from 'react-router-dom';
+import { useOutletContext, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { ref as sref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { auth, storage, db } from '../firebase';
 import { doc, getDoc } from 'firebase/firestore';

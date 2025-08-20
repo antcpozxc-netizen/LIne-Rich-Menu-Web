@@ -930,8 +930,12 @@ app.delete('/api/tenants/:id/richmenus/:docId', requireFirebaseAuth, async (req,
 function requireAdmin(req, res, next) {
   admin.firestore().doc(`users/${req.user.uid}`).get()
     .then(snap => {
-      const isAdmin = !!snap.get('isAdmin');
-      if (!isAdmin) return res.status(403).json({ error: 'not_admin' });
+      const viaDocIsAdmin = !!snap.get('isAdmin');            // แบบ boolean
+      const viaDocRole    = snap.get('role') === 'admin';     // แบบ string role
+      const viaClaims     = !!req.user?.admin;                // custom claim
+      if (!(viaDocIsAdmin || viaDocRole || viaClaims)) {
+        return res.status(403).json({ error: 'not_admin' });
+      }
       next();
     })
     .catch(() => res.status(500).json({ error: 'server_error' }));

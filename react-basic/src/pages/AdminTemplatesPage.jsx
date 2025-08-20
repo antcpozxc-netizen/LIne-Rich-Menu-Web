@@ -6,7 +6,7 @@ import {
 import { Delete as DeleteIcon, Edit as EditIcon, Image as ImageIcon } from '@mui/icons-material';
 import { auth, storage } from '../firebase';
 import { ref as sref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useOutletContext } from 'react-router-dom';
 
 // ====== helpers ======
 async function authedFetch(url, opts={}) {
@@ -53,7 +53,6 @@ function TemplateEditor({ open, onClose, initial }) {
   useEffect(()=> setForm(initial || { title:'', size:'large', imageUrl:'', chatBarText:'Menu', category:'', tags:'', note:'', areas:[] }), [initial]);
 
   const uploadImage = async (file) => {
-    const targetH = form.size === 'compact' ? 843 : 1686;
     // อัปโหลดไฟล์ดิบ (เวอร์ชันเร็ว) — ถ้าต้องการ resize ใช้ util จากหน้า RichMenusPage
     const r = sref(storage, `public/admin-templates/${Date.now()}-${file.name.replace(/\s+/g,'-')}`);
     await uploadBytes(r, file);
@@ -172,10 +171,11 @@ function TemplateEditor({ open, onClose, initial }) {
 export default function AdminTemplatesPage() {
   const navigate = useNavigate();
   const [sp] = useSearchParams();
-  const tenantId = sp.get('tenant') || '';
   const [items, setItems] = useState([]);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
+  const { tenantId: ctxTenantId } = useOutletContext() || {};
+  const tenantId = ctxTenantId || sp.get('tenant') || '';
 
   const load = async () => {
     const j = await authedFetch('/api/admin/templates');
@@ -191,6 +191,7 @@ export default function AdminTemplatesPage() {
 
   const onUse = (t) => {
     // พรีฟิลล์ไปหน้า create
+    if (!tenantId) { alert('กรุณาเลือก OA ก่อน'); return; }
     navigate(`/homepage/rich-menus/new?tenant=${tenantId}`, {
       state: {
         prefill: {
