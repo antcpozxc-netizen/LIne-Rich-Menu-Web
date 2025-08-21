@@ -240,7 +240,7 @@ function mapActionForLINE(a = {}) {
        displayText: a.displayText || a.label || 'QnA'
      };
     case 'Live Chat':
-      return { type: 'message', text: a.text || '#live' };
+      return { type: 'message', text: a.liveText || '#live' };
     default:
       return { type: 'postback', data: 'noop' };
   }
@@ -884,7 +884,6 @@ app.put('/api/tenants/:id/richmenus/:rid', requireFirebaseAuth, async (req, res)
   try {
     const { id, rid } = req.params;
     const uid = req.user.uid;
-
     const tenant = await getTenantIfMember(id, uid);
     if (!tenant) return res.status(403).json({ error: 'not_member_of_tenant' });
 
@@ -895,8 +894,8 @@ app.put('/api/tenants/:id/richmenus/:rid', requireFirebaseAuth, async (req, res)
       chatBarText = 'Menu',
       defaultBehavior = 'shown',
       areas = [],
-      schedule = null,            // { from: ISO, to: ISO|null }  (ต้องมีเมื่อ action === 'save')
-      action = 'draft'            // 'draft' | 'save'  (save = Scheduled/Active)
+      schedule = null,
+      action = 'draft', // 'draft' | 'save'
     } = req.body || {};
 
     const docRef = tenant.ref.collection('richmenus').doc(rid);
@@ -905,24 +904,42 @@ app.put('/api/tenants/:id/richmenus/:rid', requireFirebaseAuth, async (req, res)
 
     const prev = snap.data() || {};
     const now = admin.firestore.FieldValue.serverTimestamp();
-
-    // กรณีต้องมีบน LINE แต่ยังไม่มี -> สร้าง
     let lineRichMenuId = prev.lineRichMenuId || null;
-    if (!lineRichMenuId) {
-      if (!imageUrl) return res.status(400).json({ error: 'image_url_required' });
 
-      const accessToken = await getTenantSecretAccessToken(tenant.ref);
-      const WIDTH  = 2500;
+    // เปลี่ยนโครงสร้าง? (LINE ไม่มี API แก้โครงสร้าง → ต้องสร้างใหม่)
+    const structChanged =
+      prev.size !== size ||
+      prev.chatBarText !== chatBarText ||
+      JSON.stringify(prev.areas || []) !== JSON.stringify(areas || []);
+
+    // เปลี่ยนรูป?
+    const imageChanged = !!imageUrl && imageUrl !== prev.imageUrl;
+
+    const accessToken = await getTenantSecretAccessToken(tenant.ref);
+
+    if (!lineRichMenuId || structChanged) {
+      // สร้าง rich menu ใหม่
+      const WIDTH = 2500;
       const HEIGHT = size === 'compact' ? 843 : 1686;
       const areasPx = toPxAreas({ areas, width: WIDTH, height: HEIGHT });
 
       const created = await createAndUploadRichMenuOnLINE({
         accessToken, title, chatBarText, size, areasPx, imageUrl
       });
+
+      // ลบอันเก่า (best-effort)
+      if (lineRichMenuId) {
+        fetchFn(`https://api.line.me/v2/bot/richmenu/${encodeURIComponent(lineRichMenuId)}`, {
+          method: 'DELETE', headers: { Authorization: `Bearer ${accessToken}` }
+        }).catch(()=>{});
+      }
       lineRichMenuId = created.richMenuId;
+    } else if (imageChanged) {
+      // โครงสร้างเดิม แต่รูปใหม่ → อัปโหลดทับ
+      await uploadImageToLINE({ accessToken, richMenuId: lineRichMenuId, imageUrl });
     }
 
-    // สรุปสถานะ + schedule
+    // schedule สำหรับปุ่ม Save (Scheduled/Active)
     let scheduleFrom = null, scheduleTo = null;
     if (action === 'save') {
       if (!schedule?.from) return res.status(400).json({ error: 'schedule_from_required' });
@@ -934,12 +951,20 @@ app.put('/api/tenants/:id/richmenus/:rid', requireFirebaseAuth, async (req, res)
       title, size, imageUrl, chatBarText, defaultBehavior,
       areas,
       lineRichMenuId,
-      status: 'ready',                     // ตาม mapping: draft ปุ่ม = Ready
+      status: 'ready',
       schedule: action === 'save' ? schedule : null,
       scheduleFrom: action === 'save' ? scheduleFrom : null,
       scheduleTo:   action === 'save' ? scheduleTo   : null,
       updatedAt: now,
     }, { merge: true });
+
+    // (ออปชัน) ถ้า schedule.from <= ตอนนี้ → ตั้ง default ให้เลย ไม่ต้องรอ cron
+    if (action === 'save' && scheduleFrom && scheduleFrom.toMillis() <= Date.now()) {
+      await fetchFn('https://api.line.me/v2/bot/user/all/richmenu/' + encodeURIComponent(lineRichMenuId), {
+        method: 'POST', headers: { Authorization: `Bearer ${accessToken}` }
+      }).catch(()=>{});
+      await docRef.set({ lastAppliedAsDefaultAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    }
 
     return res.json({ ok: true, id: rid, richMenuId: lineRichMenuId, status: 'ready' });
   } catch (e) {
@@ -947,6 +972,7 @@ app.put('/api/tenants/:id/richmenus/:rid', requireFirebaseAuth, async (req, res)
     return res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
   }
 });
+
 
 // // 6.x.5) Delete rich menu doc (ลบเฉพาะใน Firestore)
 // // หมายเหตุ: ถ้าต้องการลบบน LINE ด้วย ให้เรียก DELETE /v2/bot/richmenu/{id} เพิ่มได้
