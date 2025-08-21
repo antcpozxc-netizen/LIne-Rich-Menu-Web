@@ -7,6 +7,9 @@ import { auth } from '../firebase';
 export default function RequireAuth() {
   const [user, setUser] = useState(undefined); // undefined = กำลังเช็ค
   const location = useLocation();
+  if (location.pathname.startsWith('/guest')) {
+    return <Outlet />; // โหมด guest ไม่ต้อง auth
+  }  
 
   useEffect(() => onAuthStateChanged(auth, setUser), []);
 

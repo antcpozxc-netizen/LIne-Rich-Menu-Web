@@ -7,6 +7,7 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
+const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
 const admin = require('firebase-admin');
 const crypto = require('crypto'); 
@@ -56,6 +57,7 @@ app.use(express.json({
   limit: '1mb',
   verify: (req, _res, buf) => { req.rawBody = buf; } // เก็บ raw body
 }));
+app.use(cookieParser());
 
 async function requireFirebaseAuth(req, res, next) {
   try {
@@ -69,6 +71,8 @@ async function requireFirebaseAuth(req, res, next) {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
 }
+
+
 
 
 // ==============================
@@ -457,20 +461,63 @@ async function closeLiveSession(tenantRef, userId) {
 }
 
 
+// ----- Guest helpers -----
+function signGuestToken(payload) {
+  return jwt.sign(payload, process.env.GUEST_JWT_SECRET || 'dev-guest', { expiresIn: '180d' });
+}
+function verifyGuestToken(token) {
+  try { return jwt.verify(token, process.env.GUEST_JWT_SECRET || 'dev-guest'); }
+  catch { return null; }
+}
+function ensureGuest(req, res, next) {
+  let tok = req.cookies?.guest || '';
+  let data = tok ? verifyGuestToken(tok) : null;
+
+  if (!data || !data.gid) {
+    data = { gid: crypto.randomUUID(), iat: Date.now()/1000 };
+    tok = signGuestToken(data);
+
+    // ⬇️ ใช้ตัวเลือกคุ้กกี้แบบปลอดภัยขึ้น เมื่อรันบนโปรดักชัน (Render)
+    const cookieOpts = {
+      httpOnly: true,
+      sameSite: 'lax',
+      maxAge: 180 * 24 * 3600 * 1000,           // 180 วัน
+      ...(process.env.NODE_ENV === 'production' ? { secure: true } : {}),
+    };
+    res.cookie('guest', tok, cookieOpts);
+  }
+
+  req.guest = data; // { gid }
+  next();
+}
+
+
 
 // ==============================
 // 4) LINE Login
 // ==============================
 
-// Start: redirect to LINE authorize
-app.get('/auth/line/start', (_req, res) => {
-  const state = Math.random().toString(36).slice(2);
-  const nonce = Math.random().toString(36).slice(2);
+// Start: redirect to LINE authorize (hardened "next")
+app.get('/auth/line/start', (req, res) => {
+  const rawNext = typeof req.query.next === 'string' ? req.query.next : '/';
+  // อนุญาตเฉพาะ internal path เพื่อกัน open redirect
+  const next = rawNext.startsWith('/') ? rawNext : '/';
+
+  const state = Buffer.from(
+    JSON.stringify({
+      n: Math.random().toString(36).slice(2), // anti-CSRF noise
+      next
+    }),
+    'utf8'
+  ).toString('base64url');
+
+  // ใช้ nonce แบบ random bytes
+  const nonce = require('crypto').randomBytes(16).toString('hex');
 
   const url = new URL('https://access.line.me/oauth2/v2.1/authorize');
   url.searchParams.set('response_type', 'code');
   url.searchParams.set('client_id', process.env.LINE_LOGIN_CHANNEL_ID);
-  url.searchParams.set('redirect_uri', REDIRECT_URI); // use sanitized value
+  url.searchParams.set('redirect_uri', REDIRECT_URI);
   url.searchParams.set('scope', 'openid profile');
   url.searchParams.set('state', state);
   url.searchParams.set('nonce', nonce);
@@ -478,17 +525,32 @@ app.get('/auth/line/start', (_req, res) => {
   res.redirect(url.toString());
 });
 
-// Callback: exchange token, upsert user, mint Firebase custom token
+
+// Callback: exchange token, upsert user, mint Firebase custom token (hardened "next")
 app.get('/auth/line/callback', async (req, res) => {
   try {
-    const { code } = req.query;
+    const { code, state: stateStr } = req.query;
+
+    // ดีฟอลต์เสมอเป็นหน้าแรก
+    let next = '/';
+    try {
+      const parsed = JSON.parse(
+        Buffer.from(String(stateStr || ''), 'base64url').toString('utf8')
+      );
+      const candidate = String(parsed.next || '/');
+      // อนุญาตเฉพาะ internal path เพื่อกัน open redirect
+      next = candidate.startsWith('/') ? candidate : '/';
+    } catch {
+      next = '/';
+    }
+
     if (!code) return res.status(400).send('Missing code');
 
     // 1) Exchange code for tokens
     const form = new URLSearchParams({
       grant_type: 'authorization_code',
       code: String(code),
-      redirect_uri: REDIRECT_URI, // use same sanitized value
+      redirect_uri: REDIRECT_URI,
       client_id: process.env.LINE_LOGIN_CHANNEL_ID,
       client_secret: process.env.LINE_LOGIN_CHANNEL_SECRET,
     });
@@ -504,7 +566,7 @@ app.get('/auth/line/callback', async (req, res) => {
     const tokenJson = JSON.parse(raw);
 
     const { id_token, access_token } = tokenJson;
-    const payload = jwt.decode(id_token); // (สำหรับโปรดักชันควร verify JWK)
+    const payload = jwt.decode(id_token); // (โปรดักชันควร verify JWK)
     const uid = `line:${payload.sub}`;
 
     // 2) Fetch fresh profile
@@ -536,12 +598,18 @@ app.get('/auth/line/callback', async (req, res) => {
 
     // 4) Create Firebase custom token and redirect back to app
     const customToken = await admin.auth().createCustomToken(uid);
-    return res.redirect(302, `${BASE_APP_URL}/#token=${customToken}`);
+
+    // ส่งกลับไปที่ path ที่ sanitize แล้ว + แนบ hash ที่เว็บอ่านได้ (#token & #next)
+    const redirectUrl =
+      `${BASE_APP_URL}${next}#token=${encodeURIComponent(customToken)}&next=${encodeURIComponent(next)}`;
+
+    return res.redirect(302, redirectUrl);
   } catch (err) {
     console.error('[CALLBACK] unhandled error', err);
     return res.status(500).send('Callback error: ' + (err?.message || err));
   }
 });
+
 
 
 // ==============================
@@ -1162,6 +1230,127 @@ app.put('/api/tenants/:id/richmenus/:rid', requireFirebaseAuth, async (req, res)
     return res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
   }
 });
+
+// ===== GUEST: Rich Menu Drafts =====
+app.post('/api/guest/richmenus/save', ensureGuest, async (req, res) => {
+  try {
+    const gid = req.guest.gid;
+    const {
+      id, // ถ้ามี = update, ถ้าไม่มี = create
+      title = 'Rich menu',
+      size = 'large',
+      imageUrl = '',
+      chatBarText = 'Menu',
+      defaultBehavior = 'shown',
+      areas = [],
+      schedule = null
+    } = req.body || {};
+    const db = admin.firestore();
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const ref = id
+      ? db.collection('guests').doc(gid).collection('richmenus').doc(id)
+      : db.collection('guests').doc(gid).collection('richmenus').doc();
+    await ref.set({
+      title, size, imageUrl, chatBarText, defaultBehavior, areas,
+      schedule: schedule || null,
+      status: 'draft',
+      updatedAt: now,
+      ...(id ? {} : { createdAt: now })
+    }, { merge: true });
+    return res.json({ ok: true, id: ref.id });
+  } catch (e) {
+    res.status(500).json({ ok:false, error: String(e?.message || e) });
+  }
+});
+
+app.get('/api/guest/richmenus/:rid', ensureGuest, async (req, res) => {
+  try {
+    const gid = req.guest.gid;
+    const { rid } = req.params;
+    const snap = await admin.firestore().doc(`guests/${gid}/richmenus/${rid}`).get();
+    if (!snap.exists) return res.status(404).json({ error: 'not_found' });
+    res.json({ id: snap.id, ...snap.data() });
+  } catch (e) {
+    res.status(500).json({ ok:false, error: String(e?.message || e) });
+  }
+});
+
+app.get('/api/guest/richmenus', ensureGuest, async (req, res) => {
+  try {
+    const gid = req.guest.gid;
+    const snap = await admin.firestore().collection(`guests/${gid}/richmenus`)
+      .orderBy('updatedAt','desc').limit(50).get();
+    res.json({ ok:true, items: snap.docs.map(d=>({ id:d.id, ...d.data() })) });
+  } catch (e) {
+    res.status(500).json({ ok:false, error: String(e?.message || e) });
+  }
+});
+
+// Apply: ใช้ OA จริง (ต้องล็อกอิน + member ของ tenant)
+app.post('/api/guest/richmenus/:rid/apply', requireFirebaseAuth, ensureGuest, async (req, res) => {
+  try {
+    const { rid } = req.params;
+    const { tenantId } = req.body || {};
+    if (!tenantId) return res.status(400).json({ error: 'tenantId_required' });
+
+    const tenant = await getTenantIfMember(tenantId, req.user.uid);
+    if (!tenant) return res.status(403).json({ error: 'not_member_of_tenant' });
+
+    // อ่าน draft จาก guest (ใช้ cookie guest)
+    const gid = (req.cookies?.guest && verifyGuestToken(req.cookies.guest)?.gid) || null;
+    if (!gid) return res.status(401).json({ error: 'no_guest_cookie' });
+    const draftSnap = await admin.firestore().doc(`guests/${gid}/richmenus/${rid}`).get();
+    if (!draftSnap.exists) return res.status(404).json({ error: 'draft_not_found' });
+    const draft = draftSnap.data() || {};
+    if (!draft.imageUrl) return res.status(400).json({ error: 'image_url_required' });
+
+    // สร้างบน LINE
+    const accessToken = await getTenantSecretAccessToken(tenant.ref);
+    const WIDTH  = 2500;
+    const HEIGHT = draft.size === 'compact' ? 843 : 1686;
+    const areasPx = toPxAreas({ areas: draft.areas || [], width: WIDTH, height: HEIGHT });
+    const { richMenuId } = await createAndUploadRichMenuOnLINE({
+      accessToken,
+      title: draft.title,
+      chatBarText: draft.chatBarText,
+      size: draft.size,
+      areasPx,
+      imageUrl: draft.imageUrl
+    });
+
+    // บันทึกเอกสารจริงใน tenant
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const docRef = tenant.ref.collection('richmenus').doc();
+    await docRef.set({
+      title: draft.title,
+      size: draft.size,
+      imageUrl: draft.imageUrl,
+      chatBarText: draft.chatBarText,
+      defaultBehavior: draft.defaultBehavior || 'shown',
+      areas: draft.areas || [],
+      schedule: draft.schedule || null,
+      scheduleFrom: draft.schedule?.from ? toTs(draft.schedule.from) : null,
+      scheduleTo:   draft.schedule?.to   ? toTs(draft.schedule.to)   : null,
+      lineRichMenuId: richMenuId,
+      status: 'ready',
+      createdBy: req.user.uid,
+      createdAt: now, updatedAt: now
+    });
+
+    // mark draft as applied (ออปชัน)
+    await draftSnap.ref.set({
+      appliedAt: now,
+      appliedTenantId: tenant.id,
+      appliedRichMenuId: richMenuId
+    }, { merge: true });
+
+    res.json({ ok:true, richMenuId, docId: docRef.id });
+  } catch (e) {
+    console.error('[guest apply] error', e);
+    res.status(500).json({ ok:false, error: String(e?.message || e) });
+  }
+});
+
 
 
 // // 6.x.5) Delete rich menu doc (ลบเฉพาะใน Firestore)

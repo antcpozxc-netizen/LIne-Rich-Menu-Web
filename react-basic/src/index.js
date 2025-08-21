@@ -84,6 +84,7 @@ root.render(
           {/* Rich Menus */}
           <Route path="rich-menus/new" element={<RichMenusPage />} />
           <Route path="rich-menus" element={<RichMenusListPage />} />
+          <Route path="/guest/rich-menus" element={<RichMenusPage />} />
           <Route path="template-rich-menus" element={<TemplateRichMenusPage />} />
 
           {/* Others */}
