@@ -49,6 +49,7 @@ const TEMPLATES = [
     preview: [[0,0,6,4]] },
 ];
 
+
 const ACTION_OPTIONS = ['Select', 'Link', 'Text', 'QnA', 'Live Chat', 'No action'];
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));

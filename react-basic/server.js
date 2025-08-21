@@ -132,6 +132,13 @@ async function getTenantByChannelId(channelId) {
   return { id: ref.id, ref };
 }
 
+async function getTenantByBotUserId(botUserId) {
+  const snap = await admin.firestore().collection('tenants')
+    .where('botUserId', '==', botUserId).limit(1).get();
+  if (snap.empty) return null;
+  const ref = snap.docs[0].ref;
+  re
+
 function verifyLineSignature(req, channelSecret) {
   const signature = req.get('x-line-signature') || '';
   const hmac = crypto.createHmac('sha256', channelSecret)
@@ -522,6 +529,7 @@ app.post('/api/tenants', requireFirebaseAuth, async (req, res) => {
         pictureUrl: info.pictureUrl || null,
         chatMode: info.chatMode || null,
         markAsReadMode: info.markAsReadMode || null,
+        botUserId: info.userId || null,          // <— เพิ่มบรรทัดนี้
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true });
 
@@ -543,6 +551,7 @@ app.post('/api/tenants', requireFirebaseAuth, async (req, res) => {
       pictureUrl: info.pictureUrl || null,
       chatMode: info.chatMode || null,
       markAsReadMode: info.markAsReadMode || null,
+      botUserId: info.userId || null,           // <— เพิ่มบรรทัดนี้
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       secretStored: true,
@@ -1128,9 +1137,11 @@ app.post('/webhook/line', async (req, res) => {
     const { destination, events = [] } = req.body || {};
     if (!destination) return res.status(200).send('ok'); // กันเคส verify/ping
 
-    // หา tenant จาก channelId ที่ LINE ส่งมาใน destination
-    const tenant = await getTenantByChannelId(destination);
-    if (!tenant) return res.status(200).send('ok'); // OA ยังไม่ได้ Add ในระบบเรา
+    // destination คือ "bot userId (U...)" ตามสเปก LINE
+    let tenant = await getTenantByBotUserId(destination);
+    // เผื่อเอกสารเก่า (ยังไม่มี botUserId) ให้ fallback ด้วย channelId
+    if (!tenant) tenant = await getTenantByChannelId(destination);
+    if (!tenant) return res.status(200).send('ok');
 
     const sec = await tenant.ref.collection('secret').doc('v1').get();
     const channelSecret = sec.get('channelSecret');
