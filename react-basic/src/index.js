@@ -34,6 +34,7 @@ import RichMenusListPage from './pages/RichMenusListPage';
 // อื่นๆ
 import GreetingMessagePage from './pages/GreetingMessagePage';
 import TemplateRichMenusPage from './pages/TemplateRichMenusPage';
+import LiveChatPage from './pages/LiveChatPage';
 
 import FriendsPage from './pages/FriendsPage';
 
@@ -88,6 +89,7 @@ root.render(
           {/* Others */}
           <Route path="greeting-message" element={<GreetingMessagePage />} />
           <Route path="friends" element={<FriendsPage />} />
+          <Route path="live-chat" element={<LiveChatPage />} />
 
           {/* 🔐 Admin routes (อยู่ใต้ HomePage เพื่อใช้ layout เดียวกัน) */}
           <Route element={<RequireAdmin />}>

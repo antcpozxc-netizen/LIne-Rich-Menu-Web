@@ -390,6 +390,74 @@ async function uploadImageToLINE({ accessToken, richMenuId, imageUrl }) {
 }
 
 
+// ---------- Live Chat helpers ----------
+function liveSessRef(tenantRef, userId) {
+  return tenantRef.collection('liveSessions').doc(userId);
+}
+function liveMsgsRef(tenantRef, userId) {
+  return liveSessRef(tenantRef, userId).collection('messages');
+}
+
+async function getLineProfile(accessToken, userId) {
+  try {
+    const r = await fetchFn('https://api.line.me/v2/bot/profile/' + encodeURIComponent(userId), {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    if (!r.ok) return null;
+    return await r.json(); // {userId, displayName, pictureUrl, statusMessage?}
+  } catch { return null; }
+}
+
+async function ensureOpenLiveSession(tenantRef, userId, accessToken) {
+  const ref = liveSessRef(tenantRef, userId);
+  const snap = await ref.get();
+  let profile = null;
+  if (!snap.exists) {
+    profile = await getLineProfile(accessToken, userId);
+    await ref.set({
+      userId,
+      status: 'open',
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      lastActiveAt: admin.firestore.FieldValue.serverTimestamp(),
+      userProfile: profile || null,
+      unread: 0,
+    }, { merge: true });
+  } else if (snap.get('status') !== 'open') {
+    await ref.set({
+      status: 'open',
+      reopenedAt: admin.firestore.FieldValue.serverTimestamp(),
+      lastActiveAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+  } else {
+    await ref.set({ lastActiveAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+  }
+  return ref;
+}
+
+async function appendLiveMessage(tenantRef, userId, from, text, meta = {}) {
+  const msgs = liveMsgsRef(tenantRef, userId);
+  await msgs.add({
+    from, // 'user' | 'agent' | 'system'
+    text: String(text || ''),
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    ...meta,
+  });
+  await liveSessRef(tenantRef, userId).set({
+    lastActiveAt: admin.firestore.FieldValue.serverTimestamp(),
+    lastMessageFrom: from,
+    lastMessagePreview: String(text || '').slice(0, 200),
+  }, { merge: true });
+}
+
+async function closeLiveSession(tenantRef, userId) {
+  await liveSessRef(tenantRef, userId).set({
+    status: 'closed',
+    closedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+}
+
+
+
 // ==============================
 // 4) LINE Login
 // ==============================
@@ -1274,7 +1342,7 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
     console.log('[handleLineEvent]', ev.type, dbg || '');
   }
 
-  // เริ่มโหมด QnA จาก postback qna:<key>
+  // ====== เริ่มโหมด QnA จาก postback qna:<key> ======
   if (ev.type === 'postback' && typeof ev.postback?.data === 'string') {
     const data = ev.postback.data;
     if (data.startsWith('qna:')) {
@@ -1282,7 +1350,7 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
 
       // 1) หาใน docs ready ล่าสุด
       let qna = await findQnaSetByKey(tenantRef, key);
-      // 2) ถ้าไม่เจอ ให้ fallback ไปดู rich menu ที่ตั้งเป็น default บน LINE ตอนนี้
+      // 2) ถ้าไม่เจอ → fallback ไปดู default rich menu ปัจจุบัน
       if (!qna) qna = await findQnaSetByKeyViaDefault(tenantRef, accessToken, key);
 
       console.log('[QNA:init]', { key, items: qna?.items?.length || 0 });
@@ -1306,11 +1374,39 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
     }
   }
 
-  // ระหว่างโหมด QnA
+  // ====== ข้อความจากผู้ใช้ ======
   if (ev.type === 'message' && ev.message?.type === 'text') {
     const text = (ev.message.text || '').trim();
+
+    // ---- คำสั่งควบคุม Live Chat (จับก่อน QnA เสมอ) ----
+    if (text.toLowerCase() === '#live') {
+      await ensureOpenLiveSession(tenantRef, userId, accessToken);
+      await setSession(tenantRef, userId, { mode: 'live' });
+      await appendLiveMessage(tenantRef, userId, 'system', 'เริ่มต้นสนทนาสด');
+      return lineReply(accessToken, replyToken, [{
+        type: 'text',
+        text: 'เชื่อมต่อเจ้าหน้าที่แล้วค่ะ พิมพ์ข้อความที่ต้องการได้เลย\n\nพิมพ์ #end เพื่อจบการสนทนา'
+      }]);
+    }
+
+    if (text.toLowerCase() === '#end') {
+      await closeLiveSession(tenantRef, userId);
+      await clearSession(tenantRef, userId);
+      await appendLiveMessage(tenantRef, userId, 'system', 'ผู้ใช้จบการสนทนา');
+      return lineReply(accessToken, replyToken, [{ type: 'text', text: 'ปิดการสนทนาเรียบร้อย ขอบคุณค่ะ' }]);
+    }
+
     const ss = await getSession(tenantRef, userId);
 
+    // ---- โหมด Live Chat ----
+    if (ss?.mode === 'live') {
+      await ensureOpenLiveSession(tenantRef, userId, accessToken);
+      await appendLiveMessage(tenantRef, userId, 'user', text, { lineMessageId: ev.message.id || null });
+      // ตอบรับสั้น ๆ เพื่อให้ผู้ใช้ทราบว่าระบบได้รับแล้ว
+      return lineReply(accessToken, replyToken, [{ type: 'text', text: 'รับข้อความแล้วค่ะ กำลังส่งต่อให้เจ้าหน้าที่' }]);
+    }
+
+    // ---- โหมด QnA ----
     if (ss?.mode === 'qna' && Array.isArray(ss.items)) {
       if (text === '#exit' || text === 'จบ') {
         await clearSession(tenantRef, userId);
@@ -1323,20 +1419,24 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
         return lineReply(accessToken, replyToken, [{ type: 'text', text: ss.items[n - 1].a || '—' }]);
       }
 
-      // จับคู่ข้อความแบบง่าย ๆ
+      // จับคู่แบบง่าย
       const t = normalize(text);
       const idx = ss.items.findIndex(it => normalize(it.q).includes(t));
       if (idx >= 0) {
         return lineReply(accessToken, replyToken, [{ type: 'text', text: ss.items[idx].a || '—' }]);
       }
 
-      // ไม่เจอ → fallback + โชว์ลิสต์อีกครั้ง
+      // ไม่เจอ → fallback
       return lineReply(accessToken, replyToken, [{
         type: 'text',
         text: ss.fallback || 'ยังไม่พบคำตอบ',
         quickReply: toQuickReplies(ss.items),
       }]);
     }
+
+    // ---- ข้อความทั่วไป นอกทุกโหมด ----
+    // จะไม่ตอบอะไรเป็นพิเศษ ปล่อยผ่านได้ หรือจะส่งข้อความช่วยเหลือก็ได้
+    return; 
   }
 }
 
@@ -1473,6 +1573,109 @@ app.post('/api/admin/backfill-bot-user-id', requireFirebaseAuth, requireAdmin, a
     res.status(500).json({ ok:false, error: String(e?.message || e) });
   }
 });
+
+
+// ==============================
+// 6.x) Live Chat (Agent APIs)
+// ==============================
+app.get('/api/tenants/:id/live', requireFirebaseAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const tenant = await getTenantIfMember(id, req.user.uid);
+    if (!tenant) return res.status(403).json({ error: 'not_member_of_tenant' });
+
+    // เพื่อหลีกเลี่ยง index composite บังคับ: ดึงมาก่อนแล้วค่อยกรองในแอป (limit 200)
+    const snap = await tenant.ref.collection('liveSessions')
+      .orderBy('lastActiveAt', 'desc')
+      .limit(200)
+      .get();
+
+    const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    res.json({ ok: true, items });
+  } catch (e) {
+    console.error('[live list] error', e);
+    res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
+  }
+});
+
+app.get('/api/tenants/:id/live/:uid/messages', requireFirebaseAuth, async (req, res) => {
+  try {
+    const { id, uid } = req.params;
+    const { limit = 50 } = req.query;
+    const tenant = await getTenantIfMember(id, req.user.uid);
+    if (!tenant) return res.status(403).json({ error: 'not_member_of_tenant' });
+
+    const q = await liveMsgsRef(tenant.ref, uid)
+      .orderBy('createdAt', 'asc')
+      .limit(Number(limit) || 50)
+      .get();
+    const items = q.docs.map(d => ({ id: d.id, ...d.data() }));
+    res.json({ ok: true, items });
+  } catch (e) {
+    console.error('[live messages] error', e);
+    res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
+  }
+});
+
+app.post('/api/tenants/:id/live/:uid/send', requireFirebaseAuth, async (req, res) => {
+  try {
+    const { id, uid } = req.params; // uid = LINE userId (Uxxxxxxxx)
+    const { text } = req.body || {};
+    if (!text) return res.status(400).json({ error: 'text_required' });
+
+    const tenant = await getTenantIfMember(id, req.user.uid);
+    if (!tenant) return res.status(403).json({ error: 'not_member_of_tenant' });
+
+    const accessToken = await getTenantSecretAccessToken(tenant.ref);
+
+    // push หา user
+    const r = await fetchFn('https://api.line.me/v2/bot/message/push', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to: uid, messages: [{ type: 'text', text: String(text).slice(0, 1000) }] }),
+    });
+    const t = await r.text();
+    if (!r.ok) return res.status(r.status).json({ error: 'line_push_error', detail: t });
+
+    // log ข้อความฝั่ง agent
+    await ensureOpenLiveSession(tenant.ref, uid, accessToken);
+    await appendLiveMessage(tenant.ref, uid, 'agent', text, { agentUid: req.user.uid });
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[live send] error', e);
+    res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
+  }
+});
+
+app.post('/api/tenants/:id/live/:uid/close', requireFirebaseAuth, async (req, res) => {
+  try {
+    const { id, uid } = req.params;
+    const tenant = await getTenantIfMember(id, req.user.uid);
+    if (!tenant) return res.status(403).json({ error: 'not_member_of_tenant' });
+
+    const accessToken = await getTenantSecretAccessToken(tenant.ref);
+
+    await closeLiveSession(tenant.ref, uid);
+    await appendLiveMessage(tenant.ref, uid, 'system', 'แอดมินปิดการสนทนา', { agentUid: req.user.uid });
+
+    // แจ้งผู้ใช้
+    await fetchFn('https://api.line.me/v2/bot/message/push', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to: uid, messages: [{ type: 'text', text: 'ปิดการสนทนาเรียบร้อย ขอบคุณค่ะ' }] }),
+    }).catch(()=>{});
+
+    // เคลียร์ session โหมด live (ถ้ามี)
+    await clearSession(tenant.ref, uid).catch(()=>{});
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[live close] error', e);
+    res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
+  }
+});
+
 
 
 

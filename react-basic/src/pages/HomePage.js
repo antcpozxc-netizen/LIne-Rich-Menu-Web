@@ -1,3 +1,5 @@
+
+// HomePage.js
 import React, { useEffect, useState } from 'react';
 import {
   AppBar, Toolbar, Typography, Box, Avatar, Drawer, List, ListItem,
@@ -330,6 +332,10 @@ export default function HomePage() {
                 <ListItemButton sx={{ pl: 4 }} onClick={() => navigate(`/homepage/template-rich-menus?tenant=${activeTenantId || ''}`)}>
                   <ListItemText primary="Template Rich Menus" />
                 </ListItemButton>
+                <ListItemButton sx={{ pl: 4 }} onClick={() => navigate(`/homepage/live-chat?tenant=${activeTenantId || ''}`)}>
+                  <ListItemText primary="Live Chat" />
+                </ListItemButton>
+
               </List>
             </Collapse>
 
