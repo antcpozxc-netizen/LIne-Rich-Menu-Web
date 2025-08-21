@@ -137,7 +137,8 @@ async function getTenantByBotUserId(botUserId) {
     .where('botUserId', '==', botUserId).limit(1).get();
   if (snap.empty) return null;
   const ref = snap.docs[0].ref;
-  re
+  return { id: ref.id, ref };
+}
 
 function verifyLineSignature(req, channelSecret) {
   const signature = req.get('x-line-signature') || '';
