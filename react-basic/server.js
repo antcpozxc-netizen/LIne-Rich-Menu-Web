@@ -191,9 +191,10 @@ async function findQnaSetByKey(tenantRef, key) {
     .collection('richmenus')
     .where('status', '==', 'ready')
     .orderBy('updatedAt', 'desc')
-    .limit(20)
+    .limit(30)
     .get();
 
+  const candidates = [];
   for (const d of q.docs) {
     const data = d.data() || {};
     const from = data.scheduleFrom?.toDate?.() || null;
@@ -204,15 +205,27 @@ async function findQnaSetByKey(tenantRef, key) {
     for (const a of data.areas || []) {
       const act = a.action || {};
       if (act.type === 'QnA' && (act.qnaKey || '') === key) {
-        return {
-          items: Array.isArray(act.items) ? act.items : [],
-          displayText: act.displayText || null,
-          fallbackReply: act.fallbackReply || 'ยังไม่พบคำตอบ ลองเลือกหมายเลขจากรายการนะคะ'
-        };
+        const items = Array.isArray(act.items) ? act.items : [];
+        if (items.length === 0) continue; // <<< อย่าคัดตัวว่าง
+        candidates.push({
+          docId: d.id,
+          updatedAt: data.updatedAt?.toMillis?.() || 0,
+          scheduleFrom: data.scheduleFrom?.toMillis?.() || 0,
+          qna: {
+            items,
+            displayText: act.displayText || null,
+            fallbackReply: act.fallbackReply || 'ยังไม่พบคำตอบ ลองเลือกหมายเลขจากรายการนะคะ',
+          },
+        });
       }
     }
   }
-  return null;
+  if (!candidates.length) return null;
+  // เลือกตัว “ล่าสุดที่เริ่มแสดงแล้ว” โดยให้ weight กับ scheduleFrom ก่อน แล้วค่อย updatedAt
+  candidates.sort((a, b) => (b.scheduleFrom - a.scheduleFrom) || (b.updatedAt - a.updatedAt));
+  const best = candidates[0];
+  console.log('[QNA:pick]', { key, docId: best.docId, items: best.qna.items.length });
+  return best.qna;
 }
 
 
@@ -280,7 +293,6 @@ function mapActionForLINE(a = {}) {
       return {
        type: 'postback',
        data: `qna:${a.qnaKey || ''}`,
-       displayText: a.displayText || a.label || 'QnA'
      };
     case 'Live Chat':
       return { type: 'message', text: a.liveText || '#live' };
@@ -855,6 +867,48 @@ app.post('/api/tenants/:id/richmenus/draft', requireFirebaseAuth, async (req, re
   }
 });
 
+
+// 6.x.1b) Update draft (Firestore only)
+app.put('/api/tenants/:id/richmenus/draft/:rid', requireFirebaseAuth, async (req, res) => {
+  try {
+    const { id, rid } = req.params;
+    const uid = req.user.uid;
+    const tenant = await getTenantIfMember(id, uid);
+    if (!tenant) return res.status(403).json({ error: 'not_member_of_tenant' });
+
+    const {
+      title = 'Rich menu',
+      size = 'large',
+      imageUrl = '',
+      chatBarText = 'Menu',
+      defaultBehavior = 'shown',
+      areas = [],
+      schedule = null,
+    } = req.body || {};
+
+    const scheduleFrom = schedule?.from ? toTs(schedule.from) : null;
+    const scheduleTo   = schedule?.to ? toTs(schedule.to) : null;
+
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const docRef = tenant.ref.collection('richmenus').doc(rid);
+    const snap = await docRef.get();
+    if (!snap.exists) return res.status(404).json({ error: 'not_found' });
+
+    await docRef.set({
+      title, size, imageUrl, chatBarText, defaultBehavior,
+      areas, schedule, scheduleFrom, scheduleTo,
+      status: 'draft',
+      updatedAt: now,
+    }, { merge: true });
+
+    return res.json({ ok: true, id: rid, status: 'draft' });
+  } catch (e) {
+    console.error('[richmenus/draft PUT] error', e);
+    return res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
+  }
+});
+
+
 // 6.x.2) Save → create on LINE as Ready (no default)
 app.post('/api/tenants/:id/richmenus', requireFirebaseAuth, async (req, res) => {
   try {
@@ -1207,6 +1261,8 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
       let qna = await findQnaSetByKey(tenantRef, key);
       // 2) ถ้าไม่เจอ ให้ fallback ไปดู rich menu ที่ตั้งเป็น default บน LINE ตอนนี้
       if (!qna) qna = await findQnaSetByKeyViaDefault(tenantRef, accessToken, key);
+
+      console.log('[QNA:init]', { key, items: qna?.items?.length || 0 });
 
       if (!qna || !qna.items?.length) {
         return lineReply(accessToken, replyToken, [{ type: 'text', text: 'ยังไม่มีคำถามสำหรับหัวข้อนี้ค่ะ' }]);

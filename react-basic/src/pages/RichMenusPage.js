@@ -490,7 +490,10 @@ export default function RichMenusPage() {
   };
   const toNormalized = (a, i) => ({
     xPct: pctClamp(a.x) / 100, yPct: pctClamp(a.y) / 100, wPct: pctClamp(a.w) / 100, hPct: pctClamp(a.h) / 100,
-    action: actions[i] || { type: 'No action' },
+    action: (() => {
+      const act = actions[i] || { type: 'No action' };
+      return act.type === 'Select' ? { type: 'No action' } : act;
+    })(),  
   });
   const buildPayload = (includeSchedule = false) => ({
     title, size: template.size, imageUrl: normalizeImageUrl(image), chatBarText: menuBarLabel || 'Menu',
