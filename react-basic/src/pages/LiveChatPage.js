@@ -5,10 +5,7 @@ import {
   List, ListItemButton, ListItemText, TextField, Button, Chip
 } from '@mui/material';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
-import { auth, db } from '../firebase';
-import {
-  collection, onSnapshot, orderBy, query, where, limit
-} from 'firebase/firestore';
+import { auth } from '../firebase';
 
 export default function LiveChatPage() {
   const { tenantId } = useOutletContext() || {};
@@ -21,64 +18,81 @@ export default function LiveChatPage() {
   const [input, setInput] = useState('');
   const bottomRef = useRef(null);
 
-  // ✅ ดึงรายการห้องจาก Firestore ตามโครงใหม่: tenants/{t}/liveSessions
+  // helper: fetch with idToken
+  const authedFetch = async (url, init = {}) => {
+    const idToken = await auth.currentUser.getIdToken();
+    return fetch(url, {
+      ...init,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+        ...(init.headers || {})
+      }
+    });
+  };
+
+  // poll รายการห้องทุก 5 วิ
   useEffect(() => {
     if (!t) return;
-    const col = collection(db, 'tenants', t, 'liveSessions');
-    const q = query(col, where('status', '==', 'open'), orderBy('lastActiveAt', 'desc'), limit(100));
-    const off = onSnapshot(q, (snap) => {
-      const arr = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setRooms(arr);
-      if (!activeId && arr.length) setActiveId(arr[0].id);
-    });
-    return () => off();
+    let stop = false;
+
+    const load = async () => {
+      try {
+        const r = await authedFetch(`/api/tenants/${t}/live`);
+        const j = await r.json();
+        if (!stop && j.ok) {
+          setRooms(j.items || []);
+          if (!activeId && (j.items || []).length) setActiveId(j.items[0].id);
+        }
+      } catch {}
+    };
+
+    load();
+    const iv = setInterval(load, 5000);
+    return () => { stop = true; clearInterval(iv); };
   }, [t, activeId]);
 
-  // ✅ subscribe ข้อความ: tenants/{t}/liveSessions/{userId}/messages (orderBy createdAt)
+  // poll ข้อความห้องที่เลือกทุก 1.5 วิ
   useEffect(() => {
     if (!t || !activeId) { setMsgs([]); return; }
-    const col = collection(db, 'tenants', t, 'liveSessions', activeId, 'messages');
-    const q = query(col, orderBy('createdAt', 'asc'));
-    const off = onSnapshot(q, (snap) => {
-      setMsgs(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 0);
-    });
-    return () => off();
+    let stop = false;
+
+    const loadMsgs = async () => {
+      try {
+        const r = await authedFetch(`/api/tenants/${t}/live/${activeId}/messages?limit=200`);
+        const j = await r.json();
+        if (!stop && j.ok) {
+          setMsgs(j.items || []);
+          setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 0);
+        }
+      } catch {}
+    };
+
+    loadMsgs();
+    const iv = setInterval(loadMsgs, 1500);
+    return () => { stop = true; clearInterval(iv); };
   }, [t, activeId]);
 
-  const activeRoom = useMemo(() => rooms.find(r => r.id === activeId) || null, [rooms, activeId]);
+  const activeRoom = useMemo(
+    () => rooms.find(r => r.id === activeId) || null, [rooms, activeId]
+  );
 
-  // ✅ ใช้ REST ชุดใหม่ในการส่งข้อความ
   const send = async () => {
     const text = input.trim();
     if (!text || !t || !activeId) return;
-    const idToken = await auth.currentUser.getIdToken();
-    await fetch(`/api/tenants/${t}/live/${activeId}/send`, {
+    await authedFetch(`/api/tenants/${t}/live/${activeId}/send`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text })
     });
     setInput('');
   };
 
-  // ✅ ปิดห้องด้วย REST ใหม่
   const closeRoom = async () => {
     if (!t || !activeId) return;
-    const idToken = await auth.currentUser.getIdToken();
-    await fetch(`/api/tenants/${t}/live/${activeId}/close`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${idToken}` },
-    });
+    await authedFetch(`/api/tenants/${t}/live/${activeId}/close`, { method: 'POST' });
   };
 
-  if (!t) return <Box sx={{ p: 2 }}>กรุณาเลือก OA ก่อน</Box>;
-
-  const humanTime = (ts) => {
-    try {
-      const ms = ts?.seconds ? ts.seconds * 1000 : (ts?.toMillis?.() ? ts.toMillis() : Date.now());
-      return new Date(ms).toLocaleString();
-    } catch { return ''; }
-  };
+  if (!t) return <Box>กรุณาเลือก OA ก่อน</Box>;
 
   return (
     <Stack direction="row" spacing={2}>
@@ -96,10 +110,10 @@ export default function LiveChatPage() {
                   <ListItemText
                     primary={
                       <Stack direction="row" alignItems="center" spacing={1}>
-                        <span>{r.userProfile?.displayName || r.userId || r.id}</span>
+                        <span>{r.userProfile?.displayName || r.id}</span>
                         <Chip
                           size="small"
-                          label={r.lastMessageFrom === 'user' ? 'new' : r.status}
+                          label={r.lastMessageFrom === 'user' ? 'new' : (r.status || 'open')}
                           color={r.lastMessageFrom === 'user' ? 'warning' : 'default'}
                         />
                       </Stack>
@@ -120,22 +134,19 @@ export default function LiveChatPage() {
           {activeRoom ? (
             <>
               <Typography fontWeight={700}>
-                {activeRoom.userProfile?.displayName || activeRoom.userId || activeRoom.id}
+                {activeRoom.userProfile?.displayName || activeRoom.id}
               </Typography>
               <Divider sx={{ my: 1 }} />
               <Stack spacing={1.2}>
                 {msgs.map(m => (
-                  <Box
-                    key={m.id}
-                    sx={{
-                      alignSelf: m.from === 'agent' ? 'flex-end' : 'flex-start',
-                      bgcolor: m.from === 'agent' ? '#e8f5e9' : '#f1f1f1',
-                      p: 1, borderRadius: 1.5, maxWidth: '70%',
-                    }}
-                  >
+                  <Box key={m.id} sx={{
+                    alignSelf: m.from === 'agent' ? 'flex-end' : 'flex-start',
+                    bgcolor: m.from === 'agent' ? '#e8f5e9' : '#f1f1f1',
+                    p: 1, borderRadius: 1.5, maxWidth: '70%'
+                  }}>
                     <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>{m.text}</Typography>
                     <Typography variant="caption" color="text.secondary">
-                      {humanTime(m.createdAt)}
+                      {new Date(m.createdAt?.seconds ? m.createdAt.seconds * 1000 : Date.now()).toLocaleString()}
                     </Typography>
                   </Box>
                 ))}
