@@ -1187,15 +1187,38 @@ app.delete('/api/tenants/:id/richmenus/:docId', requireFirebaseAuth, async (req,
 // 6.z) LINE Webhook (QnA mode)
 // ==============================
 // ใช้ URL เดียวสำหรับทุก OA: /webhook/line
+async function findTenantBySignature(req) {
+  const db = admin.firestore();
+  const all = await db.collection('tenants').get();
+  for (const d of all.docs) {
+    try {
+      const sec = await d.ref.collection('secret').doc('v1').get();
+      const channelSecret = sec.get('channelSecret');
+      if (!channelSecret) continue;
+      if (verifyLineSignature(req, channelSecret)) {
+        return { id: d.id, ref: d.ref };
+      }
+    } catch {}
+  }
+  return null;
+}
+
 app.post('/webhook/line', async (req, res) => {
   try {
     const { destination, events = [] } = req.body || {};
-    if (!destination) return res.status(200).send('ok'); // กันเคส verify/ping
+    if (!destination) return res.status(200).send('ok'); // ping/verify
 
-    // destination คือ "bot userId (U...)" ตามสเปก LINE
-    const tenant = await getTenantByBotUserId(destination);
+    // ปกติหาโดย botUserId ตามสเปค LINE
+    let tenant = await getTenantByBotUserId(destination);
+
+    // ถ้ายังไม่เจอ → ลองไล่เทียบลายเซ็นกับทุก tenant
     if (!tenant) {
-      console.warn('[webhook] no tenant matched for destination (botUserId):', destination);
+      console.warn('[webhook] no tenant by botUserId, try signature fallback:', destination);
+      tenant = await findTenantBySignature(req);
+    }
+
+    if (!tenant) {
+      console.warn('[webhook] still no tenant matched:', destination);
       return res.status(200).send('ok');
     }
 
@@ -1203,21 +1226,20 @@ app.post('/webhook/line', async (req, res) => {
     const channelSecret = sec.get('channelSecret');
     const accessToken   = sec.get('accessToken');
 
-    // ตรวจลายเซ็นให้ตรงกับ OA นั้น ๆ
+    // ตรวจลายเซ็น (ถ้ามาจาก fallback จะผ่านแน่ เพราะเราเทียบก่อนแล้ว)
     if (!verifyLineSignature(req, channelSecret)) {
-      console.warn('[webhook] bad signature for channelId', destination);
+      console.warn('[webhook] bad signature for tenant', tenant.id);
       return res.status(403).send('bad signature');
     }
 
-    // ใช้ handler เดิมของคุณ
     await Promise.all(events.map(ev => handleLineEvent(ev, tenant.ref, accessToken)));
-
     res.status(200).send('ok');
   } catch (e) {
     console.error('[webhook/line] error', e);
-    res.status(200).send('ok'); // อย่าตอบ 5xx ให้ LINE
+    res.status(200).send('ok');
   }
 });
+
 
 app.post('/webhook/:tenantId', async (req, res) => {
   try {
