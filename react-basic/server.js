@@ -24,6 +24,8 @@ const BASE_APP_URL = ((process.env.PUBLIC_APP_URL || `http://localhost:${PORT}`)
   .replace(/\/$/, '');
 const REDIRECT_URI = ((process.env.LINE_LOGIN_CALLBACK_URL || `${BASE_APP_URL}/auth/line/callback`) + '').trim();
 
+// เปิด log ดีบักได้ตามต้องการ
+const DEBUG_WEBHOOK = process.env.DEBUG_WEBHOOK === '1';
 
 // ==============================
 // 1) Firebase Admin Init
@@ -205,6 +207,39 @@ async function findQnaSetByKey(tenantRef, key) {
   return null;
 }
 
+
+function extractQnaFromDoc(data, key) {
+  for (const a of data.areas || []) {
+    const act = a.action || {};
+    if (act.type === 'QnA' && (act.qnaKey || '') === key) {
+      return {
+        items: Array.isArray(act.items) ? act.items : [],
+        displayText: act.displayText || null,
+        fallbackReply: act.fallbackReply || 'ยังไม่พบคำตอบ ลองเลือกหมายเลขจากรายการนะคะ'
+      };
+    }
+  }
+  return null;
+}
+
+async function findQnaSetByKeyViaDefault(tenantRef, accessToken, key) {
+  try {
+    const cur = await fetchFn('https://api.line.me/v2/bot/user/all/richmenu', {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    if (!cur.ok) return null;
+    const { richMenuId } = await cur.json();
+    if (!richMenuId) return null;
+
+    const snap = await tenantRef.collection('richmenus')
+      .where('lineRichMenuId', '==', richMenuId).limit(1).get();
+    if (snap.empty) return null;
+
+    return extractQnaFromDoc(snap.docs[0].data() || {}, key);
+  } catch { return null; }
+}
+
+
 async function lineReply(accessToken, replyToken, messages) {
   const r = await fetchFn('https://api.line.me/v2/bot/message/reply', {
     method: 'POST',
@@ -309,6 +344,29 @@ async function createAndUploadRichMenuOnLINE({ accessToken, title, chatBarText, 
   }
 
   return { richMenuId };
+}
+
+async function uploadImageToLINE({ accessToken, richMenuId, imageUrl }) {
+  const downloadUrl = withAltMedia(imageUrl);
+  const imgResp = await fetchFn(downloadUrl);
+  if (!imgResp.ok) {
+    const txt = await imgResp.text().catch(()=> '');
+    throw new Error(`image fetch failed: ${txt || imgResp.statusText}`);
+  }
+  let imgType = imgResp.headers.get('content-type') || '';
+  const buf = Buffer.from(await imgResp.arrayBuffer());
+  if (!/^image\/(png|jpeg)$/i.test(imgType)) {
+    if (buf[0] === 0x89 && buf[1] === 0x50) imgType = 'image/png';
+    else if (buf[0] === 0xff && buf[1] === 0xd8) imgType = 'image/jpeg';
+    else imgType = 'image/jpeg';
+  }
+  const r = await fetchFn(`https://api-data.line.me/v2/bot/richmenu/${encodeURIComponent(richMenuId)}/content`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': imgType },
+    body: buf,
+  });
+  const t = await r.text();
+  if (!r.ok) throw new Error(`LINE upload error: ${t}`);
 }
 
 
@@ -1122,21 +1180,33 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
   const userId = ev.source?.userId;
   if (!replyToken || !userId) return;
 
+  if (DEBUG_WEBHOOK) {
+    const dbg = ev.type === 'postback' ? ev.postback?.data : ev.message?.text;
+    console.log('[handleLineEvent]', ev.type, dbg || '');
+  }
+
   // เริ่มโหมด QnA จาก postback qna:<key>
   if (ev.type === 'postback' && typeof ev.postback?.data === 'string') {
     const data = ev.postback.data;
     if (data.startsWith('qna:')) {
-      const key = data.slice(4);
-      const qna = await findQnaSetByKey(tenantRef, key);
-      if (!qna || !qna.items.length) {
+      const key = data.slice(4).trim();
+
+      // 1) หาใน docs ready ล่าสุด
+      let qna = await findQnaSetByKey(tenantRef, key);
+      // 2) ถ้าไม่เจอ ให้ fallback ไปดู rich menu ที่ตั้งเป็น default บน LINE ตอนนี้
+      if (!qna) qna = await findQnaSetByKeyViaDefault(tenantRef, accessToken, key);
+
+      if (!qna || !qna.items?.length) {
         return lineReply(accessToken, replyToken, [{ type: 'text', text: 'ยังไม่มีคำถามสำหรับหัวข้อนี้ค่ะ' }]);
       }
+
       await setSession(tenantRef, userId, {
         mode: 'qna',
         key,
         items: qna.items,
         fallback: qna.fallbackReply || 'ยังไม่พบคำตอบ ลองเลือกหมายเลขจากรายการนะคะ',
       });
+
       return lineReply(accessToken, replyToken, [{
         type: 'text',
         text: listMessage(qna.displayText, qna.items),
@@ -1144,7 +1214,6 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
       }]);
     }
   }
-  
 
   // ระหว่างโหมด QnA
   if (ev.type === 'message' && ev.message?.type === 'text') {
