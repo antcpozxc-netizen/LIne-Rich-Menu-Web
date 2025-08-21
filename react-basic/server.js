@@ -1193,10 +1193,11 @@ app.post('/webhook/line', async (req, res) => {
     if (!destination) return res.status(200).send('ok'); // กันเคส verify/ping
 
     // destination คือ "bot userId (U...)" ตามสเปก LINE
-    let tenant = await getTenantByBotUserId(destination);
-    // เผื่อเอกสารเก่า (ยังไม่มี botUserId) ให้ fallback ด้วย channelId
-    if (!tenant) tenant = await getTenantByChannelId(destination);
-    if (!tenant) return res.status(200).send('ok');
+    const tenant = await getTenantByBotUserId(destination);
+    if (!tenant) {
+      console.warn('[webhook] no tenant matched for destination (botUserId):', destination);
+      return res.status(200).send('ok');
+    }
 
     const sec = await tenant.ref.collection('secret').doc('v1').get();
     const channelSecret = sec.get('channelSecret');
@@ -1411,6 +1412,46 @@ app.get('/api/admin/templates/:tid', requireFirebaseAuth, async (req, res) => {
     res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
   }
 });
+
+// ===== Admin backfill: เติม botUserId ให้ tenants เก่าที่เคยสร้างไว้แล้ว =====
+// ใช้ครั้งเดียวด้วยบัญชีที่เป็น admin
+app.post('/api/admin/backfill-bot-user-id', requireFirebaseAuth, requireAdmin, async (_req, res) => {
+  try {
+    const db = admin.firestore();
+    const snap = await db.collection('tenants').get();
+
+    let updated = 0, skipped = 0, missing = 0, failed = 0;
+
+    await Promise.all(snap.docs.map(async d => {
+      const data = d.data() || {};
+      if (data.botUserId) { skipped++; return; }
+
+      try {
+        const sec = await d.ref.collection('secret').doc('v1').get();
+        const accessToken = sec.get('accessToken');
+        if (!accessToken) { missing++; return; }
+
+        const r = await fetchFn('https://api.line.me/v2/bot/info', {
+          headers: { Authorization: `Bearer ${accessToken}` }
+        });
+        if (!r.ok) { failed++; return; }
+        const info = await r.json(); // { userId, basicId, ... }
+
+        await d.ref.set({
+          botUserId: info.userId || null,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+
+        updated++;
+      } catch { failed++; }
+    }));
+
+    res.json({ ok: true, updated, skipped, missing, failed });
+  } catch (e) {
+    res.status(500).json({ ok:false, error: String(e?.message || e) });
+  }
+});
+
 
 
 // ==============================
