@@ -1402,8 +1402,16 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
     if (ss?.mode === 'live') {
       await ensureOpenLiveSession(tenantRef, userId, accessToken);
       await appendLiveMessage(tenantRef, userId, 'user', text, { lineMessageId: ev.message.id || null });
-      // ตอบรับสั้น ๆ เพื่อให้ผู้ใช้ทราบว่าระบบได้รับแล้ว
-      return lineReply(accessToken, replyToken, [{ type: 'text', text: 'รับข้อความแล้วค่ะ กำลังส่งต่อให้เจ้าหน้าที่' }]);
+      
+      // ไม่ส่งข้อความอัตโนมัติกลับไปหา user
+      // (optional) mark-as-read ก็ได้ ถ้าอยากให้ chat ขึ้นว่าอ่านแล้ว
+      await fetchFn('https://api.line.me/v2/bot/message/markAsRead', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chatId: userId })
+      }).catch(()=>{});
+
+      return; // จบเลย ไม่ต้อง reply อะไร
     }
 
     // ---- โหมด QnA ----
