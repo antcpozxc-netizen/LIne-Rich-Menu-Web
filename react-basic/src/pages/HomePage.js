@@ -40,9 +40,13 @@ export default function HomePage() {
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    return onAuthStateChanged(auth, (u) => {
+      return onAuthStateChanged(auth, (u) => {
       setUser(u || null);
       setReady(true);
+      if (!u) {
+        // ผู้ใช้หลุด/ออก -> ลืม OA ที่เลือกไว้
+        try { localStorage.removeItem('activeTenantId'); } catch {}
+      }
     });
   }, []);
 

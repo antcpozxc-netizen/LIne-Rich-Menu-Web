@@ -24,6 +24,7 @@ import {
   collection, doc, onSnapshot, query, where, orderBy,
   getDoc, getDocs, startAt, endAt, limit
 } from 'firebase/firestore';
+import { clearActiveTenantSelection } from '../lib/tenantSelection';
 
 // -------- utils --------
 const normalizeUid = (input) => {
@@ -36,7 +37,10 @@ const normalizeUid = (input) => {
 
 const uidLooksValid = (input) => {
   const s = (input || '').trim();
-  return s.startsWith('line:') || /^U[0-9a-f]{32}$/i.test(s);
+  if (!s) return false;
+  if (/^line:[Uu][0-9a-f]{32}$/i.test(s)) return true; // ครอบทั้ง line:Uxxxx
+  if (/^[Uu][0-9a-f]{32}$/i.test(s)) return true;      // ครอบ Uxxxx
+  return false;
 };
 
 // อนุญาตเฉพาะเส้นทางภายใน (กัน open redirect)
@@ -145,8 +149,11 @@ export default function AccountsPage() {
   };
 
   // ---- ออกจากระบบ ----
-  const handleSignOut = () =>
-    signOut(auth).then(() => navigate('/', { replace: true }));
+  const handleSignOut = async () => {
+    clearActiveTenantSelection();
+    await signOut(auth);
+    navigate('/', { replace: true });
+  };
 
   // ---- เชื่อมต่อ OA: เรียก backend /api/tenants ----
   const handleAddOA = async () => {
@@ -227,8 +234,10 @@ export default function AccountsPage() {
       // 1) ถ้าเป็น UID/Line userId → หาแบบตรงตัว
       if (uidLooksValid(q)) {
         const norm = normalizeUid(q);
+        console.log('[doSearch] input=', q, 'normalized=', norm);
         if (norm) {
           const snap = await getDoc(doc(db, 'users', norm));
+          console.log('[doSearch] snap.exists=', snap.exists());
           if (snap.exists()) {
             const d = snap.data();
             setSearchResults([{
