@@ -40,36 +40,34 @@ import FriendsPage from './pages/FriendsPage';
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <BrowserRouter>
-    <AuthGate /> {/* ดัก token ทุกหน้า */}
     <Routes>
       {/* Public landing */}
       <Route path="/" element={<App />} />
 
+      {/* CALLBACK จาก LINE */}
+      <Route path="/auth/line/finish" element={<AuthGate />} />
+
       {/* PUBLIC: ให้ guest เข้า /homepage ได้เลย */}
       <Route path="/homepage" element={<HomePage />}>
         <Route index element={<DashboardHome />} />
-
         {/* Broadcast */}
         <Route path="broadcast" element={<BroadcastListPage />} />
         <Route path="broadcast/new" element={<BroadcastPage />} />
         <Route path="broadcast/:id" element={<RedirectBroadcastIdToNew />} />
-
         {/* Rich Message */}
         <Route path="rich-message" element={<RichMessageListPage />} />
         <Route path="rich-message/new" element={<RichMessageCreatePage />} />
         <Route path="rich-message/:id" element={<RichMessageDetailPage />} />
-
         {/* Rich Menus */}
         <Route path="rich-menus/new" element={<RichMenusPage />} />
         <Route path="rich-menus" element={<RichMenusListPage />} />
         <Route path="template-rich-menus" element={<TemplateRichMenusPage />} />
-
         {/* Others */}
         <Route path="greeting-message" element={<GreetingMessagePage />} />
         <Route path="friends" element={<FriendsPage />} />
         <Route path="live-chat" element={<LiveChatPage />} />
 
-        {/* Admin เฉพาะผู้ดูแล (ยังต้องล็อกอิน) */}
+        {/* Admin (ยังต้องล็อกอิน) */}
         <Route element={<RequireAuth />}>
           <Route element={<RequireAdmin />}>
             <Route path="admin/templates" element={<AdminTemplatesPage />} />
@@ -79,7 +77,7 @@ root.render(
         </Route>
       </Route>
 
-      {/* ยังกัน /accounts ไว้ ต้องล็อกอิน */}
+      {/* /accounts ต้องล็อกอิน */}
       <Route element={<RequireAuth />}>
         <Route path="/accounts" element={<AccountsPage />} />
       </Route>

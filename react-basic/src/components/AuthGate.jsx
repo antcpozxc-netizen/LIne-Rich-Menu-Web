@@ -1,66 +1,59 @@
 // src/components/AuthGate.jsx
-import React, { useEffect, useState } from 'react';
-import { onAuthStateChanged, signInWithCustomToken, signOut } from 'firebase/auth';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { signInWithCustomToken } from 'firebase/auth';
 import { auth } from '../firebase';
 
-export default function AuthGate({ children, fallback }) {
-  const [user, setUser] = useState(null);
-  const [ready, setReady] = useState(false);
+function getParams() {
+  const h = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  const q = new URLSearchParams(window.location.search);
+  // merge: #param ชนะ ?param
+  const all = new URLSearchParams(q.toString());
+  for (const [k, v] of h.entries()) all.set(k, v);
+  return all;
+}
 
-  const navigate = useNavigate();
-  const location = useLocation();
+function sanitizeNext(rawNext) {
+  const def = '/';
+  if (!rawNext) return def;
+  try {
+    // รับเฉพาะเส้นทางในโดเมนเดียวกัน ป้องกัน open-redirect
+    const u = new URL(rawNext, window.location.origin);
+    if (u.origin !== window.location.origin) return def;
+    // กันลูป ถ้า next คือหน้า finish เอง ให้กลับบ้าน
+    if (u.pathname.startsWith('/auth/line/finish')) return def;
+    return u.pathname + u.search + u.hash;
+  } catch {
+    return def;
+  }
+}
 
-
-  // รับ custom token จาก fragment: #token=...
+export default function AuthGate() {
   useEffect(() => {
-    const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
-    const token = hash.get('token');
-    const next = hash.get('next') || (location.pathname + location.search);
-    if (token) {
-      (async () => {
-        try {
+    (async () => {
+      const p    = getParams();
+      const token = p.get('token') || '';
+      const next  = sanitizeNext(p.get('next')) || '/';
+      const to    = (p.get('to') || '').toLowerCase(); // 'accounts' ได้
+
+      try {
+        if (token) {
           await signInWithCustomToken(auth, token);
-          // ไปเลือก OA ก่อนเสมอ แล้วส่ง next ติดไป
-          navigate(next ? `/accounts?next=${encodeURIComponent(next)}` : '/accounts', { replace: true });
-        } catch (err) {
-          console.error('signInWithCustomToken error:', err);
-          setReady(true);
+          sessionStorage.setItem('auth:last', String(Date.now())); // กัน refresh ซ้ำ
         }
-      })();
-    } else {
-      setReady(true);
-    }
-  }, [navigate, location.pathname, location.search]);
-  
-  useEffect(() => {
-    return onAuthStateChanged(auth, u => {
-      setUser(u);
-      setReady(true);
-    });
+      } catch (e) {
+        console.error('signInWithCustomToken error:', e);
+      } finally {
+        // ล้างทั้ง hash และ query ออกให้สะอาด
+        window.history.replaceState(null, '', window.location.pathname);
+        // ไปต่อ
+        if (to === 'accounts') {
+          window.location.replace(`/accounts?next=${encodeURIComponent(next)}`);
+        } else {
+          window.location.replace(next);
+        }
+      }
+    })();
   }, []);
 
-  if (!ready) return <div style={{ padding: 16 }}>Loading...</div>;
-  if (!user) return fallback || <div style={{ padding: 16 }}>กรุณาเข้าสู่ระบบ</div>;
-
-  return (
-    <div style={{ padding: 16 }}>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
-        {user.photoURL && (
-          <img
-            src={user.photoURL}
-            alt=""
-            width={28}
-            height={28}
-            style={{ borderRadius: 999 }}
-          />
-        )}
-        <span>{user.displayName || user.uid}</span>
-        <button onClick={() => signOut(auth)} style={{ marginLeft: 'auto' }}>
-          Sign out
-        </button>
-      </div>
-      {children}
-    </div>
-  );
+  return null; // ไม่แสดง UI ใด ๆ
 }
