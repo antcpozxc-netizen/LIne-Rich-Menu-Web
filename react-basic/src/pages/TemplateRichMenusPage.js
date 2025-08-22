@@ -10,7 +10,8 @@ import { CATEGORY_OPTIONS } from '../constants/categories';
 
 async function authedFetch(url, opts = {}) {
   const token = await auth.currentUser?.getIdToken();
-  const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}), Authorization: `Bearer ${token}` };
+  const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+  if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(url, { ...opts, headers });
   const txt = await res.text();
   if (!res.ok) throw new Error(txt || res.statusText);
