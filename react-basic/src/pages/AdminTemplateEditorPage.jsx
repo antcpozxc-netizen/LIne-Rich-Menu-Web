@@ -1,52 +1,80 @@
 // src/pages/AdminTemplateEditorPage.jsx
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Box, Button, Container, Divider, Grid, Stack, TextField, Typography,
-  Chip, Paper, Autocomplete, Dialog, DialogTitle, DialogContent, DialogActions
+  Box, Button, Card, CardContent, Container, Grid, Stack, TextField, Typography,
+  Dialog, DialogTitle, DialogContent, DialogActions, Paper, Chip, Select, MenuItem,
+  RadioGroup, FormControlLabel, Radio, Snackbar, Divider, IconButton
 } from '@mui/material';
-import { Save as SaveIcon, ArrowBack as BackIcon, Image as ImageIcon, Delete as DeleteIcon } from '@mui/icons-material';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import {
+  Save as SaveIcon,
+  SaveAlt as SaveAltIcon,
+  Image as ImageIcon,
+  CropSquare as AreaIcon,
+  Delete as DeleteIcon,
+  Add as AddIcon,
+  ArrowBack as BackIcon
+} from '@mui/icons-material';
+
+import { useNavigate, useParams } from 'react-router-dom';
 import { auth, storage } from '../firebase';
 import { ref as sref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { CATEGORY_OPTIONS } from '../constants/categories';
 
-// helper
+// -------------------- utils / helpers --------------------
 async function authedFetch(url, opts = {}) {
   const token = await auth.currentUser?.getIdToken();
-  const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}), Authorization: `Bearer ${token}` };
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(opts.headers || {}),
+    Authorization: `Bearer ${token}`,
+  };
   const res = await fetch(url, { ...opts, headers });
   const txt = await res.text();
   if (!res.ok) throw new Error(txt || res.statusText);
   return txt ? JSON.parse(txt) : {};
 }
 
-async function drawToSize(file, targetW, targetH, mime='image/jpeg') {
+const isDataUrl = (u = '') => typeof u === 'string' && u.startsWith('data:');
+const blobToDataUrl = (blob) =>
+  new Promise((res) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.readAsDataURL(blob);
+  });
+
+const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
+const pctClamp = (n) => Math.round(clamp(Number(n) || 0, 0, 100) * 100) / 100;
+
+// --- resize to LINE spec (ใช้เหมือน RichMenusPage) ---
+async function drawToSize(file, targetW, targetH, mime = 'image/jpeg') {
   const url = URL.createObjectURL(file);
   try {
     const img = await new Promise((res, rej) => {
-      const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url;
+      const i = new Image();
+      i.onload = () => res(i);
+      i.onerror = rej;
+      i.src = url;
     });
     const canvas = document.createElement('canvas');
     canvas.width = targetW; canvas.height = targetH;
     const ctx = canvas.getContext('2d');
-    // cover: ขยายจนเต็มแล้วครอปส่วนเกิน
     const scale = Math.max(targetW / img.width, targetH / img.height);
     const dw = img.width * scale, dh = img.height * scale;
     const dx = (targetW - dw) / 2, dy = (targetH - dh) / 2;
     ctx.drawImage(img, dx, dy, dw, dh);
-    return await new Promise(r => canvas.toBlob(r, mime, 0.9));
-  } finally { URL.revokeObjectURL(url); }
+    const qualities = [0.9, 0.8, 0.75, 0.7, 0.65, 0.6];
+    for (const q of qualities) {
+      const blob = await new Promise(r => canvas.toBlob(r, mime, q));
+      if (!blob) continue;
+      if (blob.size <= 1024 * 1024) return blob;
+      if (q === qualities[qualities.length - 1]) return blob;
+    }
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
-const clamp01 = (n) => Math.max(0, Math.min(1, Number(n) || 0));
-const pct = (n) => Math.round(Math.max(0, Math.min(100, Number(n) || 0)) * 100) / 100;
 
-const makeAreasFromTpl = (tpl) =>
-  tpl.preview.map(([x,y,w,h]) => ({
-    xPct: x/6, yPct: y/4, wPct: w/6, hPct: h/4,
-    action: { type: 'Link' },
-  }));
-
-// ---------- Preset templates ----------
+// -------------------- Template presets --------------------
 const TEMPLATES = [
   // Large
   { id: 'lg-1x1-1x1-1x1-1x1-1x1-1x1', label: 'Large • 6 blocks (2×2 × 6)', size: 'large',
@@ -74,6 +102,101 @@ const TEMPLATES = [
     preview: [[0,0,6,4]] },
 ];
 
+const ACTION_OPTIONS = ['Select', 'Link', 'Text', 'QnA', 'Live Chat', 'No action'];
+
+// -------------------- Action Editor --------------------
+function ActionEditor({ idx, action, onChange }) {
+  const update = (patch) => onChange({ ...action, ...patch });
+
+  return (
+    <Paper variant="outlined" sx={{ p: 2, mb: 1.5 }}>
+      <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
+        <Typography variant="subtitle2" fontWeight="bold">Block {idx + 1}</Typography>
+        <Box sx={{ flex: 1 }} />
+        <Select
+          size="small"
+          value={action.type}
+          onChange={(e) => update({ type: e.target.value })}
+          sx={{ minWidth: 220 }}
+        >
+          {ACTION_OPTIONS.map((opt) => (
+            <MenuItem key={opt} value={opt}>{opt}</MenuItem>
+          ))}
+        </Select>
+      </Stack>
+
+      {action.type === 'Link' && (
+        <Stack spacing={1}>
+          <TextField label="URL" value={action.url || ''} onChange={(e) => update({ url: e.target.value })} />
+          <TextField label="Label (≤20)" value={action.label || ''} onChange={(e) => update({ label: (e.target.value || '').slice(0, 20) })} />
+          <Typography variant="caption" color="text.secondary">จะถูกส่งเป็น <Chip size="small" label="URI action" /></Typography>
+        </Stack>
+      )}
+
+      {action.type === 'Text' && (
+        <Stack spacing={1}>
+          <TextField fullWidth label="Message text" value={action.text || ''} onChange={(e) => update({ text: (e.target.value || '').slice(0, 300) })} />
+          <Typography variant="caption" color="text.secondary">จะถูกส่งเป็น <Chip size="small" label="Message" /></Typography>
+        </Stack>
+      )}
+
+      {action.type === 'QnA' && (() => {
+        const items = Array.isArray(action.items) ? action.items : [];
+        const setItems = (next) => update({ items: next });
+        const addItem = () => setItems([...items, { q: '', a: '' }]);
+        const updateItem = (i, patch) => setItems(items.map((it, idx) => (idx === i ? { ...it, ...patch } : it)));
+        const removeItem = (i) => setItems(items.filter((_, idx) => idx !== i));
+
+        return (
+          <Stack spacing={1.25}>
+            <TextField label="QnA key / id" value={action.qnaKey || ''} onChange={(e) => update({ qnaKey: e.target.value })} />
+            <TextField label="Heading/Display text (optional)" value={action.displayText || ''} onChange={(e) => update({ displayText: (e.target.value || '').slice(0, 300) })} />
+            <TextField label="Fallback reply (ถ้าไม่เจอคำตอบ)" value={action.fallbackReply || ''} onChange={(e) => update({ fallbackReply: (e.target.value || '').slice(0, 300) })} />
+            <Typography variant="caption" color="text.secondary" sx={{ mt: .5 }}>
+              จะส่งเป็น <Chip size="small" label="postback" /> data: <code>{`qna:${action.qnaKey || '...'}`}</code>
+            </Typography>
+
+            <Divider sx={{ my: 1 }} />
+            <Stack direction="row" alignItems="center" justifyContent="space-between">
+              <Typography variant="subtitle2">รายการคำถามยอดฮิต</Typography>
+              <Button size="small" startIcon={<AddIcon />} onClick={addItem}>Add question</Button>
+            </Stack>
+
+            <Stack spacing={1}>
+              {items.map((it, i) => (
+                <Paper key={i} variant="outlined" sx={{ p: 1.25 }}>
+                  <Stack spacing={1}>
+                    <Stack direction="row" alignItems="center" spacing={1}>
+                      <Chip size="small" label={`#${i + 1}`} />
+                      <Box sx={{ flex: 1 }} />
+                      <Button size="small" color="error" startIcon={<DeleteIcon />} onClick={() => removeItem(i)}>Remove</Button>
+                    </Stack>
+                    <TextField label={`Question ${i + 1}`} value={it.q || ''} onChange={(e) => updateItem(i, { q: e.target.value })} fullWidth />
+                    <TextField label="Answer" value={it.a || ''} onChange={(e) => updateItem(i, { a: e.target.value })} fullWidth multiline />
+                  </Stack>
+                </Paper>
+              ))}
+              {!items.length && <Typography variant="body2" color="text.secondary">ยังไม่มีคำถาม กด “Add question” เพื่อเพิ่ม</Typography>}
+            </Stack>
+          </Stack>
+        );
+      })()}
+
+      {action.type === 'Live Chat' && (
+        <Stack spacing={1}>
+          <TextField label="Message to trigger live chat" value={action.liveText ?? '#live'} onChange={(e) => update({ liveText: e.target.value })} />
+          <Typography variant="caption" color="text.secondary">ค่าดีฟอลต์คือ <code>#live</code></Typography>
+        </Stack>
+      )}
+
+      {action.type === 'No action' && (
+        <Typography variant="body2" color="text.secondary">บล็อกนี้จะไม่ทำอะไร</Typography>
+      )}
+    </Paper>
+  );
+}
+
+// -------------------- Template modal --------------------
 function TemplateModal({ open, onClose, value, onApply }) {
   const [selected, setSelected] = useState(value?.id || TEMPLATES[0].id);
   useEffect(() => { if (value?.id) setSelected(value.id); }, [value]);
@@ -81,56 +204,24 @@ function TemplateModal({ open, onClose, value, onApply }) {
   const Thumb = ({ t }) => {
     const isSel = selected === t.id;
     const isCompact = t.size === 'compact';
-    // สัดส่วนคร่าว ๆ ให้ดูคล้ายตัวอย่าง
     const pt = isCompact ? '33%' : '45%';
 
     return (
       <Paper
         variant="outlined"
         onClick={() => setSelected(t.id)}
-        sx={{
-          p: 1,
-          cursor: 'pointer',
-          borderRadius: 2,
-          outline: isSel ? '2px solid #66bb6a' : 'none',
-        }}
+        sx={{ p: 1, cursor: 'pointer', borderRadius: 2, outline: isSel ? '2px solid #66bb6a' : 'none' }}
       >
-        <Box sx={{ fontSize: 12, color: 'text.secondary', mb: 0.5 }}>
-          {t.label}
-        </Box>
-        <Box
-          sx={{
-            position: 'relative',
-            width: '100%',
-            pt,                          // รักษาสัดส่วน
-            bgcolor: '#f1f3f4',
-            borderRadius: 1,
-            overflow: 'hidden',
-          }}
-        >
-          {/* วาดเส้นบาง ๆ ให้เหมือน wireframe */}
-          {t.preview.map((cell, i) => {
-            const [x, y, w, h] = cell;
-            const left = (x / 6) * 100;
-            const top = (y / 4) * 100;
-            const width = (w / 6) * 100;
-            const height = (h / 4) * 100;
-            return (
-              <Box
-                key={i}
-                sx={{
-                  position: 'absolute',
-                  left: `${left}%`,
-                  top: `${top}%`,
-                  width: `${width}%`,
-                  height: `${height}%`,
-                  border: '1px solid #cfd8dc',   // เส้นบาง สีเทาอ่อน
-                  background: 'rgba(0,0,0,0.02)', // เติมนิด ๆ ให้เห็นแยกบล็อก
-                  borderRadius: 0.5,
-                }}
-              />
-            );
-          })}
+        <Box sx={{ fontSize: 12, color: 'text.secondary', mb: .5 }}>{t.label}</Box>
+        <Box sx={{ position: 'relative', width: '100%', pt, bgcolor: '#f1f3f4', borderRadius: 1, overflow: 'hidden' }}>
+          {t.preview.map(([x, y, w, h], i) => (
+            <Box key={i} sx={{
+              position: 'absolute',
+              left: `${(x / 6) * 100}%`, top: `${(y / 4) * 100}%`,
+              width: `${(w / 6) * 100}%`, height: `${(h / 4) * 100}%`,
+              border: '1px solid #cfd8dc', background: 'rgba(0,0,0,0.02)', borderRadius: .5
+            }} />
+          ))}
         </Box>
       </Paper>
     );
@@ -140,27 +231,23 @@ function TemplateModal({ open, onClose, value, onApply }) {
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle>Select a template</DialogTitle>
       <DialogContent dividers>
-        <Typography sx={{ fontWeight: 600, mb: 0.5 }}>Large</Typography>
+        <Typography sx={{ fontWeight: 600, mb: .5 }}>Large</Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
           A larger menu for displaying more items.
         </Typography>
         <Grid container spacing={2} sx={{ mb: 3 }}>
           {TEMPLATES.filter(t => t.size === 'large').map(t => (
-            <Grid item xs={12} sm={6} md={3} key={t.id}>
-              <Thumb t={t} />
-            </Grid>
+            <Grid item xs={12} sm={6} md={3} key={t.id}><Thumb t={t} /></Grid>
           ))}
         </Grid>
 
-        <Typography sx={{ fontWeight: 600, mb: 0.5 }}>Compact</Typography>
+        <Typography sx={{ fontWeight: 600, mb: .5 }}>Compact</Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
           A less obtrusive menu to be used together with chat functions.
         </Typography>
         <Grid container spacing={2}>
           {TEMPLATES.filter(t => t.size === 'compact').map(t => (
-            <Grid item xs={12} sm={6} md={3} key={t.id}>
-              <Thumb t={t} />
-            </Grid>
+            <Grid item xs={12} sm={6} md={3} key={t.id}><Thumb t={t} /></Grid>
           ))}
         </Grid>
       </DialogContent>
@@ -178,378 +265,394 @@ function TemplateModal({ open, onClose, value, onApply }) {
   );
 }
 
-
-// inline action editor
-function ActionEditor({ action, onChange }) {
-  return (
-    <Stack spacing={1}>
-      <TextField
-        select
-        size="small"
-        label="Type"
-        value={action?.type || 'Link'}
-        onChange={(e) => onChange({ ...(action || {}), type: e.target.value })}
-        SelectProps={{ native: true }}
-      >
-        <option>Link</option><option>Text</option><option>No action</option>
-      </TextField>
-
-      {(action?.type === 'Link') && (
-        <Stack direction="row" spacing={1}>
-          <TextField size="small" label="URL" value={action.url || ''} onChange={(e) => onChange({ ...action, url: e.target.value })} fullWidth />
-          <TextField size="small" label="Label" value={action.label || ''} onChange={(e) => onChange({ ...action, label: (e.target.value || '').slice(0, 20) })} sx={{ maxWidth: 200 }} />
-        </Stack>
-      )}
-
-      {(action?.type === 'Text') && (
-        <TextField size="small" label="Message" value={action.text || ''} onChange={(e) => onChange({ ...action, text: (e.target.value || '').slice(0, 300) })} fullWidth />
-      )}
-    </Stack>
-  );
-}
-
+// ========================================================
+//                       Page
+// ========================================================
 export default function AdminTemplateEditorPage() {
   const navigate = useNavigate();
-  const { id } = useParams();
-  const [sp]   = useSearchParams();
+  const { id } = useParams(); // 'new' | '<docId>'
+  const isNew = !id || id === 'new';
 
-  const [form, setForm] = useState({
-    title: '', size: 'large', imageUrl: '', chatBarText: 'Menu',
-    category: '', tags: '', note: '', areas: []
+  // form states
+  const [title, setTitle] = useState('');
+  const [category, setCategory] = useState('');
+  const [size, setSize] = useState('large'); // large | compact
+  const [image, setImage] = useState('');
+  const [chatBarText, setChatBarText] = useState('Menu');
+  const [behavior, setBehavior] = useState('shown');
+
+  const [templateOpen, setTemplateOpen] = useState(false);
+  const [snack, setSnack] = useState('');
+
+  // grid + actions
+  const overlayRef = useRef(null);
+  const [areas, setAreas] = useState(() => {
+    const tpl = TEMPLATES.find(t => t.id === 'lg-3+3+full') || TEMPLATES[0];
+    return tpl.preview.map((c, i) => {
+      const [x, y, w, h] = c;
+      return { id: `A${i + 1}`, x: pctClamp((x / 6) * 100), y: pctClamp((y / 4) * 100), w: pctClamp((w / 6) * 100), h: pctClamp((h / 4) * 100) };
+    });
   });
-  const [loading, setLoading] = useState(!!id);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [actions, setActions] = useState(() => Array.from({ length: 3 }, () => ({ type: 'Select' })));
 
-  // template picker
-  const [tplOpen, setTplOpen] = useState(false);
-  const [tplValue, setTplValue] = useState(TEMPLATES.find(t => t.id === 'lg-3+3+full') || TEMPLATES[0]);
+  const [selected, setSelected] = useState('A1');
+  const selectedIndex = Math.max(0, areas.findIndex(a => a.id === selected));
+  const [drag, setDrag] = useState(null);
+  const MIN_W = 5, MIN_H = 5;
 
-  const applyTemplate = (tpl) => {
-    setTplValue(tpl);
-    const areas = tpl.preview.map(([x,y,w,h]) => ({
-        xPct: x/6, yPct: y/4, wPct: w/6, hPct: h/4,
-        action: { type: 'Link' }                    // ใส่ action เริ่มต้น
-    }));
-    setForm(f => ({ ...f, size: tpl.size, areas }));
-    setSelectedIndex(0);
-  };
+  const actionRefs = useRef([]);
 
-
-
-  // เมื่อเปลี่ยน size จาก dropdown ให้ sync ค่า template ที่โชว์ใน modal ด้วย
+  // ---------- load when edit ----------
   useEffect(() => {
-    const firstOfSize = TEMPLATES.find(t => t.size === form.size);
-    if (firstOfSize && firstOfSize.id !== tplValue.id) setTplValue(firstOfSize);
-  }, [form.size]); // eslint-disable-line
-
-  // load when editing
-  useEffect(() => {
-    if (!id) return;
+    if (isNew) return;
     (async () => {
       try {
         const j = await authedFetch(`/api/admin/templates/${id}`);
-        setForm({
-          title: j.title || '',
-          size: j.size || 'large',
-          imageUrl: j.imageUrl || '',
-          chatBarText: j.chatBarText || 'Menu',
-          category: j.category || '',
-          tags: Array.isArray(j.tags) ? j.tags.join(', ') : (j.tags || ''),
-          note: j.note || '',
-          areas: Array.isArray(j.areas) ? j.areas : []
-        });
-      } catch (e) { setError(e?.message || String(e)); }
-      finally { setLoading(false); }
-    })();
-  }, [id]);
+        setTitle(j.title || '');
+        setCategory(j.category || '');
+        setSize(j.size || 'large');
+        setImage(j.imageUrl || '');
+        setChatBarText(j.chatBarText || 'Menu');
+        setBehavior(j.defaultBehavior || 'shown');
 
-  // upload
+        const areasIn = Array.isArray(j.areas) ? j.areas : [];
+        const toPct = (v) => Math.round(((Number(v) || 0) * 100) * 100) / 100;
+        const aPct = areasIn.map((a, i) => ({
+          id: `A${i + 1}`,
+          x: toPct(a.xPct), y: toPct(a.yPct), w: toPct(a.wPct), h: toPct(a.hPct),
+        }));
+        setAreas(aPct.length ? aPct : areas);
+        setActions(areasIn.map(a => a.action || { type: 'Select' }));
+      } catch (e) {
+        alert('โหลดเทมเพลตไม่สำเร็จ: ' + (e?.message || e));
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, isNew]);
+
+  // scroll to selected action
+  useEffect(() => {
+    const el = actionRefs.current[selectedIndex];
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [selectedIndex]);
+
+  // ---------- derived ----------
+  const aspect = size === 'compact' ? '2500 / 843' : '2500 / 1686';
+  const canSave = useMemo(() => title.trim().length > 0 && !!image, [title, image]);
+
+  // ---------- handlers ----------
+  const gridToAreas = (cells) =>
+    cells.map((c, i) => {
+      const [x, y, w, h] = c;
+      return { id: `A${i + 1}`, x: pctClamp((x / 6) * 100), y: pctClamp((y / 4) * 100), w: pctClamp((w / 6) * 100), h: pctClamp((h / 4) * 100) };
+    });
+
+  const applyTemplate = (tpl) => {
+    setSize(tpl.size);
+    const nextAreas = gridToAreas(tpl.preview);
+    setAreas(nextAreas);
+    setActions((prev) => {
+      const base = prev.concat(Array.from({ length: Math.max(0, nextAreas.length - prev.length) }, () => ({ type: 'Select' })));
+      return base.slice(0, nextAreas.length);
+    });
+    setSelected(nextAreas[0]?.id || null);
+  };
+
   const fileRef = useRef(null);
-  const uploadImage = async (file) => {
+  async function uploadImage(file) {
+    const targetH = size === 'compact' ? 843 : 1686;
     try {
-      // รีไซซ์ตาม "ขนาดที่ผู้ใช้เลือกไว้" เท่านั้น
-      const targetH = (form.size === 'compact') ? 843 : 1686;
       const blob = await drawToSize(file, 2500, targetH, 'image/jpeg');
-      const safe = `${Date.now()}-${file.name.replace(/\s+/g,'-').replace(/\.[^.]+$/, '')}.jpg`;
-      const r = sref(storage, `public/admin-templates/${safe}`);
+      if (!blob) return setSnack('แปลงรูปไม่สำเร็จ');
+
+      // อัปโหลดขึ้น Storage (โฟลเดอร์ global ของ admin templates)
+      const base = (file.name || 'template').replace(/\.[^.]+$/, '');
+      const safeName = `${base.replace(/\s+/g, '-')}.jpg`;
+      const r = sref(storage, `admin/templates/${Date.now()}-${safeName}`);
       await uploadBytes(r, blob, { contentType: 'image/jpeg' });
       const url = await getDownloadURL(r);
-      setForm(f => ({ ...f, imageUrl: url }));   // ❌ ไม่เปลี่ยน size / areas อัตโนมัติ
-    } catch (e) {
-      alert('อัปโหลดรูปไม่สำเร็จ: ' + (e?.message || e));
+      setImage(url);
+      setSnack(`อัปโหลดรูปสำเร็จ (${Math.round(blob.size / 1024)} KB)`);
+    } catch {
+      setSnack('อัปโหลดรูปไม่สำเร็จ');
     }
+  }
+
+  const addArea = () => {
+    const id = `A${areas.length + 1}`;
+    setAreas(prev => [...prev, { id, x: 5, y: 5, w: 40, h: 20 }]);
+    setActions(prev => [...prev, { type: 'Select' }]);
+    setSelected(id);
   };
-
-  // drag & resize
-  const MIN_W = 0.05, MIN_H = 0.05; // 5%
-  const overlayRef = useRef(null);
-  const dragRef = useRef(null);
-
-  const startMove = (i, e) => {
-    const rect = overlayRef.current.getBoundingClientRect();
-    dragRef.current = {
-      i, mode: 'move',
-      startX: e.clientX, startY: e.clientY,
-      boxW: rect.width, boxH: rect.height,
-      start: form.areas[i]
-    };
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
+  const removeArea = (id) => {
+    const idx = areas.findIndex(a => a.id === id);
+    setAreas(prev => prev.filter(a => a.id !== id));
+    setActions(prev => prev.filter((_, i) => i !== idx));
+    if (selected === id) setSelected(null);
   };
+  const updateArea = (id, patch) => setAreas(prev => prev.map(a => a.id === id ? { ...a, ...patch } : a));
 
-  const startResize = (i, handle, e) => {
+  const startMove = (id, e) => {
     e.stopPropagation();
+    const a = areas.find(x => x.id === id); if (!a) return;
     const rect = overlayRef.current.getBoundingClientRect();
-    dragRef.current = {
-      i, mode: 'resize', handle,
-      startX: e.clientX, startY: e.clientY,
-      boxW: rect.width, boxH: rect.height,
-      start: form.areas[i]
+    setDrag({ id, mode: 'move', startX: e.clientX, startY: e.clientY, startRect: { x: a.x, y: a.y, w: a.w, h: a.h }, box: { w: rect.width, h: rect.height } });
+    setSelected(id);
+  };
+  const startResize = (id, handle, e) => {
+    e.stopPropagation();
+    const a = areas.find(x => x.id === id); if (!a) return;
+    const rect = overlayRef.current.getBoundingClientRect();
+    setDrag({ id, mode: 'resize', handle, startX: e.clientX, startY: e.clientY, startRect: { x: a.x, y: a.y, w: a.w, h: a.h }, box: { w: rect.width, h: rect.height } });
+    setSelected(id);
+  };
+  useEffect(() => {
+    if (!drag) return;
+    const onMove = (e) => {
+      const dxPct = ((e.clientX - drag.startX) / drag.box.w) * 100;
+      const dyPct = ((e.clientY - drag.startY) / drag.box.h) * 100;
+      if (drag.mode === 'move') {
+        let nx = pctClamp(drag.startRect.x + dxPct);
+        let ny = pctClamp(drag.startRect.y + dyPct);
+        nx = clamp(nx, 0, 100 - drag.startRect.w);
+        ny = clamp(ny, 0, 100 - drag.startRect.h);
+        updateArea(drag.id, { x: nx, y: ny });
+      } else {
+        const s = drag.startRect;
+        let { x, y, w, h } = s;
+        const has = (k) => drag.handle.includes(k);
+        if (has('e')) w = clamp(s.w + dxPct, MIN_W, 100 - s.x);
+        if (has('s')) h = clamp(s.h + dyPct, MIN_H, 100 - s.y);
+        if (has('w')) { const nx = clamp(s.x + dxPct, 0, s.x + s.w - MIN_W); w = clamp(s.w - (nx - s.x), MIN_W, 100); x = nx; }
+        if (has('n')) { const ny = clamp(s.y + dyPct, 0, s.y + s.h - MIN_H); h = clamp(s.h - (ny - s.y), MIN_H, 100); y = ny; }
+        x = clamp(x, 0, 100 - w); y = clamp(y, 0, 100 - h);
+        updateArea(drag.id, { x: pctClamp(x), y: pctClamp(y), w: pctClamp(w), h: pctClamp(h) });
+      }
     };
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
-  };
+    const onUp = () => setDrag(null);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+  }, [drag]); // eslint-disable-line
 
-  const onMouseMove = (e) => {
-    const d = dragRef.current; if (!d) return;
-    const dx = ((e.clientX - d.startX) / d.boxW);
-    const dy = ((e.clientY - d.startY) / d.boxH);
-    const s  = d.start;
+  // ---------- build payload + save ----------
+  const toNormalized = (a, i) => ({
+    xPct: Math.round(Number(a.x) * 100) / 100 / 100,
+    yPct: Math.round(Number(a.y) * 100) / 100 / 100,
+    wPct: Math.round(Number(a.w) * 100) / 100 / 100,
+    hPct: Math.round(Number(a.h) * 100) / 100 / 100,
+    action: actions[i] || { type: 'No action' },
+  });
 
-    if (d.mode === 'move') {
-      let nx = clamp01((Number(s.xPct)||0) + dx);
-      let ny = clamp01((Number(s.yPct)||0) + dy);
-      nx = Math.max(0, Math.min(nx, 1 - (s.wPct||0)));
-      ny = Math.max(0, Math.min(ny, 1 - (s.hPct||0)));
-      setForm(f => {
-        const A = [...f.areas];
-        A[d.i] = { ...A[d.i], xPct: nx, yPct: ny };
-        return { ...f, areas: A };
-      });
-    } else {
-      let { xPct:x, yPct:y, wPct:w=0.4, hPct:h=0.2 } = s;
-      const has = (k) => d.handle.includes(k);
+  const buildPayload = () => ({
+    title,
+    category,
+    size,
+    imageUrl: image,
+    chatBarText,
+    defaultBehavior: behavior,
+    areas: areas.map(toNormalized),
+  });
 
-      if (has('e')) w = Math.max(MIN_W, Math.min(1 - x, (s.wPct||0) + dx));
-      if (has('s')) h = Math.max(MIN_H, Math.min(1 - y, (s.hPct||0) + dy));
-      if (has('w')) { const nx = clamp01(x + dx); const nw = (s.wPct||0) - (nx - x); x = nx; w = Math.max(MIN_W, nw); }
-      if (has('n')) { const ny = clamp01(y + dy); const nh = (s.hPct||0) - (ny - y); y = ny; h = Math.max(MIN_H, nh); }
-
-      // keep in bounds
-      x = Math.max(0, Math.min(x, 1 - w));
-      y = Math.max(0, Math.min(y, 1 - h));
-
-      setForm(f => {
-        const A = [...f.areas];
-        A[d.i] = { ...A[d.i], xPct:x, yPct:y, wPct:w, hPct:h };
-        return { ...f, areas: A };
-      });
-    }
-  };
-
-  const onMouseUp = () => {
-    dragRef.current = null;
-    window.removeEventListener('mousemove', onMouseMove);
-    window.removeEventListener('mouseup', onMouseUp);
-  };
-
-  const addArea = () => setForm(f => ({
-    ...f,
-    areas: [...f.areas, { xPct: .05, yPct: .05, wPct: .4, hPct: .2, action: { type: 'Link' } }]
-  }));
-  const removeArea = (idx) =>
-    setForm(f => ({ ...f, areas: f.areas.filter((_, i) => i !== idx) }));
-
-  const save = async () => {
-    if (!form.imageUrl) return alert('กรุณาอัปโหลดรูปเมนู');
-    setSaving(true);
+  async function onSave() {
     try {
-      const payload = { ...form, tags: (form.tags || '').split(',').map(s => s.trim()).filter(Boolean) };
-      if (id) await authedFetch(`/api/admin/templates/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
-      else    await authedFetch('/api/admin/templates', { method: 'POST', body: JSON.stringify(payload) });
-      navigate(`/homepage/admin/templates${sp.get('tenant') ? `?tenant=${sp.get('tenant')}` : ''}`, { replace: true });
-    } catch (e) { alert('บันทึกไม่สำเร็จ: ' + (e?.message || e)); }
-    finally { setSaving(false); }
-  };
+      if (!canSave) return;
+      const payload = buildPayload();
+      if (isNew) {
+        await authedFetch('/api/admin/templates', { method: 'POST', body: JSON.stringify(payload) });
+      } else {
+        await authedFetch(`/api/admin/templates/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+      }
+      setSnack('บันทึกสำเร็จ');
+      navigate(-1);
+    } catch (e) {
+      alert('บันทึกไม่สำเร็จ: ' + (e?.message || e));
+    }
+  }
 
-  if (loading) return <Container sx={{ py: 3 }}>Loading…</Container>;
-  if (error)   return <Container sx={{ py: 3, color: 'error.main' }}>เปิดเทมเพลตไม่ได้: {error}</Container>;
-
+  // ---------- render ----------
   return (
-    <Container sx={{ py: 2 }}>
-      <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2 }}>
-        <Button startIcon={<BackIcon />} onClick={() => navigate(-1)}>Back</Button>
-        <Typography variant="h5" fontWeight="bold">{id ? 'Edit Template' : 'Create Template'}</Typography>
-        <Box sx={{ flex: 1 }} />
-        <Button variant="contained" startIcon={<SaveIcon />} onClick={save} disabled={saving}>
-          {saving ? 'Saving…' : 'Save'}
-        </Button>
+    <Container sx={{ py: 3 }}>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Button variant="outlined" startIcon={<BackIcon />} onClick={() => navigate(-1)}>Back</Button>
+          <Typography variant="h5" fontWeight="bold">
+            {isNew ? 'New Admin Template' : 'Edit Admin Template'}
+          </Typography>
+        </Stack>
+        <Stack direction="row" spacing={1}>
+          <Button
+            variant="contained"
+            startIcon={<SaveIcon />}
+            disabled={!canSave}
+            onClick={onSave}
+            sx={{ bgcolor: '#66bb6a', '&:hover': { bgcolor: '#57aa5b' } }}
+          >
+            Save
+          </Button>
+        </Stack>
       </Stack>
 
-      <Grid container spacing={2}>
-        {/* LEFT: Preview */}
-        <Grid item xs={12} md={8}>
-          <Paper variant="outlined" sx={{ p: 2 }}>
-            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
-              <Typography fontWeight="bold">Preview</Typography>
-              <Stack direction="row" spacing={1}>
-                <Button variant="outlined" onClick={() => setTplOpen(true)}>Template</Button>
-                <Button variant="outlined" startIcon={<ImageIcon />} onClick={() => fileRef.current?.click()}>
-                  {form.imageUrl ? 'Change image' : 'Upload image'}
-                </Button>
-                <input hidden ref={fileRef} type="file" accept="image/*"
-                  onChange={(e) => e.target.files?.[0] && uploadImage(e.target.files[0])} />
-              </Stack>
-            </Stack>
-
-            <Box
-              ref={overlayRef}
-              sx={{
-                position: 'relative',
-                width: '100%',
-                maxWidth: 900,
-                mx: 'auto',
-                border: '1px dashed #ccc',
-                borderRadius: 1,
-                bgcolor: '#f7f7f7',
-                overflow: 'hidden',
-                aspectRatio: form.size === 'compact' ? '2500 / 843' : '2500 / 1686',
-              }}
-              onMouseDown={() => setSelectedIndex(0)}
-            >
-              {form.imageUrl ? (
-                <img
-                  src={form.imageUrl}
-                  alt=""
-                  style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'contain', pointerEvents:'none' }}
+      {/* Basic settings */}
+      <Card variant="outlined" sx={{ mb: 2 }}>
+        <CardContent>
+          <Grid container spacing={2}>
+            <Grid item xs={12} md={6}>
+              <TextField
+                label="Template title"
+                fullWidth
+                value={title}
+                onChange={(e) => setTitle((e.target.value || '').slice(0, 40))}
+                helperText={`${title.length}/40`}
+              />
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <Stack direction="row" spacing={2} alignItems="center" sx={{ height: '100%' }}>
+                <Select size="small" value={category} onChange={(e) => setCategory(e.target.value)} displayEmpty>
+                  <MenuItem value=""><em>Category</em></MenuItem>
+                  {CATEGORY_OPTIONS.map((c) => <MenuItem key={c} value={c}>{c}</MenuItem>)}
+                </Select>
+                <Select size="small" value={size} onChange={(e) => setSize(e.target.value)}>
+                  <MenuItem value="large">Large</MenuItem>
+                  <MenuItem value="compact">Compact</MenuItem>
+                </Select>
+                <TextField
+                  label="Chat bar label"
+                  size="small"
+                  value={chatBarText}
+                  onChange={(e) => setChatBarText((e.target.value || '').slice(0, 14))}
+                  helperText={`${chatBarText.length}/14`}
                 />
-              ) : (
-                <Stack alignItems="center" justifyContent="center"
-                       style={{position:'absolute', inset:0, color:'#888'}}>
-                  <Typography>No image</Typography>
-                </Stack>
-              )}
-              {!form.imageUrl && (
-                <Stack alignItems="center" justifyContent="center" sx={{ position: 'absolute', inset: 0, color: '#888' }}>
-                  <Typography>No image</Typography>
-                </Stack>
-              )}
+                <RadioGroup row value={behavior} onChange={(e) => setBehavior(e.target.value)}>
+                  <FormControlLabel value="shown" control={<Radio />} label="Shown" />
+                  <FormControlLabel value="collapsed" control={<Radio />} label="Collapsed" />
+                </RadioGroup>
+              </Stack>
+            </Grid>
+          </Grid>
+        </CardContent>
+      </Card>
 
-              {form.areas.map((a, i) => {
-                const sel = selectedIndex === i;
-                return (
-                  <Box
-                    key={i}
-                    onMouseDown={(e) => { setSelectedIndex(i); startMove(i, e); }}
-                    onClick={(e) => { e.stopPropagation(); setSelectedIndex(i); }}
-                    title={`Block ${i + 1}`}
-                    sx={{
-                      position: 'absolute',
-                      left: `${pct((a.xPct||0)*100)}%`,
-                      top:  `${pct((a.yPct||0)*100)}%`,
-                      width:`${pct(((a.wPct??.4)*100))}%`,
-                      height:`${pct(((a.hPct??.2)*100))}%`,
-                      border: `2px solid ${sel ? '#2e7d32' : 'rgba(46,125,50,.7)'}`,
-                      bgcolor: sel ? 'rgba(102,187,106,.18)' : 'rgba(102,187,106,.12)',
-                      cursor:'move'
-                    }}
-                  >
-                    <Chip size="small" label={`Block ${i+1}`} sx={{ position:'absolute', left:4, top:4 }} />
-                    <Chip size="small" variant="outlined" label={a.action?.type || 'Link'} sx={{ position:'absolute', left:4, bottom:4 }} />
+      <Grid container spacing={2} alignItems="flex-start">
+        {/* LEFT: preview + overlay */}
+        <Grid item xs={12} md={6}>
+          <Card variant="outlined">
+            <CardContent>
+              <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+                <Typography variant="subtitle1" fontWeight="bold">Template image & areas</Typography>
+                <Stack direction="row" spacing={1}>
+                  <Button variant="outlined" onClick={() => setTemplateOpen(true)}>Template</Button>
+                  <Button variant="outlined" onClick={() => applyTemplate(TEMPLATES.find(t => t.size === size) || TEMPLATES[0])}>Reset to template</Button>
+                  <Button variant="outlined" startIcon={<ImageIcon />} onClick={() => fileRef.current?.click()}>Change</Button>
+                  <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => e.target.files?.[0] && uploadImage(e.target.files[0])} />
+                </Stack>
+              </Stack>
 
-                    {['nw','n','ne','e','se','s','sw','w'].map((h) => (
-                      <Box key={h} onMouseDown={(e) => startResize(i, h, e)}
-                        sx={{
-                          position:'absolute', width:10, height:10,
-                          bgcolor: sel ? '#2e7d32' : '#66bb6a', borderRadius:'2px',
-                          ...(h==='nw' && { left:-5, top:-5 }),
-                          ...(h==='n'  && { left:'calc(50% - 5px)', top:-5 }),
-                          ...(h==='ne' && { right:-5, top:-5 }),
-                          ...(h==='e'  && { right:-5, top:'calc(50% - 5px)' }),
-                          ...(h==='se' && { right:-5, bottom:-5 }),
-                          ...(h==='s'  && { left:'calc(50% - 5px)', bottom:-5 }),
-                          ...(h==='sw' && { left:-5, bottom:-5 }),
-                          ...(h==='w'  && { left:-5, top:'calc(50% - 5px)' }),
-                          cursor: (h==='n' || h==='s') ? 'ns-resize'
-                                 : (h==='e' || h==='w') ? 'ew-resize'
-                                 : (h==='ne' || h==='sw') ? 'nesw-resize' : 'nwse-resize'
-                        }}
-                      />
-                    ))}
+              <Box
+                ref={overlayRef}
+                sx={{
+                  position: 'relative',
+                  border: '1px dashed #ccc',
+                  borderRadius: 1,
+                  overflow: 'hidden',
+                  background: '#fafafa',
+                  aspectRatio: aspect,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+                onMouseDown={() => setSelected(null)}
+              >
+                {image ? (
+                  <img src={image} alt="" style={{ width: '100%', height: '100%', display: 'block', objectFit: 'contain' }} />
+                ) : (
+                  <Box sx={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: 'text.secondary' }}>
+                    <Typography>No image</Typography>
                   </Box>
-                );
-              })}
-            </Box>
+                )}
 
-            <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-              <Button onClick={() => applyTemplate(tplValue)}>Reset to template</Button>
-              {!!form.areas.length && (
-                <Button color="error" onClick={() => removeArea(selectedIndex)} startIcon={<DeleteIcon />}>
-                  Remove selected
-                </Button>
-              )}
-              <Button onClick={() => addArea()}>Add area</Button>
-            </Stack>
-          </Paper>
+                {areas.map((a, idx) => {
+                  const isSel = a.id === selected;
+                  return (
+                    <Box
+                      key={a.id}
+                      onMouseDown={(e) => startMove(a.id, e)}
+                      onClick={(e) => { e.stopPropagation(); setSelected(a.id); }}
+                      sx={{
+                        position: 'absolute',
+                        left: `${pctClamp(a.x)}%`, top: `${pctClamp(a.y)}%`,
+                        width: `${pctClamp(a.w)}%`, height: `${pctClamp(a.h)}%`,
+                        border: '2px solid', borderColor: isSel ? '#2e7d32' : 'rgba(46,125,50,.5)',
+                        background: isSel ? 'rgba(102,187,106,.15)' : 'rgba(102,187,106,.08)',
+                        cursor: 'move',
+                      }}
+                      title={`Block ${idx + 1}`}
+                    >
+                      <Chip size="small" label={`Block ${idx + 1}`} sx={{ position: 'absolute', left: 4, top: 4 }} />
+                      <Chip size="small" variant="outlined" label={actions[idx]?.type || 'Select'} sx={{ position: 'absolute', left: 4, bottom: 4 }} />
+
+                      {['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'].map((h) => (
+                        <Box
+                          key={h}
+                          onMouseDown={(e) => startResize(a.id, h, e)}
+                          sx={{
+                            position: 'absolute',
+                            width: 10, height: 10,
+                            bgcolor: isSel ? '#2e7d32' : '#66bb6a',
+                            borderRadius: '2px',
+                            ...(h === 'nw' && { left: -5, top: -5 }),
+                            ...(h === 'n' && { left: 'calc(50% - 5px)', top: -5 }),
+                            ...(h === 'ne' && { right: -5, top: -5 }),
+                            ...(h === 'e' && { right: -5, top: 'calc(50% - 5px)' }),
+                            ...(h === 'se' && { right: -5, bottom: -5 }),
+                            ...(h === 's' && { left: 'calc(50% - 5px)', bottom: -5 }),
+                            ...(h === 'sw' && { left: -5, bottom: -5 }),
+                            ...(h === 'w' && { left: -5, top: 'calc(50% - 5px)' }),
+                          }}
+                        />
+                      ))}
+                    </Box>
+                  );
+                })}
+              </Box>
+
+              <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+                <Button startIcon={<AreaIcon />} onClick={addArea}>Add area</Button>
+                {selected && (
+                  <Button color="error" startIcon={<DeleteIcon />} onClick={() => removeArea(selected)}>Remove selected</Button>
+                )}
+              </Stack>
+            </CardContent>
+          </Card>
         </Grid>
 
-        {/* RIGHT: Details & Action editor */}
-        <Grid item xs={12} md={4}>
-          <Paper variant="outlined" sx={{ p: 2 }}>
-            <Typography fontWeight="bold" sx={{ mb: 1 }}>Details</Typography>
-
-            <Stack spacing={1.5}>
-              <TextField label="Title" value={form.title} onChange={(e) => setForm(f => ({ ...f, title: e.target.value }))} fullWidth />
-              <TextField label="Chat bar label" value={form.chatBarText} onChange={(e) => setForm(f => ({ ...f, chatBarText: (e.target.value || '').slice(0, 14) }))} fullWidth />
-
-              <Autocomplete
-                options={CATEGORY_OPTIONS}
-                freeSolo
-                value={form.category || null}
-                onChange={(_, v) => setForm(f => ({ ...f, category: v || '' }))}
-                onInputChange={(_, v) => setForm(f => ({ ...f, category: v || '' }))}
-                renderInput={(params) => <TextField {...params} label="Category" />}
-              />
-
-              <TextField label="Tags (comma)" value={form.tags} onChange={(e) => setForm(f => ({ ...f, tags: e.target.value }))} fullWidth />
-              <TextField label="Note" value={form.note} onChange={(e) => setForm(f => ({ ...f, note: e.target.value }))} fullWidth multiline />
-
-              <Divider sx={{ my: 1 }} />
-
-              <Typography fontWeight="bold" sx={{ mb: 1 }}>Actions</Typography>
-              {form.areas.length ? (
-                <Stack spacing={1.5}>
-                  {form.areas.map((a, i) => (
-                    <Paper key={i} variant="outlined" sx={{ p: 1.5, borderColor: i===selectedIndex ? '#66bb6a' : undefined }}>
-                        <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
-                        <Chip size="small" label={`Block ${i+1}`} />
-                        <Box sx={{ flex: 1 }} />
-                        {/* คลิกเพื่อเลือกบล็อกในแคนวาสได้ด้วย */}
-                        <Button size="small" onClick={() => setSelectedIndex(i)}>Select</Button>
-                        </Stack>
-                        <ActionEditor
-                        action={a.action || { type: 'Link' }}
-                        onChange={(next) => setForm(f => {
-                            const A = [...f.areas];
-                            A[i] = { ...A[i], action: next };
-                            return { ...f, areas: A };
-                        })}
-                        />
-                    </Paper>
-                    ))}
-                </Stack>
-                ) : (
-                <Typography variant="body2" color="text.secondary">ยังไม่มีพื้นที่ — กด “Add area” ทางซ้าย</Typography>
-              )}
-            </Stack>
-          </Paper>
+        {/* RIGHT: actions */}
+        <Grid item xs={12} md={6}>
+          <Card variant="outlined">
+            <CardContent>
+              <Typography variant="subtitle1" fontWeight="bold" sx={{ mb: 1 }}>
+                Actions — {areas.length ? `Block ${selectedIndex + 1} selected` : 'No block selected'}
+              </Typography>
+              {areas.map((a, i) => (
+                <Box key={a.id} ref={(el) => (actionRefs.current[i] = el)} sx={{ outline: i === selectedIndex ? '2px solid #66bb6a' : 'none', borderRadius: 2 }}>
+                  <ActionEditor
+                    idx={i}
+                    action={actions[i] || { type: 'Select' }}
+                    onChange={(next) => setActions((prev) => prev.map((p, idx) => (idx === i ? next : p)))}
+                  />
+                </Box>
+              ))}
+            </CardContent>
+          </Card>
         </Grid>
       </Grid>
 
-      <TemplateModal open={tplOpen} onClose={() => setTplOpen(false)} value={tplValue}
-        onApply={(tpl) => { setTplOpen(false); applyTemplate(tpl); }} />
+      <TemplateModal
+        open={templateOpen}
+        onClose={() => setTemplateOpen(false)}
+        value={TEMPLATES.find(t => t.size === size)}
+        onApply={(tpl) => { setTemplateOpen(false); applyTemplate(tpl); setSnack('Template applied'); }}
+      />
+
+      <Snackbar open={!!snack} autoHideDuration={2200} onClose={() => setSnack('')} message={snack} />
     </Container>
   );
 }
