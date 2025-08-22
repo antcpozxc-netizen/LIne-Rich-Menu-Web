@@ -35,7 +35,7 @@ import RichMenusListPage from './pages/RichMenusListPage';
 import GreetingMessagePage from './pages/GreetingMessagePage';
 import TemplateRichMenusPage from './pages/TemplateRichMenusPage';
 import LiveChatPage from './pages/LiveChatPage';
-import FriendsPage from './pages/FriendsPage';
+import TipssPage from './pages/TipsPage';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
@@ -66,7 +66,7 @@ root.render(
         <Route path="template-rich-menus" element={<TemplateRichMenusPage />} />
         {/* Others */}
         <Route path="greeting-message" element={<GreetingMessagePage />} />
-        <Route path="friends" element={<FriendsPage />} />
+        <Route path="Tips" element={<TipssPage />} />
         <Route path="live-chat" element={<LiveChatPage />} />
 
         {/* Admin (ต้องล็อกอิน + admin เท่านั้น) */}

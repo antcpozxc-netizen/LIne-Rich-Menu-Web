@@ -361,9 +361,9 @@ export default function HomePage() {
 
             {/* Friends */}
             <ListItem disablePadding>
-              <ListItemButton onClick={() => navigate(`/homepage/friends${activeTenantId ? `?tenant=${activeTenantId}` : ''}`)}>
+              <ListItemButton onClick={() => navigate(`/homepage/tips${activeTenantId ? `?tenant=${activeTenantId}` : ''}`)}>
                 <ListItemIcon><TableChartIcon /></ListItemIcon>
-                {sidebarOpen && <ListItemText primary="Friends" />}
+                {sidebarOpen && <ListItemText primary="Tips คู่มือการใช้งาน" />}
               </ListItemButton>
             </ListItem>
 

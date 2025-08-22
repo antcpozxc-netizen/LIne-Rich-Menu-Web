@@ -47,8 +47,9 @@ const App = () => {
           </Typography>
           <Box sx={{ display: "flex", alignItems: "center", gap: 3 }}>
             <Button sx={{ color: "#fff" }} onClick={() => navigate("/", { replace: true })}>Home</Button>
-            <Button sx={{ color: "#fff" }} onClick={() => navigate("/homepage")}>Rich Menu</Button>
+            <Button sx={{ color: "#fff" }} onClick={() => navigate("/homepage/rich-menus")}>Rich Menu</Button>
             <Button sx={{ color: "#fff" }} onClick={() => navigate("/homepage/broadcast")}>Broadcast</Button>
+            <Button sx={{ color: "#fff" }} onClick={() => navigate("/homepage/rich-message")}>Rich Message</Button>
             {user ? (
               <Button variant="contained" onClick={() => navigate("/accounts")} sx={{ textTransform: "none" }}>
                 ไปที่บัญชีของฉัน
