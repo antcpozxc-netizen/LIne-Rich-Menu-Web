@@ -1,5 +1,5 @@
-// src/pages/AccountsPage.js }
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+// src/pages/AccountsPage.js
+import React, { useEffect, useRef, useState } from 'react';
 import {
   AppBar, Toolbar, Typography, Button, Container, Table, TableBody,
   TableCell, TableHead, TableRow, Avatar, Box, IconButton, Dialog,
@@ -17,7 +17,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import SearchIcon from '@mui/icons-material/Search';
 
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import {
@@ -39,36 +39,44 @@ const uidLooksValid = (input) => {
   return s.startsWith('line:') || /^U[0-9a-f]{32}$/i.test(s);
 };
 
+// อนุญาตเฉพาะเส้นทางภายใน (กัน open redirect)
+function sanitizeNext(raw) {
+  if (!raw) return '';
+  try {
+    const url = new URL(raw, window.location.origin);
+    if (url.origin !== window.location.origin) return '';
+    return url.pathname + url.search; // ไม่ต้องเอา hash กลับ
+  } catch {
+    return String(raw).startsWith('/') ? raw : '';
+  }
+}
+
 export default function AccountsPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [sp] = useSearchParams();
-  const next = sp.get('next') || '';
+  const nextParam = sanitizeNext(sp.get('next') || '');
 
+  // ---------- เมื่อเลือก OA ----------
   const openTenant = (t) => {
     if (!t?.id) return;
 
     // จำ OA ไว้
     localStorage.setItem('activeTenantId', t.id);
 
-    // ถ้ามี next -> กลับไปยังหน้าเดิม + เติม ?tenant=...
-    if (next) {
-      try {
-        const url = new URL(next, window.location.origin);
-        url.searchParams.set('tenant', t.id);
-        navigate(url.pathname + url.search, { replace: true });
-        return;
-      } catch {
-        // ถ้า next ไม่ใช่ URL ที่ parse ได้ ก็ fallback
-      }
-    }
+    // ปลายทาง: ถ้า next ว่าง หรือเป็น "/" → ให้ไป /homepage
+    const baseNext = (!nextParam || nextParam === '/') ? '/homepage' : nextParam;
 
-    // ไม่มี next -> ไปโฮมพร้อม tenant
-    navigate(`/homepage?tenant=${t.id}`, { replace: true });
+    // แนบ tenant เข้า query
+    const url = new URL(baseNext, window.location.origin);
+    url.searchParams.set('tenant', t.id);
+
+    navigate(url.pathname + url.search, { replace: true });
   };
 
   // auth + profile
   const [user, setUser] = useState(null);
-  const [profile, setProfile] = useState(null);   // users/{uid} จาก Firestore
+  const [profile, setProfile] = useState(null);
   const [ready, setReady] = useState(false);
 
   // tenants (LINE OA) ของผู้ใช้
@@ -108,7 +116,7 @@ export default function AccountsPage() {
     return () => unsub();
   }, [user]);
 
-  // ---- subscribe รายการ OA ของผู้ใช้: tenants where ownerUid == uid OR members contains uid ----
+  // ---- subscribe รายการ OA ของผู้ใช้ ----
   useEffect(() => {
     if (!user) return;
 
@@ -133,7 +141,6 @@ export default function AccountsPage() {
   const mergeUnique = (a, b) => {
     const m = new Map();
     [...a, ...b].forEach(x => m.set(x.id, x));
-    // จัดเรียงชื่อ OA เล็กน้อย
     return Array.from(m.values()).sort((x, y) => (x.displayName || '').localeCompare(y.displayName || ''));
   };
 
@@ -257,7 +264,6 @@ export default function AccountsPage() {
     }
   };
 
-  // ---- เพิ่ม/ลบสมาชิก (owner เท่านั้น) ----
   const isOwnerOf = (t) => user && t && t.ownerUid === user.uid;
 
   const addMember = async (memberUid) => {
@@ -276,7 +282,6 @@ export default function AccountsPage() {
       let json = {}; try { json = JSON.parse(text); } catch { json = { error: text }; }
       if (!res.ok) throw new Error(json.detail || json.error || 'add member failed');
 
-      // รีโหลดโปรไฟล์สมาชิก
       await reloadMembers(activeTenant);
       alert('เพิ่มสมาชิกสำเร็จ');
     } catch (e) {
@@ -310,7 +315,6 @@ export default function AccountsPage() {
     }
   };
 
-  // ---- แสดงชื่อ/รูปจาก Firestore -> fallback Auth ----
   const displayName =
     profile?.displayName ||
     user?.displayName ||
@@ -417,11 +421,7 @@ export default function AccountsPage() {
           </TableHead>
           <TableBody>
             {tenants.map((t) => (
-              <TableRow
-                key={t.id}
-                hover
-                sx={{ '&:hover': { backgroundColor: '#f1f8e9' } }}
-              >
+              <TableRow key={t.id} hover sx={{ '&:hover': { backgroundColor: '#f1f8e9' } }}>
                 <TableCell onClick={() => openTenant(t)} sx={{ cursor: 'pointer' }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <Avatar src={t.pictureUrl || undefined} sx={{ bgcolor: '#66bb6a' }}>
@@ -445,14 +445,11 @@ export default function AccountsPage() {
                     variant="outlined"
                     size="small"
                     sx={{ mr: 1 }}
-                    disabled={!isOwnerOf(t)} // เฉพาะ Owner
+                    disabled={t.ownerUid !== user?.uid}
                   >
                     Members
                   </Button>
-                  <Button
-                    size="small"
-                    onClick={() => openTenant(t)}
-                  >
+                  <Button size="small" onClick={() => openTenant(t)}>
                     Open
                   </Button>
                 </TableCell>
@@ -474,19 +471,8 @@ export default function AccountsPage() {
       <Dialog open={openAdd} onClose={() => !saving && setOpenAdd(false)} fullWidth maxWidth="sm">
         <DialogTitle>เชื่อมต่อ LINE OA</DialogTitle>
         <DialogContent sx={{ display: 'grid', gap: 2, pt: 2 }}>
-          <TextField
-            label="Channel ID (Messaging API)"
-            value={channelId}
-            onChange={(e) => setChannelId(e.target.value)}
-            fullWidth
-          />
-          <TextField
-            label="Channel Secret"
-            value={channelSecret}
-            onChange={(e) => setChannelSecret(e.target.value)}
-            fullWidth
-            type="password"
-          />
+          <TextField label="Channel ID (Messaging API)" value={channelId} onChange={(e) => setChannelId(e.target.value)} fullWidth />
+          <TextField label="Channel Secret" value={channelSecret} onChange={(e) => setChannelSecret(e.target.value)} fullWidth type="password" />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpenAdd(false)} disabled={saving}>ยกเลิก</Button>
@@ -509,11 +495,7 @@ export default function AccountsPage() {
               InputProps={{ endAdornment: <SearchIcon /> }}
             />
             <Tooltip title={`คัดลอก UID ของฉัน: ${user?.uid || ''}`}>
-              <Button
-                startIcon={<ContentCopyIcon />}
-                onClick={() => navigator.clipboard.writeText(user?.uid || '')}
-                variant="outlined"
-              >
+              <Button startIcon={<ContentCopyIcon />} onClick={() => navigator.clipboard.writeText(user?.uid || '')} variant="outlined">
                 คัดลอก UID ของฉัน
               </Button>
             </Tooltip>
@@ -530,18 +512,9 @@ export default function AccountsPage() {
                   <ListItemAvatar>
                     <Avatar src={u.photoURL || undefined}>{!u.photoURL && (u.displayName?.[0] || 'U')}</Avatar>
                   </ListItemAvatar>
-                  <ListItemText
-                    primary={u.displayName}
-                    secondary={u.uid}
-                  />
+                  <ListItemText primary={u.displayName} secondary={u.uid} />
                   <ListItemSecondaryAction>
-                    <Button
-                      startIcon={<PersonAddIcon />}
-                      size="small"
-                      variant="contained"
-                      onClick={() => addMember(u.uid)}
-                      disabled={!isOwnerOf(activeTenant)}
-                    >
+                    <Button startIcon={<PersonAddIcon />} size="small" variant="contained" onClick={() => addMember(u.uid)} disabled={activeTenant?.ownerUid !== user?.uid}>
                       เพิ่ม
                     </Button>
                   </ListItemSecondaryAction>
@@ -582,7 +555,7 @@ export default function AccountsPage() {
                           edge="end"
                           size="small"
                           onClick={() => removeMember(m.uid)}
-                          disabled={!isOwnerOf(activeTenant) || m.uid === activeTenant?.ownerUid}
+                          disabled={activeTenant?.ownerUid !== user?.uid || m.uid === activeTenant?.ownerUid}
                         >
                           <DeleteIcon />
                         </IconButton>

@@ -742,6 +742,67 @@ app.post('/api/tenants', requireFirebaseAuth, async (req, res) => {
   }
 });
 
+// ==== Members: add/remove (Owner only) ====
+app.post('/api/tenants/:id/members:add', requireFirebaseAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { memberUid } = req.body || {};
+    if (!memberUid) return res.status(400).json({ error: 'memberUid_required' });
+
+    const snap = await admin.firestore().collection('tenants').doc(id).get();
+    if (!snap.exists) return res.status(404).json({ error: 'tenant_not_found' });
+    const t = snap.data() || {};
+
+    // owner เท่านั้น
+    if (t.ownerUid !== req.user.uid) {
+      return res.status(403).json({ error: 'not_owner' });
+    }
+
+    const members = Array.isArray(t.members) ? t.members.slice() : [];
+    if (!members.includes(memberUid)) members.push(memberUid);
+
+    await snap.ref.set({
+      members,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    res.json({ ok: true, members });
+  } catch (e) {
+    res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
+  }
+});
+
+app.post('/api/tenants/:id/members:remove', requireFirebaseAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { memberUid } = req.body || {};
+    if (!memberUid) return res.status(400).json({ error: 'memberUid_required' });
+
+    const snap = await admin.firestore().collection('tenants').doc(id).get();
+    if (!snap.exists) return res.status(404).json({ error: 'tenant_not_found' });
+    const t = snap.data() || {};
+
+    // owner เท่านั้น
+    if (t.ownerUid !== req.user.uid) {
+      return res.status(403).json({ error: 'not_owner' });
+    }
+
+    const members = (Array.isArray(t.members) ? t.members : []).filter(u => u && u !== memberUid);
+
+    await snap.ref.set({
+      members,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    res.json({ ok: true, members });
+  } catch (e) {
+    res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
+  }
+});
+
+
+
+
 
 // ==============================
 // 6) Broadcasts (CRUD + Actions)

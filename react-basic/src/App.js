@@ -20,9 +20,11 @@ const App = () => {
   if (!ready) return <div style={{ padding: 16 }}>Loading...</div>;
 
   const goLogin = () => {
-    const url = new URL("/auth/line/start", window.location.origin);
-    url.searchParams.set("to", "accounts");                 // ให้ไปเลือก OA ก่อน
-    url.searchParams.set("next", "/");                      // เสร็จแล้วกลับหน้าเดิม (จะตั้งค่าอื่นก็ได้)
+    const here = window.location.pathname + window.location.search;
+    const nextAfter = (here === '/' ? '/homepage' : here);   // ⬅️ ถ้ามาจากหน้าแรก -> ไป /homepage
+    const url = new URL('/auth/line/start', window.location.origin);
+    url.searchParams.set('to', 'accounts');  // ให้ไปเลือก OA ก่อน
+    url.searchParams.set('next', nextAfter); // กลับไปยังที่ต้องการหลังเลือก OA
     window.location.href = url.toString();
   };
 

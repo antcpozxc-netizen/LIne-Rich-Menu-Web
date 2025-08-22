@@ -17,6 +17,7 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
 import GuestGate from '../components/GuestGate';
 import { loginWithLine } from '../lib/authx';
+import { clearActiveTenantSelection } from '../lib/tenantSelection';
 
 const drawerWidthExpanded = 240;
 const drawerWidthCollapsed = 60;
@@ -46,13 +47,26 @@ export default function HomePage() {
   }, []);
 
   // claims/admin (เผื่อมี)
+  // claims/admin (เผื่อมี)
   useEffect(() => {
     let unsub = () => {};
+    setIsAdmin(false);
+
     if (user) {
-      unsub = onSnapshot(doc(db, 'users', user.uid), (snap) => {
-        const p = snap.data() || null;
+      unsub = onSnapshot(doc(db, 'users', user.uid), async (snap) => {
+        const p = snap.data() || {};
         setProfile(p);
-        setIsAdmin(!!p?.isAdmin);
+
+        // ดึง custom claims มาดูด้วย
+        let claimsAdmin = false;
+        try {
+          const idt = await auth.currentUser.getIdTokenResult(true);
+          claimsAdmin = !!idt.claims?.admin;
+        } catch {}
+
+        // ตรวจครบทั้ง 3 เงื่อนไข
+        const ok = !!p.isAdmin || p.role === 'admin' || claimsAdmin;
+        setIsAdmin(ok);
       });
     } else {
       setProfile(null);
@@ -60,6 +74,7 @@ export default function HomePage() {
     }
     return () => unsub();
   }, [user]);
+
 
   // OA active
   const [activeTenantId, setActiveTenantId] = useState(null);
@@ -127,7 +142,12 @@ export default function HomePage() {
     setActiveTenantId(t.id);
   };
 
-  const logout = () => signOut(auth).then(() => navigate('/', { replace: true }));
+  
+  const logout = async () => {
+    clearActiveTenantSelection();
+    await signOut(auth);
+    navigate('/', { replace: true });
+  };
 
   const userDisplayName =
     profile?.displayName ||
