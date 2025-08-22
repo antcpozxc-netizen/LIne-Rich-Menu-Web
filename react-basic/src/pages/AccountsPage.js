@@ -30,18 +30,24 @@ import { clearActiveTenantSelection } from '../lib/tenantSelection';
 const normalizeUid = (input) => {
   const s = (input || '').trim();
   if (!s) return null;
-  if (s.startsWith('line:')) return s;
-  if (/^U[0-9a-f]{32}$/i.test(s)) return `line:${s}`;
+
+  // line:Uxxxx....
+  const m1 = /^line:([Uu])([0-9a-f]{32})$/i.exec(s);
+  if (m1) {
+    return `line:U${m1[2].toLowerCase()}`; // force 'U' + lowercase hex
+  }
+
+  // Uxxxx...
+  const m2 = /^([Uu])([0-9a-f]{32})$/i.exec(s);
+  if (m2) {
+    return `line:U${m2[2].toLowerCase()}`;
+  }
+
   return null;
 };
 
-const uidLooksValid = (input) => {
-  const s = (input || '').trim();
-  if (!s) return false;
-  if (/^line:[Uu][0-9a-f]{32}$/i.test(s)) return true; // ครอบทั้ง line:Uxxxx
-  if (/^[Uu][0-9a-f]{32}$/i.test(s)) return true;      // ครอบ Uxxxx
-  return false;
-};
+// แค่เช็คว่า normalize ได้ไหมก็พอ
+const uidLooksValid = (input) => !!normalizeUid(input);
 
 // อนุญาตเฉพาะเส้นทางภายใน (กัน open redirect)
 function sanitizeNext(raw) {
