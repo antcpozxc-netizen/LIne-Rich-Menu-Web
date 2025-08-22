@@ -1,27 +1,14 @@
+// src/App.js
 import React, { useEffect, useState } from "react";
 import { AppBar, Toolbar, Typography, Button, Box, Container } from "@mui/material";
 import { useNavigate } from "react-router-dom";
-import { onAuthStateChanged, signInWithCustomToken } from "firebase/auth";
+import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "./firebase";
 
 const App = () => {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [ready, setReady] = useState(false);
-
-  // รับ token จาก #token=... (LINE Login callback)
-  useEffect(() => {
-    const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
-    const token = hash.get("token");
-    if (token) {
-      signInWithCustomToken(auth, token)
-        .then(() => {
-          window.history.replaceState(null, "", window.location.pathname + window.location.search);
-          navigate("/accounts", { replace: true }); // เชื่อม OA ต่อจากหน้านี้
-        })
-        .catch((e) => console.error("signInWithCustomToken error:", e));
-    }
-  }, [navigate]);
 
   useEffect(() => {
     return onAuthStateChanged(auth, (u) => {
@@ -33,12 +20,16 @@ const App = () => {
   if (!ready) return <div style={{ padding: 16 }}>Loading...</div>;
 
   const goLogin = () => {
-    window.location.href = new URL("/auth/line/start", window.location.origin).toString();
+    const url = new URL("/auth/line/start", window.location.origin);
+    url.searchParams.set("to", "accounts");                 // ให้ไปเลือก OA ก่อน
+    url.searchParams.set("next", "/");                      // เสร็จแล้วกลับหน้าเดิม (จะตั้งค่าอื่นก็ได้)
+    window.location.href = url.toString();
   };
 
   const goGuest = () => {
     navigate("/homepage", { replace: true });
   };
+
 
   return (
     <Box sx={{ position: "relative", minHeight: "100vh" }}>

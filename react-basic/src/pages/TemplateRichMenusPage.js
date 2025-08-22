@@ -1,21 +1,37 @@
 // src/pages/TemplateRichMenusPage.js
+
 import React, { useEffect, useMemo, useState } from 'react';
-import {
-  Box, Button, Card, CardActionArea, CardContent, Container,
-  Grid, Stack, Typography, Chip
-} from '@mui/material';
+import { Box, Button, Card, CardActionArea, CardContent, Container, Grid, Stack, Typography, Chip } from '@mui/material';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { auth } from '../firebase';
 import { CATEGORY_OPTIONS } from '../constants/categories';
 
-async function authedFetch(url, opts = {}) {
-  const token = await auth.currentUser?.getIdToken();
-  const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
-  if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(url, { ...opts, headers });
-  const txt = await res.text();
-  if (!res.ok) throw new Error(txt || res.statusText);
-  return txt ? JSON.parse(txt) : {};
+async function fetchTemplatesForAnyone() {
+  // 1) ถ้า login แล้วลองดึงแบบแอดมินก่อน
+  try {
+    const token = await auth.currentUser?.getIdToken();
+    if (token) {
+      const r = await fetch('/api/admin/templates', {
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
+      });
+      if (r.ok) {
+        const j = await r.json();
+        return j.items || [];
+      }
+    }
+  } catch {}
+
+  // 2) ไม่ได้ (guest หรือ 401) → ดึง public
+  try {
+    const r = await fetch('/api/templates'); // ให้ backend คืนเฉพาะ published
+    if (r.ok) {
+      const j = await r.json();
+      return j.items || [];
+    }
+  } catch {}
+
+  // 3) สุดท้าย ถ้าไม่ได้จริง ๆ
+  throw new Error('cannot_load_templates');
 }
 
 export default function TemplateRichMenusPage() {
@@ -23,7 +39,6 @@ export default function TemplateRichMenusPage() {
   const [sp, setSp] = useSearchParams();
   const tenantId = sp.get('tenant') || '';
 
-  // sync category filter กับ URL ?cat=
   const [cat, setCat] = useState(sp.get('cat') || '');
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -31,9 +46,11 @@ export default function TemplateRichMenusPage() {
 
   useEffect(() => {
     (async () => {
+      setLoading(true);
+      setErr('');
       try {
-        const j = await authedFetch('/api/admin/templates');
-        setItems(j.items || []);
+        const list = await fetchTemplatesForAnyone();
+        setItems(list);
       } catch (e) {
         setErr(e?.message || String(e));
       } finally {
@@ -42,7 +59,6 @@ export default function TemplateRichMenusPage() {
     })();
   }, []);
 
-  // อัปเดต URL เมื่อเปลี่ยน cat (แต่คงค่า tenant เดิม)
   const setCatAndUrl = (next) => {
     setCat(next);
     const nextSp = new URLSearchParams(sp.toString());
@@ -59,7 +75,6 @@ export default function TemplateRichMenusPage() {
     [items, cat]
   );
 
-  // แยก Large / Compact
   const large   = useMemo(() => filtered.filter(t => (t.size || 'large') === 'large'), [filtered]);
   const compact = useMemo(() => filtered.filter(t => t.size === 'compact'), [filtered]);
 
