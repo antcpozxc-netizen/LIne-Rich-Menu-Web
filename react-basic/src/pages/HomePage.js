@@ -183,7 +183,7 @@ export default function HomePage() {
                 </Box>
                 {user ? (
                   <Button
-                    onClick={() => setPickerOpen(true)}
+                    onClick={() => navigate(`/accounts?next=${encodeURIComponent(location.pathname + location.search)}`)}
                     variant="outlined"
                     size="small"
                     startIcon={<SwapIcon />}
@@ -202,7 +202,16 @@ export default function HomePage() {
                 )}
               </Box>
             ) : (
-              <Button variant="outlined" size="small" onClick={() => user ? setPickerOpen(true) : loginWithLine()} sx={{ color: '#fff', borderColor: '#fff' }}>
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={() =>
+                  user
+                    ? navigate(`/accounts?next=${encodeURIComponent(location.pathname + location.search)}`)
+                    : loginWithLine(location.pathname + location.search)
+                }
+                sx={{ color: '#fff', borderColor: '#fff' }}
+              >
                 {user ? 'Select OA' : 'Login to Select OA'}
               </Button>
             )}

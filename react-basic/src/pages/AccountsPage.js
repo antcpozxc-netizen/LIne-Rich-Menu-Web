@@ -17,7 +17,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import SearchIcon from '@mui/icons-material/Search';
 
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import {
@@ -41,6 +41,30 @@ const uidLooksValid = (input) => {
 
 export default function AccountsPage() {
   const navigate = useNavigate();
+  const [sp] = useSearchParams();
+  const next = sp.get('next') || '';
+
+  const useThisOA = (t) => {
+    if (!t?.id) return;
+
+    // จำ OA ไว้
+    localStorage.setItem('activeTenantId', t.id);
+
+    // ถ้ามี next -> กลับไปยังหน้าเดิม + เติม ?tenant=...
+    if (next) {
+      try {
+        const url = new URL(next, window.location.origin);
+        url.searchParams.set('tenant', t.id);
+        navigate(url.pathname + url.search, { replace: true });
+        return;
+      } catch {
+        // ถ้า next ไม่ใช่ URL ที่ parse ได้ ก็ fallback
+      }
+    }
+
+    // ไม่มี next -> ไปโฮมพร้อม tenant
+    navigate(`/homepage?tenant=${t.id}`, { replace: true });
+  };
 
   // auth + profile
   const [user, setUser] = useState(null);
@@ -398,7 +422,7 @@ export default function AccountsPage() {
                 hover
                 sx={{ '&:hover': { backgroundColor: '#f1f8e9' } }}
               >
-                <TableCell onClick={() => navigate(`/homepage?tenant=${t.id}`)} sx={{ cursor: 'pointer' }}>
+                <TableCell onClick={() => useThisOA(t)} sx={{ cursor: 'pointer' }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <Avatar src={t.pictureUrl || undefined} sx={{ bgcolor: '#66bb6a' }}>
                       {!t.pictureUrl && (t.displayName?.[0] || 'O')}
@@ -427,7 +451,7 @@ export default function AccountsPage() {
                   </Button>
                   <Button
                     size="small"
-                    onClick={() => navigate(`/homepage?tenant=${t.id}`)}
+                    onClick={() => useThisOA(t)}
                   >
                     Open
                   </Button>

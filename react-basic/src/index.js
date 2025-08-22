@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import './index.css';
 import App from './App';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import AuthGate from './components/AuthGate';
 
 // Guards
 import RequireAdmin from './routes/RequireAdmin';
@@ -39,6 +40,7 @@ import FriendsPage from './pages/FriendsPage';
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <BrowserRouter>
+    <AuthGate /> {/* ดัก token ทุกหน้า */}
     <Routes>
       {/* Public landing */}
       <Route path="/" element={<App />} />
