@@ -1,34 +1,46 @@
-import { useEffect, useState } from 'react';
+// src/routes/RequireAuth.jsx
+import { useEffect, useMemo, useState } from 'react';
+import { Outlet, useLocation } from 'react-router-dom';
 import { onAuthStateChanged } from 'firebase/auth';
-import { useLocation } from 'react-router-dom';
 import { auth } from '../firebase';
 
-/**
- * ใช้ครอบเพจ/route ที่ต้องการให้ล็อกอิน
- * - ถ้ามี user → render children
- * - ถ้าไม่มี → เด้งไป LINE Login พร้อม next เป็น path ภายในปัจจุบัน
- */
-export default function RequireAuth({ children }) {
-  const loc = useLocation();
-  const [ready, setReady] = useState(false);
+export default function RequireAuth() {
+  const location = useLocation();
   const [user, setUser] = useState(null);
+  const [ready, setReady] = useState(false);
+
+  // เส้นทางปัจจุบัน (รวม query) สำหรับส่งกลับหลังล็อกอิน
+  const currentPathQ = useMemo(() => {
+    const p = location.pathname + location.search;
+    return p || '/';
+  }, [location.pathname, location.search]);
 
   useEffect(() => {
-    const off = onAuthStateChanged(auth, (u) => {
-      setUser(u || null);
+    return onAuthStateChanged(auth, (u) => {
+      setUser(u);
       setReady(true);
+      console.log('[RequireAuth] auth state:', !!u, 'path=', currentPathQ);
     });
-    return () => off();
-  }, []);
+  }, [currentPathQ]);
 
-  if (!ready) return null;
-  if (user) return children;
+  if (!ready) {
+    return (
+      <div style={{ padding: 24 }}>
+        <b>Checking sign-in…</b>
+      </div>
+    );
+  }
 
-  // สร้าง next ที่ปลอดภัย (internal path เท่านั้น)
-  const next = (loc.pathname || '/') + (loc.search || '');
-  const safeNext = next.startsWith('/') ? next : '/';
+  // ถ้ายังไม่ได้ล็อกอิน → เด้งไป LINE Login พร้อม next และ to=accounts
+  if (!user) {
+    const url = new URL('/auth/line/start', window.location.origin);
+    url.searchParams.set('next', currentPathQ);   // กลับมาที่เดิมหลังล็อกอิน
+    url.searchParams.set('to', 'accounts');       // ให้ AuthGate พาเข้า /accounts เสมอ
+    console.log('[RequireAuth] redirecting to LINE login:', url.toString());
+    window.location.replace(url.toString());
+    return <div style={{ padding: 24 }}>Redirecting to LINE Login…</div>;
+  }
 
-  // ส่งไปเริ่ม LINE Login
-  window.location.href = `/auth/line/start?next=${encodeURIComponent(safeNext)}`;
-  return null;
+  // ผ่านแล้ว → แสดงหน้าลูก
+  return <Outlet />;
 }

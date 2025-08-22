@@ -22,6 +22,7 @@ export default function AuthGate() {
       // ตัวอย่าง URL: https://app/#token=...&next=/accounts&to=accounts
       const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
       const token = hash.get('token');      // Firebase custom token
+      console.log('[AuthGate] token?', !!token, 'rawHash=', window.location.hash);
       const rawNext = hash.get('next') || '/';
       const to = hash.get('to');            // "accounts" | undefined
       const next = sanitizeNext(rawNext);
