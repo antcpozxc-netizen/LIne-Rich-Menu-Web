@@ -40,12 +40,14 @@ import FriendsPage from './pages/FriendsPage';
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <BrowserRouter>
+    {/* ✅ ดัก #token ทุกหน้า */}
+    <AuthGate />
+
     <Routes>
       {/* Public landing */}
       <Route path="/" element={<App />} />
 
-      {/* CALLBACK จาก LINE */}
-      <Route path="/auth/line/finish" element={<AuthGate />} />
+      {/* ⛔️ ลบ route /auth/line/finish เพราะ AuthGate รัน global แล้ว */}
 
       {/* PUBLIC: ให้ guest เข้า /homepage ได้เลย */}
       <Route path="/homepage" element={<HomePage />}>
@@ -67,7 +69,7 @@ root.render(
         <Route path="friends" element={<FriendsPage />} />
         <Route path="live-chat" element={<LiveChatPage />} />
 
-        {/* Admin (ยังต้องล็อกอิน) */}
+        {/* Admin (ต้องล็อกอิน + admin เท่านั้น) */}
         <Route element={<RequireAuth />}>
           <Route element={<RequireAdmin />}>
             <Route path="admin/templates" element={<AdminTemplatesPage />} />

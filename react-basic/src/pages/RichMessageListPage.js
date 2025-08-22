@@ -4,7 +4,7 @@ import {
   Box, Button, Container, Grid, IconButton, Menu, MenuItem,
   Paper, TextField, Typography, Stack,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-  Pagination, InputAdornment
+  Pagination, InputAdornment, Alert
 } from '@mui/material';
 import {
   Search as SearchIcon,
@@ -14,20 +14,19 @@ import {
   SwapVert as SortIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
+import { auth } from '../firebase';
 
 // localStorage helpers
 const KEY = 'richMessages';
 const readAll = () => JSON.parse(localStorage.getItem(KEY) || '[]');
 const writeAll = (rows) => localStorage.setItem(KEY, JSON.stringify(rows));
 
-// ---- helpers สำหรับแสดงผล ----
 const previewUrlOf = (row) =>
   row?.image ||
   row?.imagemap?.urls?.[700] ||
   row?.imagemap?.urls?.['700'] ||
   null;
 
-// ดึงลิงก์หลักจาก areas (ถ้าไม่เคยเซฟ actionLabel/actionUrl)
 const primaryActionOf = (row) => {
   if (row?.actionUrl) {
     return { label: row.actionLabel || row.actionUrl, url: row.actionUrl };
@@ -40,26 +39,26 @@ const primaryActionOf = (row) => {
 export default function RichMessageListPage() {
   const navigate = useNavigate();
 
+  const isGuest = !auth.currentUser;
+
   // filters
   const [qId, setQId] = useState('');
   const [qName, setQName] = useState('');
   const [qFrom, setQFrom] = useState('');
   const [qTo, setQTo] = useState('');
 
-  // sort + page
-  const [order, setOrder] = useState('desc'); // 'asc' | 'desc'
+  const [order, setOrder] = useState('desc');
   const [page, setPage] = useState(1);
   const rowsPerPage = 10;
 
-  // menu state
   const [anchorEl, setAnchorEl] = useState(null);
   const [menuRow, setMenuRow] = useState(null);
   const openMenu = Boolean(anchorEl);
 
-  // trigger re-render after duplicate/delete
   const [rev, setRev] = useState(0);
 
   const data = useMemo(() => {
+    if (isGuest) return []; // ⬅️ กัน guest ไม่ให้เห็น local drafts
     let rows = readAll();
 
     if (qId.trim()) rows = rows.filter(r => String(r.id).toLowerCase().includes(qId.trim().toLowerCase()));
@@ -73,7 +72,7 @@ export default function RichMessageListPage() {
         : String(b.createdAt || '').localeCompare(String(a.createdAt || ''))
     );
     return rows;
-  }, [qId, qName, qFrom, qTo, order, rev]);
+  }, [qId, qName, qFrom, qTo, order, rev, isGuest]);
 
   const totalPages = Math.max(1, Math.ceil(data.length / rowsPerPage));
   const paged = data.slice((page - 1) * rowsPerPage, page * rowsPerPage);
@@ -113,12 +112,19 @@ export default function RichMessageListPage() {
 
   return (
     <Container sx={{ py: 3 }}>
+      {isGuest && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          โหมด Guest — กรุณา Login เพื่อจัดการรายการ Rich messages
+        </Alert>
+      )}
+
       <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}>
         <Typography variant="h4" fontWeight="bold">Rich messages</Typography>
         <Button
           variant="contained"
           onClick={() => navigate('/homepage/rich-message/new')}
           sx={{ bgcolor: '#66bb6a', '&:hover': { bgcolor: '#57aa5b' } }}
+          disabled={isGuest}
         >
           Create new
         </Button>
@@ -127,57 +133,26 @@ export default function RichMessageListPage() {
       {/* Filter bar */}
       <Grid container spacing={1} alignItems="center" mb={1}>
         <Grid item xs={12} md="auto">
-          <TextField
-            size="small"
-            placeholder="ID"
-            value={qId}
-            onChange={(e) => setQId(e.target.value)}
-          />
+          <TextField size="small" placeholder="ID" value={qId} onChange={(e) => setQId(e.target.value)} disabled={isGuest} />
         </Grid>
         <Grid item xs={12} md="auto">
-          <TextField
-            size="small"
-            type="date"
-            value={qFrom}
-            onChange={(e) => setQFrom(e.target.value)}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <CalendarIcon fontSize="small" />
-                </InputAdornment>
-              ),
-            }}
-          />
+          <TextField size="small" type="date" value={qFrom} onChange={(e) => setQFrom(e.target.value)} disabled={isGuest}
+            InputProps={{ startAdornment: (<InputAdornment position="start"><CalendarIcon fontSize="small" /></InputAdornment>) }} />
         </Grid>
         <Grid item xs={12} md="auto">
-          <TextField
-            size="small"
-            type="date"
-            value={qTo}
-            onChange={(e) => setQTo(e.target.value)}
-          />
+          <TextField size="small" type="date" value={qTo} onChange={(e) => setQTo(e.target.value)} disabled={isGuest} />
         </Grid>
         <Grid item xs={12} md="auto" flexGrow={1}>
-          <TextField
-            fullWidth
-            size="small"
-            placeholder="Item name"
-            value={qName}
-            onChange={(e) => setQName(e.target.value)}
-          />
+          <TextField fullWidth size="small" placeholder="Item name" value={qName} onChange={(e) => setQName(e.target.value)} disabled={isGuest} />
         </Grid>
         <Grid item xs="auto">
-          <Button
-            variant="contained"
-            startIcon={<SearchIcon />}
-            onClick={() => setPage(1)}
-            sx={{ bgcolor: '#66bb6a', '&:hover': { bgcolor: '#57aa5b' } }}
-          >
+          <Button variant="contained" startIcon={<SearchIcon />} onClick={() => setPage(1)} disabled={isGuest}
+            sx={{ bgcolor: '#66bb6a', '&:hover': { bgcolor: '#57aa5b' } }}>
             Search
           </Button>
         </Grid>
         <Grid item xs="auto">
-          <Button variant="outlined" startIcon={<ClearIcon />} onClick={clearFilters}>
+          <Button variant="outlined" startIcon={<ClearIcon />} onClick={clearFilters} disabled={isGuest}>
             Clear
           </Button>
         </Grid>
@@ -195,7 +170,7 @@ export default function RichMessageListPage() {
               <TableCell sx={{ width: 210 }}>
                 <Stack direction="row" alignItems="center" spacing={0.5}>
                   Date created
-                  <IconButton size="small" onClick={() => setOrder(p => (p === 'asc' ? 'desc' : 'asc'))}>
+                  <IconButton size="small" onClick={() => setOrder(p => (p === 'asc' ? 'desc' : 'asc'))} disabled={isGuest}>
                     <SortIcon fontSize="small" />
                   </IconButton>
                 </Stack>
@@ -207,7 +182,7 @@ export default function RichMessageListPage() {
             {paged.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} align="center" sx={{ py: 6, color: 'text.secondary' }}>
-                  No data
+                  {isGuest ? 'Login เพื่อดูรายการ' : 'No data'}
                 </TableCell>
               </TableRow>
             ) : (
@@ -249,7 +224,7 @@ export default function RichMessageListPage() {
                     </TableCell>
                     <TableCell>{row.createdAt || '-'}</TableCell>
                     <TableCell align="right">
-                      <IconButton onClick={(e) => handleMenuOpen(e, row)}>
+                      <IconButton onClick={(e) => { setAnchorEl(e.currentTarget); setMenuRow(row); }} disabled={isGuest}>
                         <MoreIcon />
                       </IconButton>
                     </TableCell>
@@ -270,18 +245,19 @@ export default function RichMessageListPage() {
           color="primary"
           showFirstButton
           showLastButton
+          disabled={isGuest}
         />
       </Box>
 
       {/* Row menu */}
-      <Menu anchorEl={anchorEl} open={openMenu} onClose={handleMenuClose}>
-        <MenuItem onClick={() => { handleMenuClose(); navigate(`/homepage/rich-message/${menuRow?.id}`); }}>
+      <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={() => { setAnchorEl(null); setMenuRow(null); }}>
+        <MenuItem onClick={() => { setAnchorEl(null); navigate(`/homepage/rich-message/${menuRow?.id}`); }} disabled={isGuest}>
           View / Edit
         </MenuItem>
-        <MenuItem onClick={doDuplicate}>
+        <MenuItem onClick={() => { doDuplicate(); }} disabled={isGuest}>
           Duplicate
         </MenuItem>
-        <MenuItem onClick={doDelete}>
+        <MenuItem onClick={() => { doDelete(); }} disabled={isGuest}>
           Delete
         </MenuItem>
       </Menu>

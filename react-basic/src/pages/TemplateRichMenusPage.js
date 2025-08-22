@@ -3,35 +3,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Box, Button, Card, CardActionArea, CardContent, Container, Grid, Stack, Typography, Chip } from '@mui/material';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { auth } from '../firebase';
+import { auth, db } from '../firebase';
 import { CATEGORY_OPTIONS } from '../constants/categories';
+import { collection, getDocs, orderBy, query, limit } from 'firebase/firestore';
 
-async function fetchTemplatesForAnyone() {
-  // 1) ถ้า login แล้วลองดึงแบบแอดมินก่อน
-  try {
-    const token = await auth.currentUser?.getIdToken();
-    if (token) {
-      const r = await fetch('/api/admin/templates', {
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
-      });
-      if (r.ok) {
-        const j = await r.json();
-        return j.items || [];
-      }
-    }
-  } catch {}
-
-  // 2) ไม่ได้ (guest หรือ 401) → ดึง public
-  try {
-    const r = await fetch('/api/templates'); // ให้ backend คืนเฉพาะ published
-    if (r.ok) {
-      const j = await r.json();
-      return j.items || [];
-    }
-  } catch {}
-
-  // 3) สุดท้าย ถ้าไม่ได้จริง ๆ
-  throw new Error('cannot_load_templates');
+async function fetchTemplatesForAnyoneViaFirestore() {
+  // อ่านตรงจาก Firestore (rules เปิด read: true แล้ว)
+  const col = collection(db, 'admin_templates');
+  const q = query(col, orderBy('updatedAt', 'desc'), limit(500));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
 export default function TemplateRichMenusPage() {
@@ -49,7 +30,7 @@ export default function TemplateRichMenusPage() {
       setLoading(true);
       setErr('');
       try {
-        const list = await fetchTemplatesForAnyone();
+        const list = await fetchTemplatesForAnyoneViaFirestore();
         setItems(list);
       } catch (e) {
         setErr(e?.message || String(e));
@@ -178,4 +159,3 @@ export default function TemplateRichMenusPage() {
     </Container>
   );
 }
-

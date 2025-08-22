@@ -1,56 +1,53 @@
-// src/components/AuthGate.jsx
 import { useEffect } from 'react';
 import { signInWithCustomToken } from 'firebase/auth';
 import { auth } from '../firebase';
 
+/** อนุญาตเฉพาะเส้นทางภายในเว็บ (กัน open redirect) */
 function sanitizeNext(raw) {
-  // อนุญาตเฉพาะ path ของโดเมนเรา (กัน open-redirect)
+  if (!raw) return '/';
   try {
-    if (!raw) return '/';
-    // ถ้าเป็น absolute URL และ origin ไม่ตรง ให้ปัดทิ้ง
     const url = new URL(raw, window.location.origin);
     if (url.origin !== window.location.origin) return '/';
-    // คืนเฉพาะ pathname+search+hash (ไม่ต้องมี origin)
+    // คืนค่าเป็น path + query + hash ของภายในเท่านั้น
     return url.pathname + url.search + url.hash;
   } catch {
-    // ถ้า parse ไม่ได้ (เช่นใส่สตริงมั่ว) ก็กลับบ้าน
-    return '/';
+    // กรณีส่งมาเป็น path เฉย ๆ เช่น "/accounts?x=1"
+    return String(raw).startsWith('/') ? raw : '/';
   }
 }
 
 export default function AuthGate() {
   useEffect(() => {
     (async () => {
+      // ตัวอย่าง URL: https://app/#token=...&next=/accounts&to=accounts
       const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
-      const token = hash.get('token');
-      const next  = sanitizeNext(hash.get('next') || '/');
-      const to    = hash.get('to');       // "accounts" เพื่อเด้งไปเลือก OA
-      const err   = hash.get('error');    // ถ้ามี error จาก backend
+      const token = hash.get('token');      // Firebase custom token
+      const rawNext = hash.get('next') || '/';
+      const to = hash.get('to');            // "accounts" | undefined
+      const next = sanitizeNext(rawNext);
 
-      // ถ้า callback พร้อม error ให้ log ไว้ง่าย ๆ
-      if (err) console.error('LINE login error:', err);
-
-      // ถ้าไม่มี token (เช่นผู้ใช้ reload หน้านี้เฉย ๆ) — ไม่ต้องทำอะไรเลย
-      if (!token) return;
+      if (!token) return; // ไม่ทำอะไรถ้าไม่มี token
 
       try {
         await signInWithCustomToken(auth, token);
       } catch (e) {
         console.error('signInWithCustomToken error:', e);
-        // ออกจาก hash แต่คงอยู่ที่หน้าเดิม เพื่อให้ dev ดู error ได้
+        // ล้าง hash ทิ้งเพื่อกันค้างบน URL
         window.history.replaceState(null, '', window.location.pathname + window.location.search);
         return;
       }
 
-      // ล้าง fragment ออกจาก URL เสมอหลังจัดการเสร็จ
+      // ล้าง fragment ออกจาก URL (กัน loop และสวยงาม)
       window.history.replaceState(null, '', window.location.pathname + window.location.search);
 
-      // ตัดสินใจปลายทาง
+      // กำหนดปลายทาง:
+      // - ถ้ามี to=accounts → ไปหน้าเลือก OA พร้อม next ต่อ
+      // - ไม่งั้นไป next ตรง ๆ
       const target = to === 'accounts'
         ? `/accounts?next=${encodeURIComponent(next)}`
         : next;
 
-      // กัน loop: ถ้า target เท่ากับที่เราอยู่แล้ว ไม่ต้อง redirect
+      // กัน redirect ซ้ำกับ path ปัจจุบัน
       const current = window.location.pathname + window.location.search + window.location.hash;
       if (target !== current) {
         window.location.replace(target);
