@@ -205,11 +205,14 @@ export default function HomePage() {
               <Button
                 variant="outlined"
                 size="small"
-                onClick={() =>
-                  user
-                    ? navigate(`/accounts?next=${encodeURIComponent(location.pathname + location.search)}`)
-                    : loginWithLine(location.pathname + location.search)
-                }
+                onClick={() => {
+                  if (user) {
+                    navigate(`/accounts?next=${encodeURIComponent(location.pathname + location.search)}`);
+                  } else {
+                    const afterLogin = `/accounts?next=${encodeURIComponent(location.pathname + location.search)}`;
+                    loginWithLine(afterLogin);
+                  }
+                }}
                 sx={{ color: '#fff', borderColor: '#fff' }}
               >
                 {user ? 'Select OA' : 'Login to Select OA'}

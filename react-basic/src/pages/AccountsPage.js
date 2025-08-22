@@ -1,4 +1,4 @@
-// src/pages/AccountsPage.js
+// src/pages/AccountsPage.js }
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AppBar, Toolbar, Typography, Button, Container, Table, TableBody,
@@ -44,7 +44,7 @@ export default function AccountsPage() {
   const [sp] = useSearchParams();
   const next = sp.get('next') || '';
 
-  const useThisOA = (t) => {
+  const openTenant = (t) => {
     if (!t?.id) return;
 
     // จำ OA ไว้
@@ -422,7 +422,7 @@ export default function AccountsPage() {
                 hover
                 sx={{ '&:hover': { backgroundColor: '#f1f8e9' } }}
               >
-                <TableCell onClick={() => useThisOA(t)} sx={{ cursor: 'pointer' }}>
+                <TableCell onClick={() => openTenant(t)} sx={{ cursor: 'pointer' }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <Avatar src={t.pictureUrl || undefined} sx={{ bgcolor: '#66bb6a' }}>
                       {!t.pictureUrl && (t.displayName?.[0] || 'O')}
@@ -451,7 +451,7 @@ export default function AccountsPage() {
                   </Button>
                   <Button
                     size="small"
-                    onClick={() => useThisOA(t)}
+                    onClick={() => openTenant(t)}
                   >
                     Open
                   </Button>
