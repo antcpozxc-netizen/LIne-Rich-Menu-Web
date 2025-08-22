@@ -4,6 +4,7 @@ import './index.css';
 import App from './App';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 
+// Guards
 import RequireAdmin from './routes/RequireAdmin';
 import RequireAuth from './routes/RequireAuth';
 
@@ -42,7 +43,7 @@ root.render(
       {/* Public landing */}
       <Route path="/" element={<App />} />
 
-      {/* ✅ Public workspace (guest เข้าได้) */}
+      {/* PUBLIC: ให้ guest เข้า /homepage ได้เลย */}
       <Route path="/homepage" element={<HomePage />}>
         <Route index element={<DashboardHome />} />
 
@@ -66,20 +67,21 @@ root.render(
         <Route path="friends" element={<FriendsPage />} />
         <Route path="live-chat" element={<LiveChatPage />} />
 
-        {/* Admin (ยังตรวจสิทธิ์ในหน้าเดิม) */}
-        <Route element={<RequireAdmin />}>
-          <Route path="admin/templates" element={<AdminTemplatesPage />} />
-          <Route path="admin/templates/new" element={<AdminTemplateEditorPage />} />
-          <Route path="admin/templates/:id" element={<AdminTemplateEditorPage />} />
+        {/* Admin เฉพาะผู้ดูแล (ยังต้องล็อกอิน) */}
+        <Route element={<RequireAuth />}>
+          <Route element={<RequireAdmin />}>
+            <Route path="admin/templates" element={<AdminTemplatesPage />} />
+            <Route path="admin/templates/new" element={<AdminTemplateEditorPage />} />
+            <Route path="admin/templates/:id" element={<AdminTemplateEditorPage />} />
+          </Route>
         </Route>
       </Route>
 
-      {/* ✅ Protected เฉพาะ accounts */}
+      {/* ยังกัน /accounts ไว้ ต้องล็อกอิน */}
       <Route element={<RequireAuth />}>
         <Route path="/accounts" element={<AccountsPage />} />
       </Route>
 
-      {/* fallback */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   </BrowserRouter>

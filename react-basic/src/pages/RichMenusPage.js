@@ -19,7 +19,17 @@ import { ref as sref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { auth, storage, db } from '../firebase';
 import { doc, getDoc } from 'firebase/firestore';
 
+import { useAuthx } from '../lib/authx';
+
 const STORAGE_KEY = 'richMenuDraft';
+
+const isDataUrl = (u = '') => typeof u === 'string' && u.startsWith('data:');
+const blobToDataUrl = (blob) =>
+  new Promise((res) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.readAsDataURL(blob);
+  });
 
 // ---------- Template presets ----------
 const TEMPLATES = [
@@ -252,6 +262,8 @@ export default function RichMenusPage() {
   const draftId = sp.get('draft') || '';
   const isEditing = !!draftId;
 
+  const { isAuthed, ensureLogin } = useAuthx();
+  
   const [snack, setSnack] = useState('');
   const [templateOpen, setTemplateOpen] = useState(false);
 
@@ -381,36 +393,33 @@ export default function RichMenusPage() {
 
 
   const fileRef = useRef(null);
-  const uploadImage = async (file) => {
-    if (!tenantId) return setSnack('กรุณาเลือก OA ก่อน');
+async function uploadImage(file) {
+  // resize ด้วย drawToSize เดิมของคุณ
+  const targetH = (template.size === 'compact') ? 843 : 1686;
+  try {
+    const blob = await drawToSize(file, 2500, targetH, 'image/jpeg');
+    if (!blob) return setSnack('แปลงรูปไม่สำเร็จ');
 
-    // ⬇ เดาระหว่าง compact/large จากอัตราส่วนรูป
-    const tmpURL = URL.createObjectURL(file);
-    await new Promise((done) => {
-      const img = new Image();
-      img.onload = () => {
-        const ratio = img.height / img.width;      // ~0.337 = compact, ~0.674 = large
-        const nearest = Math.abs(ratio - 0.337) < Math.abs(ratio - 0.674) ? 'compact' : 'large';
-        setTemplate((prev) => (prev.size === nearest ? prev : (TEMPLATES.find(t => t.size === nearest) || prev)));
-        URL.revokeObjectURL(tmpURL);
-        done();
-      };
-      img.src = tmpURL;
-    });
+    if (!isAuthed || !tenantId) {
+      // guest -> เก็บเป็น dataURL ชั่วคราว
+      const dataUrl = await blobToDataUrl(blob);
+      setImage(String(dataUrl));
+      setSnack('เลือกรูปแล้ว (Guest) — จะอัปโหลดเมื่อ Save');
+      return;
+    }
 
-    const targetH = (template.size === 'compact') ? 843 : 1686;
-    try {
-      const blob = await drawToSize(file, 2500, targetH, 'image/jpeg');
-      if (!blob) return setSnack('แปลงรูปไม่สำเร็จ');
-      const base = (file.name || 'menu').replace(/\.[^.]+$/, '');
-      const safeName = `${base.replace(/\s+/g, '-')}.jpg`;
-      const r = sref(storage, `tenants/${tenantId}/rich-menus/${Date.now()}-${safeName}`);
-      await uploadBytes(r, blob, { contentType: 'image/jpeg' });
-      const url = await getDownloadURL(r);
-      setImage(url);
-      setSnack(`อัปโหลดรูปสำเร็จ (${Math.round(blob.size/1024)} KB)`);
-    } catch { setSnack('อัปโหลดรูปไม่สำเร็จ'); }
-  };
+    // ล็อกอินแล้ว -> อัปขึ้น Storage ทันที
+    const base = (file.name || 'menu').replace(/\.[^.]+$/, '');
+    const safeName = `${base.replace(/\s+/g, '-')}.jpg`;
+    const r = sref(storage, `tenants/${tenantId}/rich-menus/${Date.now()}-${safeName}`);
+    await uploadBytes(r, blob, { contentType: 'image/jpeg' });
+    const url = await getDownloadURL(r);
+    setImage(url);
+    setSnack(`อัปโหลดรูปสำเร็จ (${Math.round(blob.size / 1024)} KB)`);
+  } catch {
+    setSnack('อัปโหลดรูปไม่สำเร็จ');
+  }
+}
 
   const updateArea = (id, patch) => setAreas(prev => prev.map(a => a.id === id ? { ...a, ...patch } : a));
   const addArea = () => {
@@ -475,67 +484,162 @@ export default function RichMenusPage() {
     const idToken = await auth.currentUser.getIdToken();
     return { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` };
   };
-  const normalizeImageUrl = (u) => {
-    try {
-      if (String(u).startsWith('data:')) throw new Error('กรุณาอัปโหลดภาพขึ้น Storage ให้ได้ URL ก่อน');
-      const url = new URL(u);
-      const host = url.hostname;
-      const isFirebaseDl =
-        host.includes('firebasestorage.googleapis.com') ||
-        host.includes('storage.googleapis.com') ||
-        host.includes('firebasestorage.app');
-      if (isFirebaseDl && !url.searchParams.has('alt')) url.searchParams.set('alt', 'media');
-      return url.toString();
-    } catch { return u; }
-  };
-  const toNormalized = (a, i) => ({
-    xPct: pctClamp(a.x) / 100, yPct: pctClamp(a.y) / 100, wPct: pctClamp(a.w) / 100, hPct: pctClamp(a.h) / 100,
-    action: (() => {
-      const act = actions[i] || { type: 'No action' };
-      return act.type === 'Select' ? { type: 'No action' } : act;
-    })(),  
-  });
-  const buildPayload = (includeSchedule = false) => ({
-    title, size: template.size, imageUrl: normalizeImageUrl(image), chatBarText: menuBarLabel || 'Menu',
-    defaultBehavior: behavior, areas: areas.map(toNormalized),
-    schedule: includeSchedule && periodFrom ? { from: new Date(periodFrom).toISOString(), to: periodTo ? new Date(periodTo).toISOString() : null } : null,
-  });
 
-  const onSaveDraft = async () => {
-    try {
-      if (!tenantId) return alert('กรุณาเลือก OA ก่อน');
-      if (!image)   return alert('กรุณาอัปโหลดรูปเมนู');
-      const headers = await authHeader();
-      let res;
-      if (isEditing) {
-        res = await fetch(`/api/tenants/${tenantId}/richmenus/${draftId}`, { method: 'PUT', headers, body: JSON.stringify({ ...buildPayload(false), action: 'draft' }) });
-      } else {
-        res = await fetch(`/api/tenants/${tenantId}/richmenus`, { method: 'POST', headers, body: JSON.stringify(buildPayload(false)) });
-      }
-      const text = await res.text();
-      if (!res.ok) throw new Error(text || 'save failed');
-      setSnack('Saved as Ready');
-      navigate(`/homepage/rich-menus?tenant=${tenantId || ''}`);
-    } catch (e) { alert('บันทึกไม่สำเร็จ: ' + (e?.message || e)); }
-  };
-  const onSaveReady = async () => {
-    try {
-      if (!tenantId) return alert('กรุณาเลือก OA ก่อน');
-      if (!image)   return alert('กรุณาอัปโหลดรูปเมนู');
-      if (!periodFrom) return alert('กรุณาเลือก Display from ก่อน');
-      const headers = await authHeader();
-      let res;
-      if (isEditing) {
-        res = await fetch(`/api/tenants/${tenantId}/richmenus/${draftId}`, { method: 'PUT', headers, body: JSON.stringify({ ...buildPayload(true), action: 'save' }) });
-      } else {
-        res = await fetch(`/api/tenants/${tenantId}/richmenus`, { method: 'POST', headers, body: JSON.stringify(buildPayload(true)) });
-      }
-      const text = await res.text();
-      if (!res.ok) throw new Error(text || 'save failed');
-      setSnack('Saved as Scheduled');
-      navigate(`/homepage/rich-menus?tenant=${tenantId || ''}`);
-    } catch (e) { alert('บันทึกไม่สำเร็จ: ' + (e?.message || e)); }
-  };
+  // --- helpers สำหรับ build payload ---
+const normalizeImageUrl = (u) => {
+  try {
+    if (isDataUrl(u)) return u; // ปล่อย dataURL ใน draft แบบ guest
+    const url = new URL(u);
+    const host = url.hostname;
+    const isFirebaseDl =
+      host.includes('firebasestorage.googleapis.com') ||
+      host.includes('storage.googleapis.com') ||
+      host.includes('firebasestorage.app');
+    if (isFirebaseDl && !url.searchParams.has('alt')) url.searchParams.set('alt', 'media');
+    return url.toString();
+  } catch { return u; }
+};
+
+const toNormalized = (a, i) => ({
+  xPct: Math.round(Number(a.x) * 100) / 100 / 100,
+  yPct: Math.round(Number(a.y) * 100) / 100 / 100,
+  wPct: Math.round(Number(a.w) * 100) / 100 / 100,
+  hPct: Math.round(Number(a.h) * 100) / 100 / 100,
+  action: actions[i] || { type: 'No action' },
+});
+
+const buildPayload = (includeSchedule = false) => ({
+  title,
+  size: template.size,
+  imageUrl: normalizeImageUrl(image),
+  chatBarText: menuBarLabel || 'Menu',
+  defaultBehavior: behavior,
+  areas: areas.map(toNormalized),
+  schedule:
+    includeSchedule && periodFrom
+      ? {
+          from: new Date(periodFrom).toISOString(),
+          to: periodTo ? new Date(periodTo).toISOString() : null,
+        }
+      : null,
+});
+
+// --- draft: guest => local, authed => API ---
+async function onSaveDraft() {
+  if (!isAuthed) {
+    const payload = {
+      templateId: template.id,
+      title,
+      image,
+      menuBarLabel,
+      behavior,
+      areas,
+      actions,
+      periodFrom,
+      periodTo,
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    setSnack('Saved draft locally (Guest)');
+    return;
+  }
+
+  try {
+    if (!tenantId) return alert('กรุณาเลือก OA ก่อน');
+    if (!image) return alert('กรุณาอัปโหลดรูปเมนู');
+
+    // ถ้าเป็น dataURL ให้ย้ายขึ้น Storage ก่อน
+    let imageUrl = image;
+    if (isDataUrl(image)) {
+      const blob = await (await fetch(image)).blob();
+      const r = sref(storage, `tenants/${tenantId}/rich-menus/${Date.now()}.jpg`);
+      await uploadBytes(r, blob, { contentType: blob.type || 'image/jpeg' });
+      imageUrl = await getDownloadURL(r);
+      setImage(imageUrl);
+    }
+
+    const headers = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${await auth.currentUser.getIdToken()}`,
+    };
+    const payload = { ...buildPayload(false), imageUrl };
+
+    let res;
+    if (isEditing) {
+      res = await fetch(`/api/tenants/${tenantId}/richmenus/${draftId}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ ...payload, action: 'draft' }),
+      });
+    } else {
+      res = await fetch(`/api/tenants/${tenantId}/richmenus`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+    }
+
+    const text = await res.text();
+    if (!res.ok) throw new Error(text || 'save failed');
+
+    setSnack('Saved as Ready');
+    navigate(`/homepage/rich-menus?tenant=${tenantId || ''}`);
+  } catch (e) {
+    alert('บันทึกไม่สำเร็จ: ' + (e?.message || e));
+  }
+}
+
+async function onSaveReady() {
+  // ต้อง login เสมอ
+  if (!isAuthed) {
+    await ensureLogin(window.location.pathname + window.location.search);
+    return;
+  }
+  try {
+    if (!tenantId) return alert('กรุณาเลือก OA ก่อน');
+    if (!image) return alert('กรุณาอัปโหลดรูปเมนู');
+    if (!periodFrom) return alert('กรุณาเลือก Display from ก่อน');
+
+    // อัปโหลด dataURL ถ้ามี
+    let imageUrl = image;
+    if (isDataUrl(image)) {
+      const blob = await (await fetch(image)).blob();
+      const r = sref(storage, `tenants/${tenantId}/rich-menus/${Date.now()}.jpg`);
+      await uploadBytes(r, blob, { contentType: blob.type || 'image/jpeg' });
+      imageUrl = await getDownloadURL(r);
+      setImage(imageUrl);
+    }
+
+    const headers = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${await auth.currentUser.getIdToken()}`,
+    };
+    const payload = { ...buildPayload(true), imageUrl };
+
+    let res;
+    if (isEditing) {
+      res = await fetch(`/api/tenants/${tenantId}/richmenus/${draftId}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ ...payload, action: 'save' }),
+      });
+    } else {
+      res = await fetch(`/api/tenants/${tenantId}/richmenus`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+    }
+
+    const text = await res.text();
+    if (!res.ok) throw new Error(text || 'save failed');
+
+    setSnack('Saved as Scheduled');
+    navigate(`/homepage/rich-menus?tenant=${tenantId || ''}`);
+  } catch (e) {
+    alert('บันทึกไม่สำเร็จ: ' + (e?.message || e));
+  }
+}
+
 
   return (
     <Container sx={{ py: 3 }}>
@@ -545,9 +649,16 @@ export default function RichMenusPage() {
           <Typography variant="h4" fontWeight="bold">Rich menu</Typography>
         </Stack>
         <Stack direction="row" spacing={1}>
-          <Button variant="outlined" startIcon={<SaveAltIcon />} onClick={onSaveDraft}>Save draft</Button>
-          <Button variant="contained" startIcon={<SaveIcon />} disabled={!canSave} onClick={onSaveReady}
-            sx={{ bgcolor: "#66bb6a", "&:hover": { bgcolor: "#57aa5b" } }}>
+          <Button variant="outlined" startIcon={<SaveAltIcon />} onClick={onSaveDraft}>
+            Save draft
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<SaveIcon />}
+            disabled={!canSave}
+            onClick={onSaveReady}
+            sx={{ bgcolor: '#66bb6a', '&:hover': { bgcolor: '#57aa5b' } }}
+          >
             Save
           </Button>
         </Stack>

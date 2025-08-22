@@ -72,7 +72,18 @@ async function requireFirebaseAuth(req, res, next) {
   }
 }
 
-
+async function optionalAuth(req, _res, next) {
+  const h = req.headers.authorization || '';
+  const m = h.match(/^Bearer (.+)$/);
+  if (m) {
+    try {
+      const decoded = await admin.auth().verifyIdToken(m[1]);
+      req.user = decoded;
+    } catch { /* ใช้ต่อเป็น guest */ }
+  }
+  // ให้มี guest cookie เสมอ (เผื่อจะเก็บ draft)
+  ensureGuest(req, _res, () => next());
+}
 
 
 // ==============================
@@ -1439,6 +1450,26 @@ app.delete('/api/tenants/:id/richmenus/:docId', requireFirebaseAuth, async (req,
   }
 });
 
+// ตัวอย่าง guest draft สำหรับ Rich Message (ถ้าอยากรองรับ)
+app.post('/api/guest/richmessages/save', optionalAuth, async (req, res) => {
+  try {
+    const gid = req.guest?.gid;
+    if (!gid) return res.status(401).json({ error: 'no_guest_cookie' });
+    const { id, payload = {} } = req.body || {};
+    const db = admin.firestore();
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const ref = id
+      ? db.collection('guests').doc(gid).collection('richmessages').doc(id)
+      : db.collection('guests').doc(gid).collection('richmessages').doc();
+    await ref.set({ ...payload, status: 'draft', updatedAt: now, ...(id ? {} : { createdAt: now }) }, { merge: true });
+    res.json({ ok: true, id: ref.id });
+  } catch (e) {
+    res.status(500).json({ ok:false, error: String(e?.message || e) });
+  }
+});
+
+
+
 
 // ==============================
 // 6.z) LINE Webhook (QnA mode)
@@ -1561,6 +1592,21 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
         quickReply: toQuickReplies(qna.items),
       }]);
     }
+  }
+
+  // ====== ผู้ใช้เพิ่มเพื่อน (ส่ง greeting ถ้าตั้งค่าไว้) ======
+  if (ev.type === 'follow' && userId) {
+    try {
+      const gref = tenantRef.collection('settings').doc('greeting');
+      const gsnap = await gref.get();
+      const text = gsnap.get('text');
+      if (text) {
+        await lineReply(accessToken, replyToken, [{ type: 'text', text: String(text) }]);
+      }
+    } catch (e) {
+      console.warn('[greeting] failed', e);
+    }
+    return;
   }
 
   // ====== ข้อความจากผู้ใช้ ======
