@@ -610,9 +610,10 @@ app.get('/auth/line/callback', async (req, res) => {
     // 4) Create Firebase custom token and redirect back to app
     const customToken = await admin.auth().createCustomToken(uid);
 
-    // ส่งกลับไปที่ path ที่ sanitize แล้ว + แนบ hash ที่เว็บอ่านได้ (#token & #next)
+    
+    // ให้ไปที่หน้า AuthGate เสมอ
     const redirectUrl =
-      `${BASE_APP_URL}${next}#token=${encodeURIComponent(customToken)}&next=${encodeURIComponent(next)}`;
+      `${BASE_APP_URL}/auth/line/finish#token=${encodeURIComponent(customToken)}&next=${encodeURIComponent(next)}`;
 
     return res.redirect(302, redirectUrl);
   } catch (err) {
