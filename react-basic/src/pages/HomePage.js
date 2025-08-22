@@ -1,10 +1,8 @@
-
-// HomePage.js
 import React, { useEffect, useState } from 'react';
 import {
   AppBar, Toolbar, Typography, Box, Avatar, Drawer, List, ListItem,
   ListItemButton, ListItemIcon, ListItemText, Collapse, Button,
-  Tabs, Tab, Divider, IconButton, Dialog, DialogTitle, DialogContent,
+  Divider, IconButton, Dialog, DialogTitle, DialogContent,
   ListItemAvatar, Chip
 } from '@mui/material';
 import {
@@ -13,19 +11,16 @@ import {
   Logout as LogoutIcon, Menu as MenuIcon, SwapHoriz as SwapIcon
 } from '@mui/icons-material';
 
-import { useNavigate, useLocation, useSearchParams, Outlet } from 'react-router-dom';
+import { useNavigate, useSearchParams, Outlet } from 'react-router-dom';
 import { auth, db } from '../firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import {
-  collection, doc, onSnapshot, query, where
-} from 'firebase/firestore';
+import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
 
 const drawerWidthExpanded = 240;
 const drawerWidthCollapsed = 60;
 
 export default function HomePage() {
   const navigate = useNavigate();
-  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // UI toggles
@@ -34,14 +29,14 @@ export default function HomePage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [chatScreenOpen, setChatScreenOpen] = useState(false);
 
-  // auth + user profile (สั้น ๆ เอาเฉพาะ auth user)
+  // auth
   const [user, setUser] = useState(null);
   const [ready, setReady] = useState(false);
 
-  // --- profile from Firestore (state) ---  ← ย้ายขึ้นมาก่อนใช้งาน
+  // profile (Firestore)
   const [profile, setProfile] = useState(null);
 
-  // === NEW: เช็ค custom claim admin จาก ID token ===
+  // admin flag
   const [isAdmin, setIsAdmin] = useState(false);
   useEffect(() => {
     if (!user) { setIsAdmin(false); return; }
@@ -55,7 +50,7 @@ export default function HomePage() {
     })();
   }, [user, profile]);
 
-  // subscribe โปรไฟล์จาก Firestore: users/{uid}
+  // subscribe profile
   useEffect(() => {
     if (!user) { setProfile(null); return; }
     const ref = doc(db, 'users', user.uid);
@@ -63,24 +58,22 @@ export default function HomePage() {
     return () => unsub();
   }, [user]);
 
-  // OA active
+  // active OA
   const [activeTenantId, setActiveTenantId] = useState(null);
   const [tenant, setTenant] = useState(null);
 
-  // list OA ที่ฉันเข้าถึง (owner หรือ member)
   const [myTenants, setMyTenants] = useState([]);
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  // --- Auth guard ---
+  // ✅ soft auth: ไม่ redirect เมื่อ guest
   useEffect(() => {
     return onAuthStateChanged(auth, (u) => {
       setUser(u || null);
       setReady(true);
-      if (!u) navigate('/', { replace: true });
     });
-  }, [navigate]);
+  }, []);
 
-  // --- อ่าน tenantId จาก URL, ถ้าไม่มีลองเอาจาก localStorage ---
+  // อ่าน tenant จาก URL/LocalStorage (guest อนุญาต)
   useEffect(() => {
     if (!ready) return;
     const tFromUrl = searchParams.get('tenant');
@@ -91,29 +84,21 @@ export default function HomePage() {
     }
     const tFromLocal = localStorage.getItem('activeTenantId');
     if (tFromLocal) {
-      // sync กลับขึ้น URL ให้สวย
       setSearchParams({ tenant: tFromLocal }, { replace: true });
       setActiveTenantId(tFromLocal);
       return;
     }
-    // ไม่มีทั้งคู่ -> กลับหน้า accounts ให้ผู้ใช้เลือก OA
-    navigate('/accounts', { replace: true });
-  }, [ready, searchParams, setSearchParams, navigate]);
+    // ไม่มี tenant ก็อยู่หน้า Home ต่อได้
+  }, [ready, searchParams, setSearchParams]);
 
-  // --- subscribe tenant doc ---
+  // subscribe tenant doc
   useEffect(() => {
-    if (!activeTenantId) return;
+    if (!activeTenantId) { setTenant(null); return; }
     const ref = doc(db, 'tenants', activeTenantId);
     const unsub = onSnapshot(ref, (snap) => {
-      if (!snap.exists()) {
-        setTenant(null);
-        return;
-      }
+      if (!snap.exists()) { setTenant(null); return; }
       setTenant({ id: snap.id, ...snap.data() });
-    }, (err) => {
-      console.error('[tenant:onSnapshot] error', err);
-      setTenant(null);
-    });
+    }, () => setTenant(null));
     return () => unsub();
   }, [activeTenantId]);
 
@@ -123,7 +108,7 @@ export default function HomePage() {
     return Array.from(m.values()).sort((x, y) => (x.displayName || '').localeCompare(y.displayName || ''));
   };
 
-  // --- load OA list ที่ฉันเข้าถึง (owner หรือ member) สำหรับ dialog switch ---
+  // OA list ของฉัน (เฉพาะตอนล็อกอิน)
   useEffect(() => {
     if (!user) return;
     const acc = { owner: [], member: [] };
@@ -139,14 +124,21 @@ export default function HomePage() {
     return () => unsubs.forEach(u => u());
   }, [user]);
 
-  // Tabs
-  const tabValue = location.pathname.includes('/homepage/insight') ? 1 : 0;
-  const handleTabChange = (_, newValue) => {
-    if (newValue === 0) navigate('/homepage' + (activeTenantId ? `?tenant=${activeTenantId}` : ''));
-    if (newValue === 1) navigate('/homepage/insight' + (activeTenantId ? `?tenant=${activeTenantId}` : ''));
+  // ✅ helper: บังคับ login/tenant ตอน “ทำงานจริง”
+  const guardedNavigate = (to, opts = { requireTenant: true }) => {
+    const want = typeof to === 'string' ? to : String(to || '/homepage');
+    const next = encodeURIComponent(window.location.pathname + window.location.search);
+    if (!user) {
+      window.location.href = `/auth/line/start?next=${next}`;
+      return;
+    }
+    if (opts.requireTenant && !activeTenantId) {
+      navigate('/accounts', { replace: true });
+      return;
+    }
+    navigate(want);
   };
 
-  // เลือก OA ใหม่
   const switchTenant = (t) => {
     setPickerOpen(false);
     if (!t?.id) return;
@@ -157,12 +149,12 @@ export default function HomePage() {
 
   const logout = () => signOut(auth).then(() => navigate('/', { replace: true }));
 
-  // ===== Derived values for AppBar (แสดงรูป/ชื่อ/LINE userId) =====
+  // App bar derived
   const userDisplayName =
     profile?.displayName ||
     user?.displayName ||
     user?.providerData?.[0]?.displayName ||
-    (user?.uid ? `User ${user.uid.slice(-6)}` : 'User');
+    (user?.uid ? `User ${user.uid.slice(-6)}` : 'Guest');
 
   const userPhotoURL =
     profile?.photoURL ||
@@ -176,10 +168,7 @@ export default function HomePage() {
   return (
     <Box sx={{ display: 'flex' }}>
       {/* Top Navbar */}
-      <AppBar
-        position="fixed"
-        sx={{ backgroundColor: '#66bb6a', zIndex: (theme) => theme.zIndex.drawer + 1 }}
-      >
+      <AppBar position="fixed" sx={{ backgroundColor: '#66bb6a', zIndex: (theme) => theme.zIndex.drawer + 1 }}>
         <Toolbar sx={{ justifyContent: 'space-between' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <IconButton color="inherit" edge="start" onClick={() => setSidebarOpen(!sidebarOpen)}>
@@ -188,15 +177,14 @@ export default function HomePage() {
             <Typography
               variant="h6"
               sx={{ fontWeight: 'bold', cursor: 'pointer' }}
-              onClick={() => navigate('/')}
+              onClick={() => navigate('/homepage')}
             >
               Line Rich Menus Web
             </Typography>
           </Box>
 
-          {/* Right: OA + User + Switch + Logout */}
+          {/* Right: OA + User + Switch + Login/Logout */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            {/* OA info */}
             {tenant ? (
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, pr: 1.5, borderRight: '1px solid rgba(255,255,255,.3)' }}>
                 <Avatar src={tenant.pictureUrl || undefined} sx={{ bgcolor: '#2e7d32' }}>
@@ -223,21 +211,31 @@ export default function HomePage() {
                 </Button>
               </Box>
             ) : (
-              <Button variant="outlined" size="small" onClick={() => setPickerOpen(true)} sx={{ color: '#fff', borderColor: '#fff' }}>
-                Select OA
-              </Button>
+              user ? (
+                <Button variant="outlined" size="small" onClick={() => setPickerOpen(true)} sx={{ color: '#fff', borderColor: '#fff' }}>
+                  Select OA
+                </Button>
+              ) : (
+                <Button
+                  variant="contained"
+                  size="small"
+                  onClick={() => { window.location.href = '/auth/line/start?next=/accounts'; }}
+                >
+                  Login with LINE
+                </Button>
+              )
             )}
 
-            {/* Current user */}
+            {/* Current user / guest */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-              <Avatar src={userPhotoURL || undefined} alt={userDisplayName} sx={{ bgcolor: '#004d40' }}>
-                {!userPhotoURL && (userDisplayName?.[0] || 'U')}
+              <Avatar src={user ? (userPhotoURL || undefined) : undefined} alt={userDisplayName} sx={{ bgcolor: '#004d40' }}>
+                {user ? (userDisplayName?.[0] || 'U') : 'G'}
               </Avatar>
               <Box sx={{ display: 'flex', flexDirection: 'column', maxWidth: 220 }}>
                 <Typography sx={{ color: '#fff', fontWeight: 600, lineHeight: 1.1 }} noWrap>
-                  {userDisplayName}
+                  {user ? userDisplayName : 'Guest'}
                 </Typography>
-                {userLineId && (
+                {user && userLineId && (
                   <Typography sx={{ color: '#e8f5e9', fontSize: 12, lineHeight: 1.1 }} noWrap>
                     LINE: {userLineId}
                   </Typography>
@@ -245,14 +243,11 @@ export default function HomePage() {
               </Box>
             </Box>
 
-            <Button
-              variant="contained"
-              color="error"
-              startIcon={<LogoutIcon />}
-              onClick={logout}
-            >
-              Logout
-            </Button>
+            {user && (
+              <Button variant="contained" color="error" startIcon={<LogoutIcon />} onClick={logout}>
+                Logout
+              </Button>
+            )}
           </Box>
         </Toolbar>
       </AppBar>
@@ -285,10 +280,10 @@ export default function HomePage() {
             </ListItem>
             <Collapse in={broadcastOpen && sidebarOpen} timeout="auto" unmountOnExit>
               <List component="div" disablePadding>
-                <ListItemButton sx={{ pl: 4 }} onClick={() => navigate(`/homepage/broadcast?tenant=${activeTenantId || ''}`)}>
+                <ListItemButton sx={{ pl: 4 }} onClick={() => guardedNavigate(`/homepage/broadcast?tenant=${activeTenantId || ''}`)}>
                   <ListItemText primary="Broadcast List" />
                 </ListItemButton>
-                <ListItemButton sx={{ pl: 4 }} onClick={() => navigate(`/homepage/broadcast/new?tenant=${activeTenantId || ''}`)}>
+                <ListItemButton sx={{ pl: 4 }} onClick={() => guardedNavigate(`/homepage/broadcast/new?tenant=${activeTenantId || ''}`)}>
                   <ListItemText primary="New Broadcast" />
                 </ListItemButton>
               </List>
@@ -304,10 +299,10 @@ export default function HomePage() {
             </ListItem>
             <Collapse in={richMessageOpen && sidebarOpen} timeout="auto" unmountOnExit>
               <List component="div" disablePadding>
-                <ListItemButton sx={{ pl: 4 }} onClick={() => navigate(`/homepage/rich-message?tenant=${activeTenantId || ''}`)}>
+                <ListItemButton sx={{ pl: 4 }} onClick={() => guardedNavigate(`/homepage/rich-message?tenant=${activeTenantId || ''}`)}>
                   <ListItemText primary="rich message List" />
                 </ListItemButton>
-                <ListItemButton sx={{ pl: 4 }} onClick={() => navigate(`/homepage/rich-message/new?tenant=${activeTenantId || ''}`)}>
+                <ListItemButton sx={{ pl: 4 }} onClick={() => guardedNavigate(`/homepage/rich-message/new?tenant=${activeTenantId || ''}`)}>
                   <ListItemText primary="new rich message" />
                 </ListItemButton>
               </List>
@@ -323,34 +318,33 @@ export default function HomePage() {
             </ListItem>
             <Collapse in={chatScreenOpen && sidebarOpen} timeout="auto" unmountOnExit>
               <List component="div" disablePadding>
-                <ListItemButton sx={{ pl: 4 }} onClick={() => navigate(`/homepage/greeting-message?tenant=${activeTenantId || ''}`)}>
+                <ListItemButton sx={{ pl: 4 }} onClick={() => guardedNavigate(`/homepage/greeting-message?tenant=${activeTenantId || ''}`)}>
                   <ListItemText primary="Greeting Message" />
                 </ListItemButton>
-                <ListItemButton sx={{ pl: 4 }} onClick={() => navigate(`/homepage/rich-menus?tenant=${activeTenantId || ''}`)}>
+                <ListItemButton sx={{ pl: 4 }} onClick={() => guardedNavigate(`/homepage/rich-menus?tenant=${activeTenantId || ''}`)}>
                   <ListItemText primary="Rich Menus" />
                 </ListItemButton>
-                <ListItemButton sx={{ pl: 4 }} onClick={() => navigate(`/homepage/template-rich-menus?tenant=${activeTenantId || ''}`)}>
+                <ListItemButton sx={{ pl: 4 }} onClick={() => guardedNavigate(`/homepage/template-rich-menus?tenant=${activeTenantId || ''}`)}>
                   <ListItemText primary="Template Rich Menus" />
                 </ListItemButton>
-                <ListItemButton sx={{ pl: 4 }} onClick={() => navigate(`/homepage/live-chat?tenant=${activeTenantId || ''}`)}>
+                <ListItemButton sx={{ pl: 4 }} onClick={() => guardedNavigate(`/homepage/live-chat?tenant=${activeTenantId || ''}`)}>
                   <ListItemText primary="Live Chat" />
                 </ListItemButton>
-
               </List>
             </Collapse>
 
             {/* Friends */}
             <ListItem disablePadding>
-              <ListItemButton onClick={() => navigate(`/homepage/friends?tenant=${activeTenantId || ''}`)}>
+              <ListItemButton onClick={() => guardedNavigate(`/homepage/friends?tenant=${activeTenantId || ''}`)}>
                 <ListItemIcon><TableChartIcon /></ListItemIcon>
                 {sidebarOpen && <ListItemText primary="Friends" />}
               </ListItemButton>
             </ListItem>
 
-            {/* === NEW: Admin Templates (เห็นเฉพาะ admin) === */}
+            {/* Admin */}
             {isAdmin && (
               <ListItem disablePadding>
-                <ListItemButton onClick={() => navigate(`/homepage/admin/templates${activeTenantId ? `?tenant=${activeTenantId}` : ''}`)}>
+                <ListItemButton onClick={() => guardedNavigate(`/homepage/admin/templates${activeTenantId ? `?tenant=${activeTenantId}` : ''}`, { requireTenant: false })}>
                   <ListItemIcon><TableChartIcon /></ListItemIcon>
                   {sidebarOpen && <ListItemText primary="Admin: Templates" />}
                 </ListItemButton>
@@ -360,15 +354,11 @@ export default function HomePage() {
 
           <Divider />
           <Box sx={{ mt: 'auto', p: 2 }}>
-            <Button
-              variant="contained"
-              color="error"
-              startIcon={<LogoutIcon />}
-              fullWidth={sidebarOpen}
-              onClick={logout}
-            >
-              {sidebarOpen ? 'Log out' : ''}
-            </Button>
+            {user && (
+              <Button variant="contained" color="error" startIcon={<LogoutIcon />} fullWidth={sidebarOpen} onClick={logout}>
+                {sidebarOpen ? 'Log out' : ''}
+              </Button>
+            )}
           </Box>
         </Box>
       </Drawer>
@@ -376,17 +366,12 @@ export default function HomePage() {
       {/* Main Content */}
       <Box component="main" sx={{ flexGrow: 1, bgcolor: '#fff', minHeight: '100vh' }}>
         <Toolbar />
-        <Tabs value={tabValue} onChange={handleTabChange} sx={{ borderBottom: 1, borderColor: 'divider' }}>
-          <Tab label="Home" />
-          <Tab label="Insight" />
-        </Tabs>
         <Box sx={{ p: 3 }}>
-          {/* ส่ง context ให้เพจย่อย */}
-          <Outlet context={{ tenantId: activeTenantId, tenant }} />
+          <Outlet context={{ tenantId: activeTenantId, tenant, guardedNavigate }} />
         </Box>
       </Box>
 
-      {/* Dialog: เลือก OA */}
+      {/* OA picker */}
       <Dialog open={pickerOpen} onClose={() => setPickerOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>เลือก LINE OA ของคุณ</DialogTitle>
         <DialogContent dividers>
@@ -394,11 +379,7 @@ export default function HomePage() {
             {myTenants.map((t) => (
               <ListItem
                 key={t.id}
-                secondaryAction={
-                  <Button size="small" variant="outlined" onClick={() => switchTenant(t)}>
-                    ใช้ตัวนี้
-                  </Button>
-                }
+                secondaryAction={<Button size="small" variant="outlined" onClick={() => switchTenant(t)}>ใช้ตัวนี้</Button>}
               >
                 <ListItemAvatar>
                   <Avatar src={t.pictureUrl || undefined}>{!t.pictureUrl && (t.displayName?.[0] || 'O')}</Avatar>
