@@ -1,19 +1,32 @@
 // src/routes/RequireAuth.jsx
-import React, { useEffect, useState } from 'react';
-import { Navigate, Outlet, useLocation } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
+import { useLocation, Navigate } from 'react-router-dom';
 import { auth } from '../firebase';
 
-export default function RequireAuth() {
-  const [user, setUser] = useState(undefined); // undefined = กำลังเช็ค
+export default function RequireAuth({ children }) {
   const location = useLocation();
-  if (location.pathname.startsWith('/guest')) {
-    return <Outlet />; // โหมด guest ไม่ต้อง auth
-  }  
+  const [ready, setReady] = useState(false);
+  const [user, setUser] = useState(null);
 
-  useEffect(() => onAuthStateChanged(auth, setUser), []);
+  // ✅ hook ต้องอยู่นอกเงื่อนไขเสมอ
+  useEffect(() => {
+    const off = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setReady(true);
+    });
+    return () => off();
+  }, []);
 
-  if (user === undefined) return <div style={{ padding: 16 }}>Loading...</div>;
-  if (!user) return <Navigate to="/" replace state={{ from: location }} />;
-  return <Outlet />;
+  // รอเช็คสถานะก่อน
+  if (!ready) return null; // หรือ spinner ก็ได้
+
+  // ยังไม่ล็อกอิน → ส่งไปหน้า login พร้อม next กลับหน้าเดิม
+  if (!user) {
+    const next = encodeURIComponent(location.pathname + location.search);
+    return <Navigate to={`/login?next=${next}`} replace />;
+  }
+
+  // ล็อกอินแล้ว → ผ่าน
+  return children;
 }
