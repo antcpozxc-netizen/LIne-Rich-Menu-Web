@@ -1,7 +1,7 @@
 // src/routes/RequireAuth.jsx
 import { useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { useLocation, Navigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { auth } from '../firebase';
 
 export default function RequireAuth({ children }) {
@@ -9,7 +9,6 @@ export default function RequireAuth({ children }) {
   const [ready, setReady] = useState(false);
   const [user, setUser] = useState(null);
 
-  // ✅ hook ต้องอยู่นอกเงื่อนไขเสมอ
   useEffect(() => {
     const off = onAuthStateChanged(auth, (u) => {
       setUser(u);
@@ -18,15 +17,14 @@ export default function RequireAuth({ children }) {
     return () => off();
   }, []);
 
-  // รอเช็คสถานะก่อน
-  if (!ready) return null; // หรือ spinner ก็ได้
+  if (!ready) return null;
 
-  // ยังไม่ล็อกอิน → ส่งไปหน้า login พร้อม next กลับหน้าเดิม
   if (!user) {
     const next = encodeURIComponent(location.pathname + location.search);
-    return <Navigate to={`/login?next=${next}`} replace />;
+    // ไปที่ backend เพื่อเริ่ม LINE Login
+    window.location.href = `/auth/line/start?next=${next}`;
+    return null;
   }
 
-  // ล็อกอินแล้ว → ผ่าน
   return children;
 }
