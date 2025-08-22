@@ -514,10 +514,15 @@ app.get('/auth/line/start', (req, res) => {
   // อนุญาตเฉพาะ internal path เพื่อกัน open redirect
   const next = rawNext.startsWith('/') ? rawNext : '/';
 
+  // ⬇️ new: ดึง to จาก query (เช่น ?to=accounts)
+  const to = typeof req.query.to === 'string' ? req.query.to : undefined;
+
   const state = Buffer.from(
     JSON.stringify({
       n: Math.random().toString(36).slice(2), // anti-CSRF noise
-      next
+      next,
+      // ⬇️ new: เก็บ to ลง state ด้วย
+      to,
     }),
     'utf8'
   ).toString('base64url');
@@ -537,6 +542,7 @@ app.get('/auth/line/start', (req, res) => {
 });
 
 
+
 // Callback: exchange token, upsert user, mint Firebase custom token (hardened "next")
 app.get('/auth/line/callback', async (req, res) => {
   try {
@@ -544,6 +550,7 @@ app.get('/auth/line/callback', async (req, res) => {
 
     // ดีฟอลต์เสมอเป็นหน้าแรก
     let next = '/';
+    let toParam; // 'accounts' | undefined
     try {
       const parsed = JSON.parse(
         Buffer.from(String(stateStr || ''), 'base64url').toString('utf8')
@@ -551,8 +558,11 @@ app.get('/auth/line/callback', async (req, res) => {
       const candidate = String(parsed.next || '/');
       // อนุญาตเฉพาะ internal path เพื่อกัน open redirect
       next = candidate.startsWith('/') ? candidate : '/';
+      // ดึง to จาก state (ใช้เฉพาะค่าที่เรายอมรับ)
+      toParam = parsed.to === 'accounts' ? 'accounts' : undefined;
     } catch {
       next = '/';
+      toParam = undefined;
     }
 
     if (!code) return res.status(400).send('Missing code');
@@ -577,7 +587,7 @@ app.get('/auth/line/callback', async (req, res) => {
     const tokenJson = JSON.parse(raw);
 
     const { id_token, access_token } = tokenJson;
-    const payload = jwt.decode(id_token); // (โปรดักชันควร verify JWK)
+    const payload = jwt.decode(id_token); // (โปรดตรวจ JWK ในโปรดักชัน)
     const uid = `line:${payload.sub}`;
 
     // 2) Fetch fresh profile
@@ -610,10 +620,11 @@ app.get('/auth/line/callback', async (req, res) => {
     // 4) Create Firebase custom token and redirect back to app
     const customToken = await admin.auth().createCustomToken(uid);
 
-    
-    // ให้ไปที่หน้า AuthGate เสมอ
+    // กลับไปยังหน้า next พร้อม #token และ (ถ้ามี) &to=accounts
     const redirectUrl =
-      `${BASE_APP_URL}/auth/line/finish#token=${encodeURIComponent(customToken)}&next=${encodeURIComponent(next)}`;
+      `${BASE_APP_URL}${next}` +
+      `#token=${encodeURIComponent(customToken)}&next=${encodeURIComponent(next)}` +
+      (toParam ? `&to=${encodeURIComponent(toParam)}` : '');
 
     return res.redirect(302, redirectUrl);
   } catch (err) {
@@ -621,6 +632,7 @@ app.get('/auth/line/callback', async (req, res) => {
     return res.status(500).send('Callback error: ' + (err?.message || err));
   }
 });
+
 
 
 
