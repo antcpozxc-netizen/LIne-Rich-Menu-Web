@@ -3,10 +3,22 @@ import React from 'react';
 import {
   Container, Typography, Button, Stack, Alert, Chip, Divider, Box,
   Accordion, AccordionSummary, AccordionDetails, List, ListItem, ListItemText,
-  Grid, Card, CardContent
-} from '@mui/material';
+  Grid, Card, CardContent, CardMedia, Link as MuiLink } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { useNavigate, Link as RouterLink } from 'react-router-dom';
+
+
+// เพิ่มรูปที่ใช้ใน “ข้อ B”
+import imgOA_Create     from '../assets/oa_create_new.png';
+import imgOA_Form       from '../assets/oa_form.png';
+import imgOA_Done       from '../assets/oa_done.png';
+import imgOA_List       from '../assets/oa_list.png';
+import imgOA_Settings   from '../assets/oa_settings.png';
+import imgOA_Enable     from '../assets/oa_enable_messaging_api.png';
+import imgOA_Provider   from '../assets/oa_choose_provider.png';
+import imgOA_OK         from '../assets/oa_ok.png';
+import imgOA_Check_id   from '../assets/oa_check_id.png'; // ภาพรวมขั้นที่เห็น Channel ID/Secret
+
 
 // ---------- Helpers ----------
 const SectionTitle = ({ children }) => (
@@ -86,52 +98,157 @@ export default function TipsPage() {
           <SectionTitle>Channel ID / Channel secret</SectionTitle>
         </AccordionSummary>
         <AccordionDetails>
-          <Typography color="text.secondary" sx={{ mb: 1 }}>
-            ใช้สำหรับเชื่อมต่อ LINE OA (ฝั่ง <Chip size="small" label="Messaging API" />)
+          <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>
+            3) การเชื่อมต่อ LINE OA (Channel ID / Channel secret) — ข้อ B
           </Typography>
 
-          <SubTitle>หาได้จากที่ไหน</SubTitle>
-          <List dense>
-            <ListItem>
-              <ListItemText
-                primary="LINE Developers Console → Providers → เลือก Channel (Messaging API)"
-                secondary="แท็บ Basic settings: มี Channel ID • แท็บ Messaging API: มี Channel secret"
-              />
-            </ListItem>
-            <ListItem>
-              <ListItemText primary="ต้องเปิด Messaging API ให้ OA ก่อน จึงจะเห็นค่าเหล่านี้" />
-            </ListItem>
-          </List>
+          {/* B1 */}
+          <Card variant="outlined" sx={{ mb: 2 }}>
+            <CardContent sx={{ pb: 1 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                B1) เข้าสู่ LINE Official Account Manager แล้วกด “Create new”
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                สร้างบัญชี LINE OA ใหม่ หากยังไม่มี (กรอกข้อมูลชื่อ ประเภท ธุรกิจ ฯลฯ ให้ครบ)
+              </Typography>
+            </CardContent>
+            <CardMedia component="img" image={imgOA_Create} alt="Create new Official Account"
+              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+            <Box sx={{ px: 2, py: 1, fontSize: 12, color: 'text.secondary' }}>
+              ตัวอย่าง: หน้าสร้าง OA ใหม่
+            </Box>
+          </Card>
 
-          <SubTitle>นำมาใช้ยังไง</SubTitle>
-          <List dense>
-            <ListItem>
-              <ListItemText
-                primary="หน้า Accounts → “Add LINE OA”"
-                secondary="กรอก Channel ID และ Channel secret จาก LINE Developers"
-              />
-            </ListItem>
-            <ListItem>
-              <ListItemText
-                primary="ฝั่ง Backend"
-                secondary="POST /api/tenants (body: { channelId, channelSecret }) พร้อม Firebase ID Token"
-              />
-            </ListItem>
-          </List>
+          {/* B2 */}
+          <Card variant="outlined" sx={{ mb: 2 }}>
+            <CardContent sx={{ pb: 1 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                B2) กรอกรายละเอียดให้ครบถ้วน
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                ตรวจสอบชื่อ รูปภาพ และข้อมูลธุรกิจให้ถูกต้องก่อนดำเนินการต่อ
+              </Typography>
+            </CardContent>
+            <CardMedia component="img" image={imgOA_Form} alt="OA Form"
+              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+          </Card>
 
+          {/* B3 */}
+          <Card variant="outlined" sx={{ mb: 2 }}>
+            <CardContent sx={{ pb: 1 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                B3) ตรวจสอบข้อมูลและกด “เสร็จสิ้น”
+              </Typography>
+            </CardContent>
+            <CardMedia component="img" image={imgOA_Done} alt="Complete OA"
+              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+          </Card>
+
+          {/* B4 */}
+          <Card variant="outlined" sx={{ mb: 2 }}>
+            <CardContent sx={{ pb: 1 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                B4) กลับไปเลือก Account ที่สร้างจากรายการ (List)
+              </Typography>
+            </CardContent>
+            <CardMedia component="img" image={imgOA_List} alt="OA List"
+              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+          </Card>
+
+          {/* B5 */}
+          <Card variant="outlined" sx={{ mb: 2 }}>
+            <CardContent sx={{ pb: 1 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                B5) กด “Settings” มุมขวาบนของ OA
+              </Typography>
+            </CardContent>
+            <CardMedia component="img" image={imgOA_Settings} alt="OA Settings"
+              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+          </Card>
+
+          {/* B6 */}
+          <Card variant="outlined" sx={{ mb: 2 }}>
+            <CardContent sx={{ pb: 1 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                B6) ไปที่หัวข้อ “Messaging API” และกด “Enable Messaging API”
+              </Typography>
+            </CardContent>
+            <CardMedia component="img" image={imgOA_Enable} alt="Enable Messaging API"
+              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+          </Card>
+
+          {/* B7 */}
+          <Card variant="outlined" sx={{ mb: 2 }}>
+            <CardContent sx={{ pb: 1 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                B7) เลือก Provider ที่ต้องการหรือสร้าง Provider ใหม่
+              </Typography>
+            </CardContent>
+            <CardMedia component="img" image={imgOA_Provider} alt="Choose Provider"
+              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+          </Card>
+
+          {/* B8 */}
+          <Card variant="outlined" sx={{ mb: 2 }}>
+            <CardContent sx={{ pb: 1 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                B8) กด “OK”
+              </Typography>
+            </CardContent>
+            <CardMedia component="img" image={imgOA_OK} alt="Confirm OK"
+              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+          </Card>
+
+          {/* B9 */}
+          <Card variant="outlined" sx={{ mb: 2 }}>
+            <CardContent sx={{ pb: 1 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                B9) ดูค่า Channel ID / Channel secret
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                - Tab <b>Basic settings</b>: ดู <b>Channel ID</b> • Tab <b>Messaging API</b>: เลื่อนลงไปด้านล่างเพื่อดู <b>Channel secret</b>
+              </Typography>
+            </CardContent>
+            <CardMedia component="img" image={imgOA_Check_id} alt="ตำแหน่ง Channel ID / Channel secret"
+              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+          </Card>
+
+          {/* ใช้กับระบบเราอย่างไร */}
+          <Card variant="outlined" sx={{ mb: 2 }}>
+            <CardContent>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                ใช้ค่าเหล่านี้กับระบบเราอย่างไร?
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                เปิดหน้า <b>Accounts</b> → กด <b>Add LINE OA</b> → วาง <em>Channel ID</em> และ <em>Channel secret</em> แล้วกดเชื่อมต่อ
+                (หากเคยเชื่อมแล้ว ระบบจะอัปเดตโทเค็น/ข้อมูลล่าสุดให้โดยไม่สร้างซ้ำ)
+              </Typography>
+              <Box sx={{ mt: 1 }}>
+                <MuiLink href="https://developers.line.biz/en/" target="_blank" rel="noreferrer">
+                  เปิด LINE Developers Console
+                </MuiLink>
+              </Box>
+            </CardContent>
+          </Card>
+
+          {/* โค้ดเรียกใช้งานฝั่งเรา (เก็บตัวอย่างเดิมไว้ด้วย) */}
           <Code>
-{`// ตัวอย่างเรียก /api/tenants (ย่อจาก AccountsPage.js)
-const idToken = await auth.currentUser.getIdToken();
-await fetch('/api/tenants', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json', Authorization: \`Bearer \${idToken}\` },
-  body: JSON.stringify({ channelId, channelSecret })
-});`}
+      {`// ตัวอย่างเรียก /api/tenants (ย่อจาก AccountsPage.js)
+      const idToken = await auth.currentUser.getIdToken();
+      await fetch('/api/tenants', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: \`Bearer \${idToken}\` },
+        body: JSON.stringify({ channelId, channelSecret })
+      });`}
           </Code>
 
-          <Note>ถ้าเชื่อม OA เดิมซ้ำ ระบบจะ “อัปเดตข้อมูล/โทเค็นล่าสุดให้” โดยไม่สร้างซ้ำ</Note>
+          <Note>
+            ถ้าเชื่อม OA เดิมซ้ำ ระบบจะ “อัปเดตข้อมูล/โทเค็นล่าสุดให้” โดยไม่สร้างซ้ำ •
+            หากไม่เห็นค่า <em>Channel secret</em> ให้ตรวจสิทธิ์ใน Provider/Project และยืนยันว่า Channel เป็นประเภท <b>Messaging API</b>
+          </Note>
         </AccordionDetails>
       </Accordion>
+
 
       {/* Accounts */}
       <Accordion defaultExpanded>

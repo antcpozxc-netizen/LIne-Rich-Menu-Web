@@ -5,7 +5,7 @@ import {
   TableCell, TableHead, TableRow, Avatar, Box, IconButton, Dialog,
   DialogTitle, DialogContent, TextField, DialogActions, List, ListItem,
   ListItemAvatar, ListItemText, ListItemSecondaryAction, Tooltip, Divider,
-  Chip, Alert, Link as MuiLink
+  Chip, Alert, Link as MuiLink,Card, CardContent, CardMedia 
 } from '@mui/material';
 
 import MenuIcon from '@mui/icons-material/Menu';
@@ -27,11 +27,18 @@ import {
 } from 'firebase/firestore';
 import { fullLogout } from '../lib/authx';
 
-// ---------- (ใส่รูปตัวอย่างขั้นตอนการหา Channel ID/Secret) ----------
-import imgConsole from '../assets/line_console.png';          // หน้า LINE Developers Console (ตัวอย่าง)
-import imgBasic from '../assets/line_basic_settings.png';      // แท็บ Basic settings (ตัวอย่าง Channel ID)
-import imgMsgAPI from '../assets/line_messaging_api.png';      // แท็บ Messaging API (ตัวอย่าง Channel secret)
-import imgMsgAPI2 from '../assets/line_messaging_api_2.png';
+
+import imgOA_Create   from '../assets/oa_create_new.png';
+import imgOA_Form     from '../assets/oa_form.png';
+import imgOA_Done     from '../assets/oa_done.png';
+import imgOA_List     from '../assets/oa_list.png';
+import imgOA_Settings from '../assets/oa_settings.png';
+import imgOA_Enable   from '../assets/oa_enable_messaging_api.png';
+import imgOA_Provider from '../assets/oa_choose_provider.png';
+import imgOA_OK       from '../assets/oa_ok.png';
+import imgOA_Check_id from '../assets/oa_check_id.png';
+
+
 // -------- utils --------
 const normalizeUid = (input) => {
   const s = (input || '').trim();
@@ -576,89 +583,147 @@ export default function AccountsPage() {
         </DialogActions>
       </Dialog>
 
-      {/* Dialog: วิธีหา Channel ID/Secret */}
-      <Dialog open={openHowTo} onClose={() => setOpenHowTo(false)} fullWidth maxWidth="sm">
-        <DialogTitle>วิธีหา Channel ID / Channel secret</DialogTitle>
-        <DialogContent dividers>
-          <List dense>
-            <ListItem alignItems="flex-start">
-              <ListItemAvatar>
-                <Avatar variant="rounded" src={imgConsole} alt="LINE Developers Console">1</Avatar>
-              </ListItemAvatar>
-              <ListItemText
-                primary="1) เปิด LINE Developers Console"
-                secondary={
-                  <>
-                    ไปที่ <em>Providers</em> แล้วเลือก <strong>Channel ที่เป็น Messaging API</strong><br/>
-                    <MuiLink href="https://developers.line.biz/en/" target="_blank" rel="noreferrer">
-                      เปิดหน้า Developers Console <OpenInNewIcon fontSize="inherit" />
-                    </MuiLink>
-                  </>
-                }
-              />
-            </ListItem>
+      {/* Dialog: 3) การเชื่อมต่อ LINE OA (Channel ID / Channel secret) — ข้อ B */}
+      <Dialog open={openHowTo} onClose={() => setOpenHowTo(false)} fullWidth maxWidth="md">
+        <DialogTitle>3) การเชื่อมต่อ LINE OA (Channel ID / Channel secret) — ข้อ B</DialogTitle>
+        <DialogContent dividers sx={{ display: 'grid', gap: 2 }}>
 
-            <ListItem alignItems="flex-start">
-              <ListItemAvatar>
-                <Avatar variant="rounded" src={imgBasic} alt="Basic settings — Channel ID">2</Avatar>
-              </ListItemAvatar>
-              <ListItemText
-                primary="2) Channel ID"
-                secondary="อยู่ในแท็บ Basic settings (เป็นตัวเลข)"
-              />
-            </ListItem>
-
-            <ListItem alignItems="flex-start">
-              <ListItemAvatar>
-                <Avatar variant="rounded" src={imgMsgAPI} alt="Messaging API — Channel secret">3</Avatar>
-              </ListItemAvatar>
-              <ListItemAvatar>
-                <Avatar variant="rounded" src={imgMsgAPI2} alt="Messaging API — Channel secret">3</Avatar>
-              </ListItemAvatar>
-              <ListItemText
-                primary="3) Channel secret"
-                secondary="อยู่ในแท็บ Messaging API (เลื่อนลงไปด้านล่างของหน้า)"
-              />
-            </ListItem>
-
-            <ListItem>
-              <ListItemText
-                primary="4) นำ 2 ค่านี้มาวางในหน้า Add LINE OA"
-                secondary="ระบบจะเชื่อมต่อ OA ให้และเพิ่มเข้าในรายการของคุณทันที"
-              />
-            </ListItem>
-          </List>
-
-          {/* แถบรูปภาพตัวอย่างขนาดใหญ่ */}
-          <Divider sx={{ my: 2 }} />
-          <Typography variant="subtitle2" sx={{ mb: 1 }}>ตัวอย่างภาพหน้าจอ</Typography>
-          <Box sx={{ display: 'grid', gap: 2 }}>
-            <Box sx={{ border: '1px solid #eee', borderRadius: 1, overflow: 'hidden' }}>
-              <img src={imgConsole} alt="ตัวอย่าง: LINE Developers Console" style={{ width: '100%', display: 'block' }} />
-              <Box sx={{ p: 1, fontSize: 12, color: '#555' }}>หน้า LINE Developers Console</Box>
+          {/* B1: Create new OA */}
+          <Card variant="outlined">
+            <CardContent sx={{ pb: 1 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                B1) เข้าสู่ LINE Official Account Manager แล้วกด “Create new”
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                สร้างบัญชี LINE OA ใหม่ หากยังไม่มี (กรอกข้อมูลชื่อ ประเภท ธุรกิจ ฯลฯ ให้ครบ)
+              </Typography>
+            </CardContent>
+            <CardMedia component="img" image={imgOA_Create} alt="Create new Official Account"
+              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+            <Box sx={{ px: 2, py: 1, fontSize: 12, color: 'text.secondary' }}>
+              ตัวอย่าง: หน้าสร้าง OA ใหม่
             </Box>
-            <Box sx={{ border: '1px solid #eee', borderRadius: 1, overflow: 'hidden' }}>
-              <img src={imgBasic} alt="ตัวอย่าง: Basic settings" style={{ width: '100%', display: 'block' }} />
-              <Box sx={{ p: 1, fontSize: 12, color: '#555' }}>แท็บ Basic settings — ตำแหน่ง Channel ID</Box>
-            </Box>
-            <Box sx={{ border: '1px solid #eee', borderRadius: 1, overflow: 'hidden' }}>
-              <img src={imgMsgAPI} alt="ตัวอย่าง: Messaging API" style={{ width: '100%', display: 'block' }} />
-              <Box sx={{ p: 1, fontSize: 12, color: '#555' }}>แท็บ Messaging API </Box>
-            </Box>
-            <Box sx={{ border: '1px solid #eee', borderRadius: 1, overflow: 'hidden' }}>
-              <img src={imgMsgAPI2} alt="ตัวอย่าง: Messaging API" style={{ width: '100%', display: 'block' }} />
-              <Box sx={{ p: 1, fontSize: 12, color: '#555' }}>แท็บ Messaging API — ตำแหน่ง Channel secret</Box>
-            </Box>
-          </Box>
+          </Card>
 
-          <Alert severity="info" sx={{ mt: 2 }}>
-            <b>เคล็ดลับ:</b> ถ้าคุณมองไม่เห็นค่า Channel secret ให้ตรวจสอบสิทธิ์ใน Provider/Project นั้น ๆ และยืนยันว่าเป็นประเภท Channel: <em>Messaging API</em> ไม่ใช่ LINE Login อย่างเดียว
+          {/* B2: Fill form */}
+          <Card variant="outlined">
+            <CardContent sx={{ pb: 1 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                B2) กรอกรายละเอียดให้ครบถ้วน
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                ตรวจสอบชื่อ รูปภาพ และข้อมูลธุรกิจให้ถูกต้องก่อนดำเนินการต่อ
+              </Typography>
+            </CardContent>
+            <CardMedia component="img" image={imgOA_Form} alt="OA Form"
+              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+          </Card>
+
+          {/* B3: Complete */}
+          <Card variant="outlined">
+            <CardContent sx={{ pb: 1 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                B3) ตรวจสอบข้อมูลและกด “เสร็จสิ้น”
+              </Typography>
+            </CardContent>
+            <CardMedia component="img" image={imgOA_Done} alt="Complete OA"
+              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+          </Card>
+
+          {/* B4: Back to list */}
+          <Card variant="outlined">
+            <CardContent sx={{ pb: 1 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                B4) กลับไปเลือก Account ที่สร้างจากรายการ (List)
+              </Typography>
+            </CardContent>
+            <CardMedia component="img" image={imgOA_List} alt="OA List"
+              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+          </Card>
+
+          {/* B5: Settings */}
+          <Card variant="outlined">
+            <CardContent sx={{ pb: 1 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                B5) กด “Settings” มุมขวาบนของ OA
+              </Typography>
+            </CardContent>
+            <CardMedia component="img" image={imgOA_Settings} alt="OA Settings"
+              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+          </Card>
+
+          {/* B6: Enable Messaging API */}
+          <Card variant="outlined">
+            <CardContent sx={{ pb: 1 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                B6) ไปที่หัวข้อ “Messaging API” และกด “Enable Messaging API”
+              </Typography>
+            </CardContent>
+            <CardMedia component="img" image={imgOA_Enable} alt="Enable Messaging API"
+              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+          </Card>
+
+          {/* B7: Choose provider */}
+          <Card variant="outlined">
+            <CardContent sx={{ pb: 1 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                B7) เลือก Provider ที่ต้องการหรือสร้าง Provider ใหม่
+              </Typography>
+            </CardContent>
+            <CardMedia component="img" image={imgOA_Provider} alt="Choose Provider"
+              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+          </Card>
+
+          {/* B8: Confirm */}
+          <Card variant="outlined">
+            <CardContent sx={{ pb: 1 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                B8) กด “OK”
+              </Typography>
+            </CardContent>
+            <CardMedia component="img" image={imgOA_OK} alt="Confirm OK"
+              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+          </Card> 
+
+          {/* B9: Read Channel ID/Secret */}
+          <Card variant="outlined">
+            <CardContent sx={{ pb: 1 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                B9) ดูค่า Channel ID / Channel secret
+              </Typography>
+            </CardContent>
+            <CardMedia component="img" image={imgOA_Check_id} alt="Confirm OK"
+              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+          </Card>
+
+          {/* ใช้กับระบบเราอย่างไร */}
+          <Card variant="outlined">
+            <CardContent>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                ใช้ค่าเหล่านี้กับระบบเราอย่างไร?
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                เปิดหน้า <b>Accounts</b> → กด <b>Add LINE OA</b> → วาง <em>Channel ID</em> และ <em>Channel secret</em> แล้วกดเชื่อมต่อ
+                (หากเคยเชื่อมแล้ว ระบบจะอัปเดตโทเค็น/ข้อมูลล่าสุดให้โดยไม่สร้างซ้ำ)
+              </Typography>
+              <Box sx={{ mt: 1 }}>
+                <MuiLink href="https://developers.line.biz/en/" target="_blank" rel="noreferrer">
+                  เปิด LINE Developers Console <OpenInNewIcon fontSize="inherit" />
+                </MuiLink>
+              </Box>
+            </CardContent>
+          </Card>
+
+          <Alert severity="info">
+            <b>หมายเหตุ:</b> ถ้าคุณไม่เห็น <em>Channel secret</em> ให้ตรวจสิทธิ์ใน Provider/Project และยืนยันว่า Channel เป็นประเภท <b>Messaging API</b>
+            (ไม่ใช่ LINE Login อย่างเดียว)
           </Alert>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpenHowTo(false)}>ปิด</Button>
         </DialogActions>
       </Dialog>
+
 
       {/* Dialog: จัดการสมาชิก */}
       <Dialog open={openMembers} onClose={() => setOpenMembers(false)} fullWidth maxWidth="md">
