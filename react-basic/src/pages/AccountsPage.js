@@ -5,7 +5,7 @@ import {
   TableCell, TableHead, TableRow, Avatar, Box, IconButton, Dialog,
   DialogTitle, DialogContent, TextField, DialogActions, List, ListItem,
   ListItemAvatar, ListItemText, ListItemSecondaryAction, Tooltip, Divider,
-  Chip
+  Chip, Alert
 } from '@mui/material';
 
 import MenuIcon from '@mui/icons-material/Menu';
@@ -17,14 +17,13 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import SearchIcon from '@mui/icons-material/Search';
 
-import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { onAuthStateChanged } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import {
   collection, doc, onSnapshot, query, where, orderBy,
   getDoc, getDocs, startAt, endAt, limit
 } from 'firebase/firestore';
-import { clearActiveTenantSelection } from '../lib/tenantSelection';
 import { fullLogout } from '../lib/authx';
 
 // -------- utils --------
@@ -64,7 +63,6 @@ function sanitizeNext(raw) {
 
 export default function AccountsPage() {
   const navigate = useNavigate();
-  const location = useLocation();
   const [sp] = useSearchParams();
   const nextParam = sanitizeNext(sp.get('next') || '');
 
