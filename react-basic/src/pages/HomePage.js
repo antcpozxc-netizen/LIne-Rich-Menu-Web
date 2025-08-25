@@ -373,14 +373,6 @@ export default function HomePage() {
               </List>
             </Collapse>
 
-            {/* Friends / Tips */}
-            <ListItem disablePadding>
-              <ListItemButton onClick={() => navigate(`/homepage/tips${activeTenantId ? `?tenant=${activeTenantId}` : ''}`)}>
-                <ListItemIcon><TableChartIcon /></ListItemIcon>
-                {sidebarOpen && <ListItemText primary="Tips คู่มือการใช้งาน" />}
-              </ListItemButton>
-            </ListItem>
-
             {/* Admin Templates (ไอคอนใหม่) */}
             {isAdmin && (
               <ListItem disablePadding>

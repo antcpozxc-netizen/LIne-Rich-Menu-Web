@@ -1,33 +1,57 @@
+// src/pages/DashboardHome.jsx
 import React from 'react';
-import { Box, Typography, Avatar, Grid } from '@mui/material';
+import { Box, Typography, Avatar, Grid, Chip, Stack, Button } from '@mui/material';
 import QuickActionCard from '../components/QuickActionCard';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useOutletContext } from 'react-router-dom';
 import {
   Send as SendIcon, Image as ImageIcon, Chat as ChatIcon,
-  TableChart as TableChartIcon
+  TableChart as TableChartIcon,
 } from '@mui/icons-material';
 import PeopleAltIcon from '@mui/icons-material/PeopleAlt';
 import AppsIcon from '@mui/icons-material/Apps';
 
 export default function DashboardHome() {
   const navigate = useNavigate();
+  const { tenantId, tenant } = useOutletContext() || {};
+  const friends = (tenant?.friendsCount ?? tenant?.stats?.friends);
+  const go = (path) => navigate(tenantId ? `${path}?tenant=${tenantId}` : path);
+
   return (
     <>
-      {/* Header โปรไฟล์สั้นๆ */}
+      {/* Header OA */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
-        <Avatar sx={{ bgcolor: '#66bb6a', width: 48, height: 48 }}>T</Avatar>
-        <Box>
-          <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-            Test Rich Menu Account
-          </Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'text.secondary' }}>
-            <PeopleAltIcon fontSize="small" />
-            <Typography variant="body2">10</Typography>
-          </Box>
+        <Avatar
+          src={tenant?.pictureUrl || undefined}
+          sx={{ bgcolor: '#66bb6a', width: 56, height: 56, fontWeight: 700 }}
+        >
+          {!tenant?.pictureUrl && (tenant?.displayName?.[0] || 'O')}
+        </Avatar>
+        <Box sx={{ minWidth: 0 }}>
+          <Stack direction="row" alignItems="center" spacing={1} sx={{ flexWrap: 'wrap' }}>
+            <Typography variant="h6" sx={{ fontWeight: 'bold' }} noWrap>
+              {tenant?.displayName || 'No OA selected'}
+            </Typography>
+            {tenant?.basicId && <Chip size="small" label={tenant.basicId} />}
+          </Stack>
+          {typeof friends !== 'undefined' && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'text.secondary' }}>
+              <PeopleAltIcon fontSize="small" />
+              <Typography variant="body2">{friends}</Typography>
+            </Box>
+          )}
+          {!tenant && (
+            <Typography variant="body2" color="text.secondary">
+              กรุณาเลือก OA จากเมนู <strong>Accounts</strong> ก่อนเริ่มใช้งาน
+            </Typography>
+          )}
         </Box>
+        <Box sx={{ flex: 1 }} />
+        <Button variant="outlined" onClick={() => go('/accounts')}>
+          {tenant ? 'Switch OA' : 'Select OA'}
+        </Button>
       </Box>
 
-      {/* การ์ด 2 ต่อแถว */}
+      {/* Quick actions */}
       <Grid container spacing={2}>
         {/* แถว 1 */}
         <Grid item xs={12} md={6}>
@@ -36,8 +60,8 @@ export default function DashboardHome() {
             description="Broadcast messages to friends"
             Icon={SendIcon}
             buttonText="Send a broadcast"
-            onCardClick={() => navigate('broadcast')}
-            onButtonClick={() => navigate('broadcast')}
+            onCardClick={() => go('/homepage/broadcast')}
+            onButtonClick={() => go('/homepage/broadcast')}
           />
         </Grid>
         <Grid item xs={12} md={6}>
@@ -46,8 +70,8 @@ export default function DashboardHome() {
             description="Use big pics to get more clicks"
             Icon={ImageIcon}
             buttonText="Create rich message"
-            onCardClick={() => navigate('rich-message')}
-            onButtonClick={() => navigate('rich-message')}
+            onCardClick={() => go('/homepage/rich-message')}
+            onButtonClick={() => go('/homepage/rich-message')}
           />
         </Grid>
 
@@ -55,33 +79,21 @@ export default function DashboardHome() {
         <Grid item xs={12} md={6}>
           <QuickActionCard
             title="Greeting message"
-            description="This message will be sent automatically to users when they add you as a friend."
+            description="Auto-sent when users add you as a friend"
             Icon={ChatIcon}
             buttonText="Create Greeting message"
-            onCardClick={() => navigate('greeting-message')}
-            onButtonClick={() => navigate('greeting-message')}
+            onCardClick={() => go('/homepage/greeting-message')}
+            onButtonClick={() => go('/homepage/greeting-message')}
           />
         </Grid>
         <Grid item xs={12} md={6}>
           <QuickActionCard
             title="Rich Menus"
-            description="Create Menus for our company or etc."
+            description="Create menus for your OA"
             Icon={AppsIcon}
             buttonText="Create rich menus"
-            onCardClick={() => navigate('rich-menus')}
-            onButtonClick={() => navigate('rich-menus')}
-          />
-        </Grid>
-
-        {/* แถว 3 */}
-        <Grid item xs={12} md={6}>
-          <QuickActionCard
-            title="Friends"
-            description="Manage your friends list and segments"
-            Icon={TableChartIcon}
-            buttonText="Open friends"
-            onCardClick={() => navigate('friends')}
-            onButtonClick={() => navigate('friends')}
+            onCardClick={() => go('/homepage/rich-menus')}
+            onButtonClick={() => go('/homepage/rich-menus')}
           />
         </Grid>
       </Grid>
