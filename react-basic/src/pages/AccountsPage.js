@@ -5,7 +5,7 @@ import {
   TableCell, TableHead, TableRow, Avatar, Box, IconButton, Dialog,
   DialogTitle, DialogContent, TextField, DialogActions, List, ListItem,
   ListItemAvatar, ListItemText, ListItemSecondaryAction, Tooltip, Divider,
-  Chip, Alert, Link as MuiLink, Card, CardContent, CardMedia
+  Chip, Alert, Link as MuiLink, Card, CardContent
 } from '@mui/material';
 
 import MenuIcon from '@mui/icons-material/Menu';
@@ -521,8 +521,9 @@ export default function AccountsPage() {
                 สร้างบัญชี LINE OA ใหม่ หากยังไม่มี (กรอกข้อมูลชื่อ ประเภท ธุรกิจ ฯลฯ ให้ครบ)
               </Typography>
             </CardContent>
-            <CardMedia component="img" image={imgOA_Create} alt="Create new Official Account"
-              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+            {/* ใช้ Box component="img" แทน CardMedia เพื่อกันความสูงกลายเป็น 0 */}
+            <Box component="img" src={imgOA_Create} alt="Create new Official Account"
+              sx={{ width: '100%', display: 'block', maxHeight: 520, objectFit: 'contain', bgcolor: '#fafafa', borderTop: '1px solid #eee' }} />
             <Box sx={{ px: 2, py: 1, fontSize: 12, color: 'text.secondary' }}>ตัวอย่าง: หน้าสร้าง OA ใหม่</Box>
           </Card>
 
@@ -532,8 +533,8 @@ export default function AccountsPage() {
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>2) กรอกรายละเอียดให้ครบถ้วน</Typography>
               <Typography variant="body2" color="text.secondary">ตรวจสอบชื่อ รูปภาพ และข้อมูลธุรกิจให้ถูกต้องก่อนดำเนินการต่อ</Typography>
             </CardContent>
-            <CardMedia component="img" image={imgOA_Form} alt="OA Form"
-              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+            <Box component="img" src={imgOA_Form} alt="OA Form"
+              sx={{ width: '100%', display: 'block', maxHeight: 520, objectFit: 'contain', bgcolor: '#fafafa', borderTop: '1px solid #eee' }} />
           </Card>
 
           {/* B3 */}
@@ -541,8 +542,8 @@ export default function AccountsPage() {
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>3) ตรวจสอบข้อมูลและกด “เสร็จสิ้น”</Typography>
             </CardContent>
-            <CardMedia component="img" image={imgOA_Done} alt="Complete OA"
-              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+            <Box component="img" src={imgOA_Done} alt="Complete OA"
+              sx={{ width: '100%', display: 'block', maxHeight: 520, objectFit: 'contain', bgcolor: '#fafafa', borderTop: '1px solid #eee' }} />
           </Card>
 
           {/* B4 */}
@@ -550,8 +551,8 @@ export default function AccountsPage() {
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>4) กลับไปเลือก Account ที่สร้างจากรายการ (List)</Typography>
             </CardContent>
-            <CardMedia component="img" image={imgOA_List} alt="OA List"
-              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+            <Box component="img" src={imgOA_List} alt="OA List"
+              sx={{ width: '100%', display: 'block', maxHeight: 520, objectFit: 'contain', bgcolor: '#fafafa', borderTop: '1px solid #eee' }} />
           </Card>
 
           {/* B5 */}
@@ -559,8 +560,8 @@ export default function AccountsPage() {
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>5) กด “Settings” มุมขวาบนของ OA</Typography>
             </CardContent>
-            <CardMedia component="img" image={imgOA_Settings} alt="OA Settings"
-              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+            <Box component="img" src={imgOA_Settings} alt="OA Settings"
+              sx={{ width: '100%', display: 'block', maxHeight: 520, objectFit: 'contain', bgcolor: '#fafafa', borderTop: '1px solid #eee' }} />
           </Card>
 
           {/* B6 */}
@@ -568,8 +569,8 @@ export default function AccountsPage() {
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>6) ไปที่หัวข้อ “Messaging API” และกด “Enable Messaging API”</Typography>
             </CardContent>
-            <CardMedia component="img" image={imgOA_Enable} alt="Enable Messaging API"
-              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+            <Box component="img" src={imgOA_Enable} alt="Enable Messaging API"
+              sx={{ width: '100%', display: 'block', maxHeight: 520, objectFit: 'contain', bgcolor: '#fafafa', borderTop: '1px solid #eee' }} />
           </Card>
 
           {/* B7 */}
@@ -577,8 +578,8 @@ export default function AccountsPage() {
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>7) เลือก Provider ที่ต้องการหรือสร้าง Provider ใหม่</Typography>
             </CardContent>
-            <CardMedia component="img" image={imgOA_Provider} alt="Choose Provider"
-              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+            <Box component="img" src={imgOA_Provider} alt="Choose Provider"
+              sx={{ width: '100%', display: 'block', maxHeight: 520, objectFit: 'contain', bgcolor: '#fafafa', borderTop: '1px solid #eee' }} />
           </Card>
 
           {/* B8 */}
@@ -586,8 +587,8 @@ export default function AccountsPage() {
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>8) กด “OK”</Typography>
             </CardContent>
-            <CardMedia component="img" image={imgOA_OK} alt="Confirm OK"
-              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+            <Box component="img" src={imgOA_OK} alt="Confirm OK"
+              sx={{ width: '100%', display: 'block', maxHeight: 520, objectFit: 'contain', bgcolor: '#fafafa', borderTop: '1px solid #eee' }} />
           </Card>
 
           {/* B9 */}
@@ -599,8 +600,8 @@ export default function AccountsPage() {
                 - แท็บ <b>Messaging API</b>: เลื่อนลงเพื่อดู <b>Channel secret</b>
               </Typography>
             </CardContent>
-            <CardMedia component="img" image={imgOA_Check_id} alt="Channel ID / Channel secret"
-              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+            <Box component="img" src={imgOA_Check_id} alt="Channel ID / Channel secret"
+              sx={{ width: '100%', display: 'block', maxHeight: 520, objectFit: 'contain', bgcolor: '#fafafa', borderTop: '1px solid #eee' }} />
           </Card>
 
           {/* ใช้กับระบบเราอย่างไร */}
