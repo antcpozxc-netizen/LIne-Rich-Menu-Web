@@ -1,3 +1,4 @@
+// src/pages/HomePage.js
 import React, { useEffect, useState } from 'react';
 import {
   AppBar, Toolbar, Typography, Box, Avatar, Drawer, List, ListItem,
@@ -372,7 +373,7 @@ export default function HomePage() {
               </List>
             </Collapse>
 
-            {/* Friends */}
+            {/* Friends / Tips */}
             <ListItem disablePadding>
               <ListItemButton onClick={() => navigate(`/homepage/tips${activeTenantId ? `?tenant=${activeTenantId}` : ''}`)}>
                 <ListItemIcon><TableChartIcon /></ListItemIcon>
@@ -380,7 +381,7 @@ export default function HomePage() {
               </ListItemButton>
             </ListItem>
 
-            {/* Admin Templates */}
+            {/* Admin Templates (ไอคอนใหม่) */}
             {isAdmin && (
               <ListItem disablePadding>
                 <ListItemButton onClick={() => navigate(`/homepage/admin/templates${activeTenantId ? `?tenant=${activeTenantId}` : ''}`)}>

@@ -52,14 +52,9 @@ export default function BroadcastListPage() {
   const tenantFromUrl = searchParams.get('tenant') || '';
   const tenantId = tenantFromUrl || outletTenantId || '';
 
-  // ถ้าไม่มี tenant ให้เด้งไปหน้าเลือก OA ทันที
+  // ถ้าไม่มี tenant → ไม่ดึงข้อมูล แต่ยังเข้าหน้าได้ (โหมด guest/ยังไม่เลือก OA)
   useEffect(() => {
-    if (!tenantId) {
-      alert('กรุณาเลือก OA ก่อน');
-      // ใช้ navigate แทนที่จะ setRows ว่างเฉย ๆ
-      // (ปรับ path ให้ตรงกับของคุณ)
-      window.location.replace('/accounts');
-    }
+    // no-op (ให้ effect ด้านล่างเป็นคนตัดสินใจว่าจะยิง query หรือไม่)
   }, [tenantId]);
 
   // UI state
@@ -92,7 +87,14 @@ export default function BroadcastListPage() {
   }, [tab, qId, qDate, qTime, orderByKey, order, tenantId]);
 
   useEffect(() => {
-    if (!tenantId) return;
+    if (!tenantId) {
+      // ไม่มี OA ก็เคลียร์ตาราง/หยุดโหลด เงียบ ๆ
+      setRows([]);
+      setHasMore(false);
+      setLoading(false);
+      setErrMsg('');
+      return;
+    }
     const run = async () => {
       setLoading(true);
       try {
@@ -350,7 +352,9 @@ export default function BroadcastListPage() {
             ) : rows.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} align="center" sx={{ py: 6, color: 'text.secondary' }}>
-                  {errMsg ? <span style={{color:'#d32f2f'}}>{errMsg}</span> : 'No data'}
+                  {tenantId
+                    ? (errMsg ? <span style={{color:'#d32f2f'}}>{errMsg}</span> : 'No data')
+                    : 'เลือก OA เพื่อดูรายการ broadcast (ยังไม่ต้อง Login ก็เข้าหน้านี้ได้)'}
                 </TableCell>
               </TableRow>
             ) : (
