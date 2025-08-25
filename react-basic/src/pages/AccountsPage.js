@@ -27,28 +27,56 @@ import {
 } from 'firebase/firestore';
 import { fullLogout } from '../lib/authx';
 
-// ---------- รูปขั้นตอน B1–B9 (import แบบปกติ) ----------
-import imgOA_Create   from '../assets/oa_create_new.png';
-import imgOA_Form     from '../assets/oa_form.png';
-import imgOA_Done     from '../assets/oa_done.png';
-import imgOA_List     from '../assets/oa_list.png';
-import imgOA_Settings from '../assets/oa_settings.png';
-import imgOA_Enable   from '../assets/oa_enable_messaging_api.png';
-import imgOA_Provider from '../assets/oa_choose_provider.png';
-import imgOA_OK       from '../assets/oa_ok.png';
-import imgOA_Check_id from '../assets/oa_check_id.png';
+// ---------- ชี้พาธรูปจาก public/assets ----------
+const PUB = process.env.PUBLIC_URL || '';
+const IMG = {
+  create:   `${PUB}/assets/oa_create_new.png`,
+  form:     `${PUB}/assets/oa_form.png`,
+  done:     `${PUB}/assets/oa_done.png`,
+  list:     `${PUB}/assets/oa_list.png`,
+  settings: `${PUB}/assets/oa_settings.png`,
+  enable:   `${PUB}/assets/oa_enable_messaging_api.png`,
+  provider: `${PUB}/assets/oa_choose_provider.png`,
+  ok:       `${PUB}/assets/oa_ok.png`,
+  checkId:  `${PUB}/assets/oa_check_id.png`,
+};
+
+// กล่องรูปมาตรฐาน + กัน onError
+const StepImage = ({ src, alt }) => (
+  <Box
+    component="img"
+    src={src}
+    alt={alt}
+    loading="lazy"
+    decoding="async"
+    onError={(e) => {
+      // ถ้ารูปโหลดไม่ขึ้น ให้โชว์กล่องเทาแทน (จะเห็นชัดกว่าพื้นที่ว่าง)
+      e.currentTarget.replaceWith(
+        Object.assign(document.createElement('div'), {
+          style: 'height:160px;background:#f5f5f5;border-top:1px solid #eee;display:flex;align-items:center;justify-content:center;color:#777;font:500 13px/1.4 system-ui',
+          innerText: 'ไม่สามารถโหลดรูปได้: ' + (alt || ''),
+        })
+      );
+    }}
+    sx={{
+      width: '100%',
+      display: 'block',
+      maxHeight: 520,
+      objectFit: 'contain',
+      bgcolor: '#fafafa',
+      borderTop: '1px solid #eee',
+    }}
+  />
+);
 
 // -------- utils --------
 const normalizeUid = (input) => {
   const s = (input || '').trim();
   if (!s) return null;
-
   const m1 = /^line:([Uu])([0-9a-f]{32})$/i.exec(s);
   if (m1) return `line:U${m1[2].toLowerCase()}`;
-
   const m2 = /^([Uu])([0-9a-f]{32})$/i.exec(s);
   if (m2) return `line:U${m2[2].toLowerCase()}`;
-
   return null;
 };
 const uidLooksValid = (input) => !!normalizeUid(input);
@@ -272,8 +300,6 @@ export default function AccountsPage() {
       setSearching(false);
     }
   };
-
-  const isOwnerOf = (t) => user && t && t.ownerUid === user.uid;
 
   const addMember = async (memberUid) => {
     if (!activeTenant) return;
@@ -521,9 +547,7 @@ export default function AccountsPage() {
                 สร้างบัญชี LINE OA ใหม่ หากยังไม่มี (กรอกข้อมูลชื่อ ประเภท ธุรกิจ ฯลฯ ให้ครบ)
               </Typography>
             </CardContent>
-            {/* ใช้ Box component="img" แทน CardMedia เพื่อกันความสูงกลายเป็น 0 */}
-            <Box component="img" src={imgOA_Create} alt="Create new Official Account"
-              sx={{ width: '100%', display: 'block', maxHeight: 520, objectFit: 'contain', bgcolor: '#fafafa', borderTop: '1px solid #eee' }} />
+            <StepImage src={IMG.create} alt="Create new Official Account" />
             <Box sx={{ px: 2, py: 1, fontSize: 12, color: 'text.secondary' }}>ตัวอย่าง: หน้าสร้าง OA ใหม่</Box>
           </Card>
 
@@ -533,8 +557,7 @@ export default function AccountsPage() {
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>2) กรอกรายละเอียดให้ครบถ้วน</Typography>
               <Typography variant="body2" color="text.secondary">ตรวจสอบชื่อ รูปภาพ และข้อมูลธุรกิจให้ถูกต้องก่อนดำเนินการต่อ</Typography>
             </CardContent>
-            <Box component="img" src={imgOA_Form} alt="OA Form"
-              sx={{ width: '100%', display: 'block', maxHeight: 520, objectFit: 'contain', bgcolor: '#fafafa', borderTop: '1px solid #eee' }} />
+            <StepImage src={IMG.form} alt="OA Form" />
           </Card>
 
           {/* B3 */}
@@ -542,8 +565,7 @@ export default function AccountsPage() {
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>3) ตรวจสอบข้อมูลและกด “เสร็จสิ้น”</Typography>
             </CardContent>
-            <Box component="img" src={imgOA_Done} alt="Complete OA"
-              sx={{ width: '100%', display: 'block', maxHeight: 520, objectFit: 'contain', bgcolor: '#fafafa', borderTop: '1px solid #eee' }} />
+            <StepImage src={IMG.done} alt="Complete OA" />
           </Card>
 
           {/* B4 */}
@@ -551,8 +573,7 @@ export default function AccountsPage() {
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>4) กลับไปเลือก Account ที่สร้างจากรายการ (List)</Typography>
             </CardContent>
-            <Box component="img" src={imgOA_List} alt="OA List"
-              sx={{ width: '100%', display: 'block', maxHeight: 520, objectFit: 'contain', bgcolor: '#fafafa', borderTop: '1px solid #eee' }} />
+            <StepImage src={IMG.list} alt="OA List" />
           </Card>
 
           {/* B5 */}
@@ -560,8 +581,7 @@ export default function AccountsPage() {
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>5) กด “Settings” มุมขวาบนของ OA</Typography>
             </CardContent>
-            <Box component="img" src={imgOA_Settings} alt="OA Settings"
-              sx={{ width: '100%', display: 'block', maxHeight: 520, objectFit: 'contain', bgcolor: '#fafafa', borderTop: '1px solid #eee' }} />
+            <StepImage src={IMG.settings} alt="OA Settings" />
           </Card>
 
           {/* B6 */}
@@ -569,8 +589,7 @@ export default function AccountsPage() {
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>6) ไปที่หัวข้อ “Messaging API” และกด “Enable Messaging API”</Typography>
             </CardContent>
-            <Box component="img" src={imgOA_Enable} alt="Enable Messaging API"
-              sx={{ width: '100%', display: 'block', maxHeight: 520, objectFit: 'contain', bgcolor: '#fafafa', borderTop: '1px solid #eee' }} />
+            <StepImage src={IMG.enable} alt="Enable Messaging API" />
           </Card>
 
           {/* B7 */}
@@ -578,8 +597,7 @@ export default function AccountsPage() {
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>7) เลือก Provider ที่ต้องการหรือสร้าง Provider ใหม่</Typography>
             </CardContent>
-            <Box component="img" src={imgOA_Provider} alt="Choose Provider"
-              sx={{ width: '100%', display: 'block', maxHeight: 520, objectFit: 'contain', bgcolor: '#fafafa', borderTop: '1px solid #eee' }} />
+            <StepImage src={IMG.provider} alt="Choose Provider" />
           </Card>
 
           {/* B8 */}
@@ -587,8 +605,7 @@ export default function AccountsPage() {
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>8) กด “OK”</Typography>
             </CardContent>
-            <Box component="img" src={imgOA_OK} alt="Confirm OK"
-              sx={{ width: '100%', display: 'block', maxHeight: 520, objectFit: 'contain', bgcolor: '#fafafa', borderTop: '1px solid #eee' }} />
+            <StepImage src={IMG.ok} alt="Confirm OK" />
           </Card>
 
           {/* B9 */}
@@ -600,11 +617,9 @@ export default function AccountsPage() {
                 - แท็บ <b>Messaging API</b>: เลื่อนลงเพื่อดู <b>Channel secret</b>
               </Typography>
             </CardContent>
-            <Box component="img" src={imgOA_Check_id} alt="Channel ID / Channel secret"
-              sx={{ width: '100%', display: 'block', maxHeight: 520, objectFit: 'contain', bgcolor: '#fafafa', borderTop: '1px solid #eee' }} />
+            <StepImage src={IMG.checkId} alt="Channel ID / Channel secret" />
           </Card>
 
-          {/* ใช้กับระบบเราอย่างไร */}
           <Card variant="outlined">
             <CardContent>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>ใช้ค่าเหล่านี้กับระบบเราอย่างไร?</Typography>
@@ -701,7 +716,7 @@ export default function AccountsPage() {
                         <IconButton
                           edge="end" size="small"
                           onClick={() => removeMember(m.uid)}
-                          disabled={activeTenant?.ownerUid !== user?.uid || m.uid === activeTenant?.ownerUid}
+                          disabled={activeTenant?.ownerUid !== user?.uid || м.uid === activeTenant?.ownerUid}
                         >
                           <DeleteIcon />
                         </IconButton>
