@@ -27,7 +27,7 @@ import {
 } from 'firebase/firestore';
 import { fullLogout } from '../lib/authx';
 
-// -------- ใช้รูปจากโฟลเดอร์ public/assets --------
+// ---------- ชี้ไฟล์รูปจาก public/assets ----------
 const PUB = process.env.PUBLIC_URL || '';
 const IMG = {
   create:   `${PUB}/assets/oa_create_new.png`,
@@ -41,6 +41,29 @@ const IMG = {
   check:    `${PUB}/assets/oa_check_id.png`,
 };
 
+// รูปแบบรูปสำหรับใน Dialog (บังคับ eager load + กันความสูงเป็น 0)
+function HowImg({ src, alt }) {
+  return (
+    <Box
+      component="img"
+      src={src}
+      alt={alt}
+      loading="eager"         // แก้ปัญหา lazy-load ใน container ที่ scroll ได้
+      decoding="sync"
+      sx={{
+        width: '100%',
+        height: 'auto',
+        minHeight: 240,        // กันไม่ให้หดเหลือ 0px ขณะรอโหลด
+        maxHeight: 520,
+        objectFit: 'contain',
+        display: 'block',
+        background: '#fafafa',
+        borderTop: '1px solid #eee',
+      }}
+    />
+  );
+}
+
 // -------- utils --------
 const normalizeUid = (input) => {
   const s = (input || '').trim();
@@ -52,7 +75,6 @@ const normalizeUid = (input) => {
   return null;
 };
 const uidLooksValid = (input) => !!normalizeUid(input);
-
 function sanitizeNext(raw) {
   if (!raw) return '';
   try {
@@ -62,33 +84,6 @@ function sanitizeNext(raw) {
   } catch {
     return String(raw).startsWith('/') ? raw : '';
   }
-}
-
-// === ใช้ <img> ตรง ๆ เพื่อบังคับ eager load ===
-function ImgStep({ src, alt, caption }) {
-  return (
-    <Box sx={{ borderTop: '1px solid #eee', bgcolor: '#fafafa' }}>
-      <img
-        src={src}
-        alt={alt}
-        loading="eager"
-        decoding="sync"
-        referrerPolicy="no-referrer"
-        style={{
-          width: '100%',
-          height: 'auto',
-          display: 'block',
-          maxHeight: 520,
-          objectFit: 'contain'
-        }}
-      />
-      {caption && (
-        <Box sx={{ px: 2, py: 1, fontSize: 12, color: 'text.secondary' }}>
-          {caption}
-        </Box>
-      )}
-    </Box>
-  );
 }
 
 export default function AccountsPage() {
@@ -154,13 +149,10 @@ export default function AccountsPage() {
   // ---- subscribe รายการ OA ----
   useEffect(() => {
     if (!user) return;
-
     const acc = { owner: [], member: [] };
     const unsubs = [];
-
     const qOwner = query(collection(db, 'tenants'), where('ownerUid', '==', user.uid));
     const qMember = query(collection(db, 'tenants'), where('members', 'array-contains', user.uid));
-
     unsubs.push(onSnapshot(qOwner, (snap) => {
       acc.owner = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       setTenants(mergeUnique(acc.owner, acc.member));
@@ -169,7 +161,6 @@ export default function AccountsPage() {
       acc.member = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       setTenants(mergeUnique(acc.owner, acc.member));
     }));
-
     return () => unsubs.forEach(u => u());
   }, [user]);
 
@@ -180,9 +171,7 @@ export default function AccountsPage() {
   };
 
   // ---- ออกจากระบบ ----
-  const handleSignOut = async () => {
-    await fullLogout('/');
-  };
+  const handleSignOut = async () => { await fullLogout('/'); };
 
   // ---- เชื่อมต่อ OA ----
   const handleAddOA = async () => {
@@ -196,10 +185,7 @@ export default function AccountsPage() {
       const idToken = await auth.currentUser.getIdToken();
       const res = await fetch('/api/tenants', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
         body: JSON.stringify({ channelId, channelSecret }),
       });
       const text = await res.text();
@@ -207,10 +193,7 @@ export default function AccountsPage() {
       try { json = JSON.parse(text); } catch { json = { error: text }; }
       if (!res.ok) throw new Error(json.detail || json.error || 'add failed');
       if (json.deduped) alert('OA นี้ถูกเชื่อมไว้แล้ว อัปเดตข้อมูล/โทเค็นล่าสุดให้เรียบร้อย ✅');
-
-      setOpenAdd(false);
-      setChannelId('');
-      setChannelSecret('');
+      setOpenAdd(false); setChannelId(''); setChannelSecret('');
     } catch (e) {
       alert('เพิ่ม OA ไม่สำเร็จ: ' + e.message);
     } finally {
@@ -250,16 +233,13 @@ export default function AccountsPage() {
   useEffect(() => {
     if (!openMembers) return;
     if (searchDebounce.current) clearTimeout(searchDebounce.current);
-    searchDebounce.current = setTimeout(() => {
-      doSearch(searchText).catch(() => {});
-    }, 350);
+    searchDebounce.current = setTimeout(() => { doSearch(searchText).catch(() => {}); }, 350);
   }, [searchText, openMembers]);
 
   const doSearch = async (qstr) => {
     if (!openMembers) return;
     const q = (qstr || '').trim();
     if (!q) { setSearchResults([]); return; }
-
     setSearching(true);
     try {
       if (uidLooksValid(q)) {
@@ -300,24 +280,18 @@ export default function AccountsPage() {
     }
   };
 
-  const isOwnerOf = (t) => user && t && t.ownerUid === user.uid;
-
   const addMember = async (memberUid) => {
     if (!activeTenant) return;
     try {
       const idToken = await auth.currentUser.getIdToken();
       const res = await fetch(`/api/tenants/${activeTenant.id}/members:add`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`
-        },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
         body: JSON.stringify({ memberUid })
       });
       const text = await res.text();
       let json = {}; try { json = JSON.parse(text); } catch { json = { error: text }; }
       if (!res.ok) throw new Error(json.detail || json.error || 'add member failed');
-
       await reloadMembers(activeTenant);
       alert('เพิ่มสมาชิกสำเร็จ');
     } catch (e) {
@@ -327,23 +301,17 @@ export default function AccountsPage() {
 
   const removeMember = async (memberUid) => {
     if (!activeTenant) return;
-    if (memberUid === activeTenant.ownerUid) {
-      alert('ไม่สามารถลบ Owner ได้'); return;
-    }
+    if (memberUid === activeTenant.ownerUid) { alert('ไม่สามารถลบ Owner ได้'); return; }
     try {
       const idToken = await auth.currentUser.getIdToken();
       const res = await fetch(`/api/tenants/${activeTenant.id}/members:remove`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`
-        },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
         body: JSON.stringify({ memberUid })
       });
       const text = await res.text();
       let json = {}; try { json = JSON.parse(text); } catch { json = { error: text }; }
       if (!res.ok) throw new Error(json.detail || json.error || 'remove member failed');
-
       await reloadMembers(activeTenant);
       alert('ลบสมาชิกสำเร็จ');
     } catch (e) {
@@ -397,28 +365,20 @@ export default function AccountsPage() {
                 </IconButton>
               </Tooltip>
 
-              <Avatar
-                src={photoURL || undefined}
-                alt={displayName}
-                sx={{ width: 36, height: 36, bgcolor: '#004d40', fontWeight: 700 }}
-              >
+              <Avatar src={photoURL || undefined} alt={displayName} sx={{ width: 36, height: 36, bgcolor: '#004d40', fontWeight: 700 }}>
                 {!photoURL && initial}
               </Avatar>
               <Box sx={{ display: 'flex', flexDirection: 'column', maxWidth: 180 }}>
                 <Typography sx={{ color: '#fff', fontWeight: 600 }} noWrap>{displayName}</Typography>
                 {profile?.line?.userId && (
-                  <Typography sx={{ color: '#e8f5e9', fontSize: 11 }} noWrap>
-                    LINE: {profile.line.userId}
-                  </Typography>
+                  <Typography sx={{ color: '#e8f5e9', fontSize: 11 }} noWrap>LINE: {profile.line.userId}</Typography>
                 )}
               </Box>
 
               <Button
                 variant="outlined" size="small" startIcon={<LogoutIcon />} onClick={handleSignOut}
-                sx={{
-                  color: '#fff', borderColor: '#fff', textTransform: 'none',
-                  '&:hover': { borderColor: '#e0f2f1', backgroundColor: 'rgba(255,255,255,.08)' },
-                }}
+                sx={{ color: '#fff', borderColor: '#fff', textTransform: 'none',
+                  '&:hover': { borderColor: '#e0f2f1', backgroundColor: 'rgba(255,255,255,.08)' }, }}
               >
                 Logout
               </Button>
@@ -534,11 +494,18 @@ export default function AccountsPage() {
         </DialogActions>
       </Dialog>
 
-      {/* Dialog: 3) การเชื่อมต่อ LINE OA — ข้อ B */}
+      {/* Dialog: Tips B1–B9 (บังคับรูปโหลดทันที + กันโดนบีบ) */}
       <Dialog open={openHowTo} onClose={() => setOpenHowTo(false)} fullWidth maxWidth="md">
         <DialogTitle>Tips : การเชื่อมต่อ LINE OA (Channel ID / Channel secret)</DialogTitle>
-        <DialogContent dividers sx={{ display: 'grid', gap: 2 }}>
-          {/* B1 */}
+        <DialogContent
+          dividers
+          sx={{
+            display: 'grid',
+            gap: 2,
+            maxHeight: '75vh',
+            overflowY: 'auto',
+          }}
+        >
           <Card variant="outlined">
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
@@ -548,67 +515,59 @@ export default function AccountsPage() {
                 สร้างบัญชี LINE OA ใหม่ หากยังไม่มี (กรอกข้อมูลชื่อ ประเภท ธุรกิจ ฯลฯ ให้ครบ)
               </Typography>
             </CardContent>
-            <ImgStep src={IMG.create} alt="Create new Official Account" caption="ตัวอย่าง: หน้าสร้าง OA ใหม่" />
+            <HowImg src={IMG.create} alt="Create new Official Account" />
           </Card>
 
-          {/* B2 */}
           <Card variant="outlined">
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>2) กรอกรายละเอียดให้ครบถ้วน</Typography>
               <Typography variant="body2" color="text.secondary">ตรวจสอบชื่อ รูปภาพ และข้อมูลธุรกิจให้ถูกต้องก่อนดำเนินการต่อ</Typography>
             </CardContent>
-            <ImgStep src={IMG.form} alt="OA Form" />
+            <HowImg src={IMG.form} alt="OA Form" />
           </Card>
 
-          {/* B3 */}
           <Card variant="outlined">
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>3) ตรวจสอบข้อมูลและกด “เสร็จสิ้น”</Typography>
             </CardContent>
-            <ImgStep src={IMG.done} alt="Complete OA" />
+            <HowImg src={IMG.done} alt="Complete OA" />
           </Card>
 
-          {/* B4 */}
           <Card variant="outlined">
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>4) กลับไปเลือก Account ที่สร้างจากรายการ (List)</Typography>
             </CardContent>
-            <ImgStep src={IMG.list} alt="OA List" />
+            <HowImg src={IMG.list} alt="OA List" />
           </Card>
 
-          {/* B5 */}
           <Card variant="outlined">
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>5) กด “Settings” มุมขวาบนของ OA</Typography>
             </CardContent>
-            <ImgStep src={IMG.settings} alt="OA Settings" />
+            <HowImg src={IMG.settings} alt="OA Settings" />
           </Card>
 
-          {/* B6 */}
           <Card variant="outlined">
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>6) ไปที่หัวข้อ “Messaging API” และกด “Enable Messaging API”</Typography>
             </CardContent>
-            <ImgStep src={IMG.enable} alt="Enable Messaging API" />
+            <HowImg src={IMG.enable} alt="Enable Messaging API" />
           </Card>
 
-          {/* B7 */}
           <Card variant="outlined">
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>7) เลือก Provider ที่ต้องการหรือสร้าง Provider ใหม่</Typography>
             </CardContent>
-            <ImgStep src={IMG.provider} alt="Choose Provider" />
+            <HowImg src={IMG.provider} alt="Choose Provider" />
           </Card>
 
-          {/* B8 */}
           <Card variant="outlined">
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>8) กด “OK”</Typography>
             </CardContent>
-            <ImgStep src={IMG.ok} alt="Confirm OK" />
+            <HowImg src={IMG.ok} alt="Confirm OK" />
           </Card>
 
-          {/* B9 */}
           <Card variant="outlined">
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>9) ดูค่า Channel ID / Channel secret</Typography>
@@ -617,7 +576,7 @@ export default function AccountsPage() {
                 - แท็บ <b>Messaging API</b>: เลื่อนลงเพื่อดู <b>Channel secret</b>
               </Typography>
             </CardContent>
-            <ImgStep src={IMG.check} alt="Channel ID / Channel secret" />
+            <HowImg src={IMG.check} alt="Channel ID / Channel secret" />
           </Card>
 
           <Card variant="outlined">
@@ -663,7 +622,6 @@ export default function AccountsPage() {
             </Tooltip>
           </Box>
 
-          {/* Search results */}
           <Box>
             <Typography variant="subtitle2" sx={{ mb: 1 }}>
               ผลลัพธ์การค้นหา {searching ? '(กำลังค้นหา...)' : ''}
@@ -690,7 +648,6 @@ export default function AccountsPage() {
 
           <Divider />
 
-          {/* Current members */}
           <Box>
             <Typography variant="subtitle2" sx={{ mb: 1 }}>
               สมาชิกปัจจุบัน {loadingMembers ? '(กำลังโหลด...)' : ''}
