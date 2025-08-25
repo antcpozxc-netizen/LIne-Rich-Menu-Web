@@ -27,48 +27,19 @@ import {
 } from 'firebase/firestore';
 import { fullLogout } from '../lib/authx';
 
-
-// ---------- รูปจาก public/assets (ใช้ absolute path) ----------
-const asset = (name) => `/assets/${name}`;
+// -------- ใช้รูปจากโฟลเดอร์ public/assets --------
+const PUB = process.env.PUBLIC_URL || '';
 const IMG = {
-  create:   asset('oa_create_new.png'),
-  form:     asset('oa_form.png'),
-  done:     asset('oa_done.png'),
-  list:     asset('oa_list.png'),
-  settings: asset('oa_settings.png'),
-  enable:   asset('oa_enable_messaging_api.png'),
-  provider: asset('oa_choose_provider.png'),
-  ok:       asset('oa_ok.png'),
-  checkId:  asset('oa_check_id.png'),
+  create:   `${PUB}/assets/oa_create_new.png`,
+  form:     `${PUB}/assets/oa_form.png`,
+  done:     `${PUB}/assets/oa_done.png`,
+  list:     `${PUB}/assets/oa_list.png`,
+  settings: `${PUB}/assets/oa_settings.png`,
+  enable:   `${PUB}/assets/oa_enable_messaging_api.png`,
+  provider: `${PUB}/assets/oa_choose_provider.png`,
+  ok:       `${PUB}/assets/oa_ok.png`,
+  check:    `${PUB}/assets/oa_check_id.png`,
 };
-
-// คอมโพเนนต์รูป + onError fallback
-const StepImage = ({ src, alt }) => (
-  <Box
-    component="img"
-    src={src}
-    alt={alt}
-    loading="lazy"
-    decoding="async"
-    onError={(e) => {
-      e.currentTarget.replaceWith(
-        Object.assign(document.createElement('div'), {
-          style:
-            'height:160px;background:#f5f5f5;border-top:1px solid #eee;display:flex;align-items:center;justify-content:center;color:#777;font:500 13px/1.4 system-ui',
-          innerText: 'ไม่สามารถโหลดรูปได้: ' + (alt || ''),
-        })
-      );
-    }}
-    sx={{
-      width: '100%',
-      display: 'block',
-      maxHeight: 520,
-      objectFit: 'contain',
-      bgcolor: '#fafafa',
-      borderTop: '1px solid #eee',
-    }}
-  />
-);
 
 // -------- utils --------
 const normalizeUid = (input) => {
@@ -91,6 +62,33 @@ function sanitizeNext(raw) {
   } catch {
     return String(raw).startsWith('/') ? raw : '';
   }
+}
+
+// === ใช้ <img> ตรง ๆ เพื่อบังคับ eager load ===
+function ImgStep({ src, alt, caption }) {
+  return (
+    <Box sx={{ borderTop: '1px solid #eee', bgcolor: '#fafafa' }}>
+      <img
+        src={src}
+        alt={alt}
+        loading="eager"
+        decoding="sync"
+        referrerPolicy="no-referrer"
+        style={{
+          width: '100%',
+          height: 'auto',
+          display: 'block',
+          maxHeight: 520,
+          objectFit: 'contain'
+        }}
+      />
+      {caption && (
+        <Box sx={{ px: 2, py: 1, fontSize: 12, color: 'text.secondary' }}>
+          {caption}
+        </Box>
+      )}
+    </Box>
+  );
 }
 
 export default function AccountsPage() {
@@ -301,6 +299,8 @@ export default function AccountsPage() {
       setSearching(false);
     }
   };
+
+  const isOwnerOf = (t) => user && t && t.ownerUid === user.uid;
 
   const addMember = async (memberUid) => {
     if (!activeTenant) return;
@@ -548,8 +548,7 @@ export default function AccountsPage() {
                 สร้างบัญชี LINE OA ใหม่ หากยังไม่มี (กรอกข้อมูลชื่อ ประเภท ธุรกิจ ฯลฯ ให้ครบ)
               </Typography>
             </CardContent>
-            <StepImage src={IMG.create} alt="Create new Official Account" />
-            <Box sx={{ px: 2, py: 1, fontSize: 12, color: 'text.secondary' }}>ตัวอย่าง: หน้าสร้าง OA ใหม่</Box>
+            <ImgStep src={IMG.create} alt="Create new Official Account" caption="ตัวอย่าง: หน้าสร้าง OA ใหม่" />
           </Card>
 
           {/* B2 */}
@@ -558,7 +557,7 @@ export default function AccountsPage() {
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>2) กรอกรายละเอียดให้ครบถ้วน</Typography>
               <Typography variant="body2" color="text.secondary">ตรวจสอบชื่อ รูปภาพ และข้อมูลธุรกิจให้ถูกต้องก่อนดำเนินการต่อ</Typography>
             </CardContent>
-            <StepImage src={IMG.form} alt="OA Form" />
+            <ImgStep src={IMG.form} alt="OA Form" />
           </Card>
 
           {/* B3 */}
@@ -566,7 +565,7 @@ export default function AccountsPage() {
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>3) ตรวจสอบข้อมูลและกด “เสร็จสิ้น”</Typography>
             </CardContent>
-            <StepImage src={IMG.done} alt="Complete OA" />
+            <ImgStep src={IMG.done} alt="Complete OA" />
           </Card>
 
           {/* B4 */}
@@ -574,7 +573,7 @@ export default function AccountsPage() {
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>4) กลับไปเลือก Account ที่สร้างจากรายการ (List)</Typography>
             </CardContent>
-            <StepImage src={IMG.list} alt="OA List" />
+            <ImgStep src={IMG.list} alt="OA List" />
           </Card>
 
           {/* B5 */}
@@ -582,7 +581,7 @@ export default function AccountsPage() {
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>5) กด “Settings” มุมขวาบนของ OA</Typography>
             </CardContent>
-            <StepImage src={IMG.settings} alt="OA Settings" />
+            <ImgStep src={IMG.settings} alt="OA Settings" />
           </Card>
 
           {/* B6 */}
@@ -590,7 +589,7 @@ export default function AccountsPage() {
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>6) ไปที่หัวข้อ “Messaging API” และกด “Enable Messaging API”</Typography>
             </CardContent>
-            <StepImage src={IMG.enable} alt="Enable Messaging API" />
+            <ImgStep src={IMG.enable} alt="Enable Messaging API" />
           </Card>
 
           {/* B7 */}
@@ -598,7 +597,7 @@ export default function AccountsPage() {
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>7) เลือก Provider ที่ต้องการหรือสร้าง Provider ใหม่</Typography>
             </CardContent>
-            <StepImage src={IMG.provider} alt="Choose Provider" />
+            <ImgStep src={IMG.provider} alt="Choose Provider" />
           </Card>
 
           {/* B8 */}
@@ -606,7 +605,7 @@ export default function AccountsPage() {
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>8) กด “OK”</Typography>
             </CardContent>
-            <StepImage src={IMG.ok} alt="Confirm OK" />
+            <ImgStep src={IMG.ok} alt="Confirm OK" />
           </Card>
 
           {/* B9 */}
@@ -618,7 +617,7 @@ export default function AccountsPage() {
                 - แท็บ <b>Messaging API</b>: เลื่อนลงเพื่อดู <b>Channel secret</b>
               </Typography>
             </CardContent>
-            <StepImage src={IMG.checkId} alt="Channel ID / Channel secret" />
+            <ImgStep src={IMG.check} alt="Channel ID / Channel secret" />
           </Card>
 
           <Card variant="outlined">
