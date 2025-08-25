@@ -27,7 +27,7 @@ import {
 } from 'firebase/firestore';
 import { fullLogout } from '../lib/authx';
 
-// ---------- ชี้พาธรูปจาก public/assets ----------
+// ---------- รูปจาก public/assets ----------
 const PUB = process.env.PUBLIC_URL || '';
 const IMG = {
   create:   `${PUB}/assets/oa_create_new.png`,
@@ -41,7 +41,7 @@ const IMG = {
   checkId:  `${PUB}/assets/oa_check_id.png`,
 };
 
-// กล่องรูปมาตรฐาน + กัน onError
+// แสดงรูป + กัน onError ให้เห็น placeholder
 const StepImage = ({ src, alt }) => (
   <Box
     component="img"
@@ -50,7 +50,6 @@ const StepImage = ({ src, alt }) => (
     loading="lazy"
     decoding="async"
     onError={(e) => {
-      // ถ้ารูปโหลดไม่ขึ้น ให้โชว์กล่องเทาแทน (จะเห็นชัดกว่าพื้นที่ว่าง)
       e.currentTarget.replaceWith(
         Object.assign(document.createElement('div'), {
           style: 'height:160px;background:#f5f5f5;border-top:1px solid #eee;display:flex;align-items:center;justify-content:center;color:#777;font:500 13px/1.4 system-ui',
@@ -716,7 +715,7 @@ export default function AccountsPage() {
                         <IconButton
                           edge="end" size="small"
                           onClick={() => removeMember(m.uid)}
-                          disabled={activeTenant?.ownerUid !== user?.uid || м.uid === activeTenant?.ownerUid}
+                          disabled={activeTenant?.ownerUid !== user?.uid || m.uid === activeTenant?.ownerUid}
                         >
                           <DeleteIcon />
                         </IconButton>
