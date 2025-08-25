@@ -5,7 +5,7 @@ import {
   TableCell, TableHead, TableRow, Avatar, Box, IconButton, Dialog,
   DialogTitle, DialogContent, TextField, DialogActions, List, ListItem,
   ListItemAvatar, ListItemText, ListItemSecondaryAction, Tooltip, Divider,
-  Chip, Alert
+  Chip, Alert, Link as MuiLink
 } from '@mui/material';
 
 import MenuIcon from '@mui/icons-material/Menu';
@@ -16,6 +16,7 @@ import PersonAddIcon from '@mui/icons-material/PersonAdd';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import SearchIcon from '@mui/icons-material/Search';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -26,6 +27,11 @@ import {
 } from 'firebase/firestore';
 import { fullLogout } from '../lib/authx';
 
+// ---------- (ใส่รูปตัวอย่างขั้นตอนการหา Channel ID/Secret) ----------
+import imgConsole from '../assets/line_console.png';          // หน้า LINE Developers Console (ตัวอย่าง)
+import imgBasic from '../assets/line_basic_settings.png';      // แท็บ Basic settings (ตัวอย่าง Channel ID)
+import imgMsgAPI from '../assets/line_messaging_api.png';      // แท็บ Messaging API (ตัวอย่าง Channel secret)
+import imgMsgAPI2 from '../assets/line_messaging_api_2.png';
 // -------- utils --------
 const normalizeUid = (input) => {
   const s = (input || '').trim();
@@ -108,7 +114,7 @@ export default function AccountsPage() {
   const [searchResults, setSearchResults] = useState([]); // [{uid,displayName,photoURL}]
   const searchDebounce = useRef(null);
 
-  // เพิ่ม state ด้านบน component states
+  // เพิ่ม state สำหรับ Dialog "วิธีหา Channel ID/Secret"
   const [openHowTo, setOpenHowTo] = useState(false);
 
   // ---- เฝ้าดูสถานะผู้ใช้ ----
@@ -165,6 +171,14 @@ export default function AccountsPage() {
   const handleAddOA = async () => {
     try {
       setSaving(true);
+
+      // ตรวจสอบเบื้องต้นให้ใส่ครบ
+      if (!channelId || !channelSecret) {
+        alert('กรุณากรอก Channel ID และ Channel secret ให้ครบ');
+        setSaving(false);
+        return;
+      }
+
       const idToken = await auth.currentUser.getIdToken();
       const res = await fetch('/api/tenants', {
         method: 'POST',
@@ -240,10 +254,8 @@ export default function AccountsPage() {
       // 1) ถ้าเป็น UID/Line userId → หาแบบตรงตัว
       if (uidLooksValid(q)) {
         const norm = normalizeUid(q);
-        console.log('[doSearch] input=', q, 'normalized=', norm);
         if (norm) {
           const snap = await getDoc(doc(db, 'users', norm));
-          console.log('[doSearch] snap.exists=', snap.exists());
           if (snap.exists()) {
             const d = snap.data();
             setSearchResults([{
@@ -425,11 +437,20 @@ export default function AccountsPage() {
         {/* Tips: การกรอก LINE OA */}
         <Box sx={{ mb: 2 }}>
           <Alert severity="info">
-            <strong>วิธีกรอก LINE OA</strong> — ไปที่ <em>LINE Developers Console → Providers → เลือก Channel (Messaging API)</em> <br/>
-            ที่แท็บ <em>Basic settings</em> จะมี <strong>Channel ID</strong> และที่แท็บ <em>Messaging API</em> จะมี <strong>Channel secret</strong> <br/>
+            <strong>วิธีกรอก LINE OA</strong> — ไปที่ <em>LINE Developers Console → Providers → เลือก Channel (Messaging API)</em> <br />
+            ที่แท็บ <em>Basic settings</em> จะมี <strong>Channel ID</strong> และที่แท็บ <em>Messaging API</em> จะมี <strong>Channel secret</strong> <br />
             จากนั้นกด <strong>Add LINE OA</strong> แล้ววางค่า 2 ช่องนี้เพื่อเชื่อมต่อ
           </Alert>
         </Box>
+
+        {/* Extra tips (Helpful) */}
+        <Box sx={{ mb: 3 }}>
+          <Alert severity="success">
+            <b>ทิป:</b> หลังเชื่อมต่อสำเร็จ ระบบจะดึงข้อมูล OA ให้ และถ้าเคยเชื่อมแล้วจะทำ <i>dedupe</i> ให้อัตโนมัติ (ไม่สร้างซ้ำแต่จะอัปเดตข้อมูล/โทเค็นล่าสุด) <br />
+            ถ้าคุณยังไม่เปิดใช้งาน Messaging API ใน Channel หรือไม่มีสิทธิ์ดูค่า <em>Channel secret</em> กรุณาให้แอดมินของ Provider เพิ่มสิทธิ์ให้ก่อน
+          </Alert>
+        </Box>
+
         <Typography variant="h4" gutterBottom>Accounts</Typography>
 
         <Table>
@@ -439,7 +460,7 @@ export default function AccountsPage() {
               <TableCell sx={{ fontWeight: 'bold' }}>Basic ID</TableCell>
               <TableCell sx={{ fontWeight: 'bold' }}>Chat Mode</TableCell>
               <TableCell sx={{ fontWeight: 'bold' }}>Mark as Read</TableCell>
-              <TableCell sx={{ fontWeight: 'bold', width: 220 }}>Actions</TableCell>
+              <TableCell sx={{ fontWeight: 'bold', width: 260 }}>Actions</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -472,6 +493,17 @@ export default function AccountsPage() {
                   >
                     Members
                   </Button>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    href={`https://page.line.me/${t.basicId || ''}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    sx={{ mr: 1 }}
+                    disabled={!t.basicId}
+                  >
+                    View OA
+                  </Button>
                   <Button size="small" onClick={() => openTenant(t)}>
                     Open
                   </Button>
@@ -500,7 +532,8 @@ export default function AccountsPage() {
             value={channelId}
             onChange={(e) => setChannelId(e.target.value.trim())}
             fullWidth
-            helperText="ตัวเลขจาก LINE Developers › Basic settings"
+            inputProps={{ inputMode: 'numeric', pattern: '[0-9]*' }}
+            helperText="ค่าตัวเลขจาก LINE Developers › Basic settings"
           />
           <TextField
             label="Channel Secret"
@@ -511,13 +544,28 @@ export default function AccountsPage() {
             type="password"
             helperText="คีย์ลับจาก LINE Developers › Messaging API"
           />
-          <Button
-            variant="text"
-            onClick={() => setOpenHowTo(true)}
-            sx={{ justifySelf: 'start', textTransform: 'none' }}
-          >
-            ดูวิธีหา Channel ID/Secret
-          </Button>
+
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+            <Button
+              variant="text"
+              onClick={() => setOpenHowTo(true)}
+              sx={{ justifySelf: 'start', textTransform: 'none' }}
+            >
+              ดูวิธีหา Channel ID/Secret
+            </Button>
+            <MuiLink
+              href="https://developers.line.biz/en/"
+              target="_blank"
+              rel="noreferrer"
+              sx={{ display: 'inline-flex', alignItems: 'center', gap: .5 }}
+            >
+              เปิด LINE Developers Console <OpenInNewIcon fontSize="small" />
+            </MuiLink>
+          </Box>
+
+          <Alert severity="warning" sx={{ mt: 1 }}>
+            <b>ย้ำ:</b> ต้องเป็น Channel ที่เปิดใช้ <em>Messaging API</em> แล้ว และบัญชีคุณมีสิทธิ์เข้าถึงค่า <em>Channel secret</em>
+          </Alert>
         </DialogContent>
 
         <DialogActions>
@@ -527,36 +575,85 @@ export default function AccountsPage() {
           </Button>
         </DialogActions>
       </Dialog>
+
       {/* Dialog: วิธีหา Channel ID/Secret */}
       <Dialog open={openHowTo} onClose={() => setOpenHowTo(false)} fullWidth maxWidth="sm">
         <DialogTitle>วิธีหา Channel ID / Channel secret</DialogTitle>
         <DialogContent dividers>
           <List dense>
-            <ListItem>
+            <ListItem alignItems="flex-start">
+              <ListItemAvatar>
+                <Avatar variant="rounded" src={imgConsole} alt="LINE Developers Console">1</Avatar>
+              </ListItemAvatar>
               <ListItemText
                 primary="1) เปิด LINE Developers Console"
-                secondary="ไปที่ Providers แล้วเลือก Channel ที่เป็น Messaging API"
+                secondary={
+                  <>
+                    ไปที่ <em>Providers</em> แล้วเลือก <strong>Channel ที่เป็น Messaging API</strong><br/>
+                    <MuiLink href="https://developers.line.biz/en/" target="_blank" rel="noreferrer">
+                      เปิดหน้า Developers Console <OpenInNewIcon fontSize="inherit" />
+                    </MuiLink>
+                  </>
+                }
               />
             </ListItem>
-            <ListItem>
+
+            <ListItem alignItems="flex-start">
+              <ListItemAvatar>
+                <Avatar variant="rounded" src={imgBasic} alt="Basic settings — Channel ID">2</Avatar>
+              </ListItemAvatar>
               <ListItemText
                 primary="2) Channel ID"
-                secondary="อยู่ในแท็บ Basic settings"
+                secondary="อยู่ในแท็บ Basic settings (เป็นตัวเลข)"
               />
             </ListItem>
-            <ListItem>
+
+            <ListItem alignItems="flex-start">
+              <ListItemAvatar>
+                <Avatar variant="rounded" src={imgMsgAPI} alt="Messaging API — Channel secret">3</Avatar>
+              </ListItemAvatar>
+              <ListItemAvatar>
+                <Avatar variant="rounded" src={imgMsgAPI2} alt="Messaging API — Channel secret">3</Avatar>
+              </ListItemAvatar>
               <ListItemText
                 primary="3) Channel secret"
-                secondary="อยู่ในแท็บ Messaging API"
+                secondary="อยู่ในแท็บ Messaging API (เลื่อนลงไปด้านล่างของหน้า)"
               />
             </ListItem>
+
             <ListItem>
               <ListItemText
                 primary="4) นำ 2 ค่านี้มาวางในหน้า Add LINE OA"
-                secondary="ระบบจะเชื่อมต่อ OA ให้และเพิ่มเข้าในรายการของคุณ"
+                secondary="ระบบจะเชื่อมต่อ OA ให้และเพิ่มเข้าในรายการของคุณทันที"
               />
             </ListItem>
           </List>
+
+          {/* แถบรูปภาพตัวอย่างขนาดใหญ่ */}
+          <Divider sx={{ my: 2 }} />
+          <Typography variant="subtitle2" sx={{ mb: 1 }}>ตัวอย่างภาพหน้าจอ</Typography>
+          <Box sx={{ display: 'grid', gap: 2 }}>
+            <Box sx={{ border: '1px solid #eee', borderRadius: 1, overflow: 'hidden' }}>
+              <img src={imgConsole} alt="ตัวอย่าง: LINE Developers Console" style={{ width: '100%', display: 'block' }} />
+              <Box sx={{ p: 1, fontSize: 12, color: '#555' }}>หน้า LINE Developers Console</Box>
+            </Box>
+            <Box sx={{ border: '1px solid #eee', borderRadius: 1, overflow: 'hidden' }}>
+              <img src={imgBasic} alt="ตัวอย่าง: Basic settings" style={{ width: '100%', display: 'block' }} />
+              <Box sx={{ p: 1, fontSize: 12, color: '#555' }}>แท็บ Basic settings — ตำแหน่ง Channel ID</Box>
+            </Box>
+            <Box sx={{ border: '1px solid #eee', borderRadius: 1, overflow: 'hidden' }}>
+              <img src={imgMsgAPI} alt="ตัวอย่าง: Messaging API" style={{ width: '100%', display: 'block' }} />
+              <Box sx={{ p: 1, fontSize: 12, color: '#555' }}>แท็บ Messaging API </Box>
+            </Box>
+            <Box sx={{ border: '1px solid #eee', borderRadius: 1, overflow: 'hidden' }}>
+              <img src={imgMsgAPI2} alt="ตัวอย่าง: Messaging API" style={{ width: '100%', display: 'block' }} />
+              <Box sx={{ p: 1, fontSize: 12, color: '#555' }}>แท็บ Messaging API — ตำแหน่ง Channel secret</Box>
+            </Box>
+          </Box>
+
+          <Alert severity="info" sx={{ mt: 2 }}>
+            <b>เคล็ดลับ:</b> ถ้าคุณมองไม่เห็นค่า Channel secret ให้ตรวจสอบสิทธิ์ใน Provider/Project นั้น ๆ และยืนยันว่าเป็นประเภท Channel: <em>Messaging API</em> ไม่ใช่ LINE Login อย่างเดียว
+          </Alert>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpenHowTo(false)}>ปิด</Button>

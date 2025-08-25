@@ -181,7 +181,6 @@ export default function HomePage() {
             <Typography
               variant="h6"
               sx={{ fontWeight: 'bold', cursor: 'pointer' }}
-              onClick={() => navigate('/')}
             >
               Line Rich Menus Web
             </Typography>

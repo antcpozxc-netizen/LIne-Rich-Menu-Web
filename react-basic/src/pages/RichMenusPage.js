@@ -127,9 +127,24 @@ function ActionEditor({ idx, action, onChange }) {
 
         return (
           <Stack spacing={1.25}>
-            <TextField label="QnA key / id" value={action.qnaKey || ''} onChange={(e) => update({ qnaKey: e.target.value })} />
-            <TextField label="Heading/Display text (optional)" value={action.displayText || ''} onChange={(e) => update({ displayText: (e.target.value || '').slice(0, 300) })} />
-            <TextField label="Fallback reply (ถ้าไม่เจอคำตอบ)" value={action.fallbackReply || ''} onChange={(e) => update({ fallbackReply: (e.target.value || '').slice(0, 300) })} />
+            <TextField 
+              label="หมวดคำถาม (QnA)"
+              placeholder="เช่น โปรโมชัน, วิธีสั่งซื้อ" 
+              value={action.qnaKey || ''} 
+              onChange={(e) => update({ qnaKey: e.target.value })} 
+            />
+            <TextField
+              label="ข้อความที่จะแสดงในแชท (กดแล้วส่ง)"
+              placeholder="เช่น สนใจโปรโมชันนี้"
+              value={action.displayText || ''}
+              onChange={(e) => update({ displayText: (e.target.value || '').slice(0, 300) })}
+            />
+            <TextField
+              label="ข้อความตอบกลับสำรอง (ถ้าไม่มีคำตอบ)"
+              placeholder="เช่น ขอโทษครับ ตอนนี้ยังไม่มีคำตอบ"
+              value={action.fallbackReply || ''}
+              onChange={(e) => update({ fallbackReply: (e.target.value || '').slice(0, 300) })}
+            />
             <Typography variant="caption" color="text.secondary" sx={{ mt: .5 }}>
               จะส่งเป็น <Chip size="small" label="postback" /> data: <code>{`qna:${action.qnaKey || '...'}`}</code>
             </Typography>
