@@ -428,39 +428,6 @@ export default function HomePage() {
           />
         </Box>
 
-        {/* OA Header (ชื่อ OA / รูป / เพื่อน) */}
-        <Box sx={{ px: 3, pb: 2 }}>
-          {tenant && (
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 2,
-                p: 2,
-                border: '1px solid #e0e0e0',
-                borderRadius: 2
-              }}
-            >
-              <Avatar src={tenant.pictureUrl || undefined} sx={{ width: 48, height: 48, bgcolor: '#2e7d32' }}>
-                {!tenant.pictureUrl && (tenant.displayName?.[0] || 'O')}
-              </Avatar>
-              <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-                <Typography variant="h6" sx={{ lineHeight: 1.1 }}>
-                  {tenant.displayName || 'OA'}
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.2 }}>
-                  {tenant.basicId ? `@${tenant.basicId}` : (tenant.channelId || '')}
-                </Typography>
-                {typeof (tenant?.friendsCount ?? tenant?.stats?.friends) !== 'undefined' && (
-                  <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.2 }}>
-                    Friends: {tenant.friendsCount ?? tenant.stats?.friends}
-                  </Typography>
-                )}
-              </Box>
-            </Box>
-          )}
-        </Box>
-
         <Box sx={{ p: 3, pt: 0 }}>
           <Outlet context={{ tenantId: activeTenantId, tenant }} />
         </Box>
