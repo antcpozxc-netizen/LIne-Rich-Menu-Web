@@ -516,6 +516,8 @@ app.get('/auth/line/start', (req, res) => {
 
   // ⬇️ new: ดึง to จาก query (เช่น ?to=accounts)
   const to = typeof req.query.to === 'string' ? req.query.to : undefined;
+  // ถ้าส่ง ?force=1 (หรือ ?switch_login=1) มา ให้บังคับ re-auth/เลือกบัญชีทุกครั้ง
+  const force = req.query.force === '1' || req.query.switch_login === '1';
 
   const state = Buffer.from(
     JSON.stringify({
@@ -523,6 +525,7 @@ app.get('/auth/line/start', (req, res) => {
       next,
       // ⬇️ new: เก็บ to ลง state ด้วย
       to,
+      force: !!force,
     }),
     'utf8'
   ).toString('base64url');
@@ -537,6 +540,12 @@ app.get('/auth/line/start', (req, res) => {
   url.searchParams.set('scope', 'openid profile');
   url.searchParams.set('state', state);
   url.searchParams.set('nonce', nonce);
+  // ✅ บังคับเลือกบัญชี/รี‑ล็อกอิน
+  if (force) {
+    url.searchParams.set('switch_login', 'true'); // ของ LINE เอง
+    url.searchParams.set('prompt', 'login');      // OIDC มาตรฐาน (เผื่อไว้)
+    url.searchParams.set('max_age', '0');         // ไม่ยอมรับ session เก่า
+  }
 
   res.redirect(url.toString());
 });

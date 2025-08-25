@@ -8,7 +8,8 @@ import {
 import {
   ExpandLess, ExpandMore, Send as SendIcon, Image as ImageIcon,
   Chat as ChatIcon, TableChart as TableChartIcon,
-  Logout as LogoutIcon, Login as LoginIcon, Menu as MenuIcon, SwapHoriz as SwapIcon
+  Logout as LogoutIcon, Login as LoginIcon, Menu as MenuIcon, SwapHoriz as SwapIcon,
+  AdminPanelSettings as AdminIcon, HelpOutline as HelpIcon
 } from '@mui/icons-material';
 
 import { useNavigate, useLocation, useSearchParams, Outlet } from 'react-router-dom';
@@ -185,8 +186,17 @@ export default function HomePage() {
             </Typography>
           </Box>
 
-          {/* Right: OA + User + Switch + Login/Logout */}
+          {/* Right: Tips + OA + User + Switch + Login/Logout */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <Button
+              startIcon={<HelpIcon />}
+              variant="outlined"
+              size="small"
+              onClick={() => navigate(`/homepage/tips${activeTenantId ? `?tenant=${activeTenantId}` : ''}`)}
+              sx={{ color: '#fff', borderColor: '#fff', textTransform: 'none' }}
+            >
+              Tips : คู่มือการใช้งาน
+            </Button>
             {/* OA info */}
             {tenant ? (
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, pr: 1.5, borderRight: '1px solid rgba(255,255,255,.3)' }}>
@@ -200,6 +210,11 @@ export default function HomePage() {
                   {tenant.basicId && (
                     <Typography sx={{ color: '#e8f5e9', fontSize: 12, lineHeight: 1.1 }}>
                       {tenant.basicId}
+                    </Typography>
+                  )}
+                  {typeof (tenant?.friendsCount ?? tenant?.stats?.friends) !== 'undefined' && (
+                    <Typography sx={{ color: '#e8f5e9', fontSize: 12, lineHeight: 1.1 }}>
+                      Friends: {tenant.friendsCount ?? tenant.stats?.friends}
                     </Typography>
                   )}
                 </Box>
@@ -369,7 +384,7 @@ export default function HomePage() {
             {isAdmin && (
               <ListItem disablePadding>
                 <ListItemButton onClick={() => navigate(`/homepage/admin/templates${activeTenantId ? `?tenant=${activeTenantId}` : ''}`)}>
-                  <ListItemIcon><TableChartIcon /></ListItemIcon>
+                  <ListItemIcon><AdminIcon /></ListItemIcon>
                   {sidebarOpen && <ListItemText primary="Admin: Templates" />}
                 </ListItemButton>
               </ListItem>
@@ -406,7 +421,10 @@ export default function HomePage() {
       <Box component="main" sx={{ flexGrow: 1, bgcolor: '#fff', minHeight: '100vh' }}>
         <Toolbar />
         <Tabs value={tabValue} onChange={handleTabChange} sx={{ borderBottom: 1, borderColor: 'divider' }}>
-          <Tab label="Home" />
+          <Tab
+            label="Home"
+            onClick={() => navigate(`/homepage${activeTenantId ? `?tenant=${activeTenantId}` : ''}`)}
+          />
         </Tabs>
 
         {/* แถบแจ้ง Guest Mode */}
@@ -415,6 +433,39 @@ export default function HomePage() {
             visible={!user}
             nextPath={location.pathname + location.search}
           />
+        </Box>
+
+        {/* OA Header (ชื่อ OA / รูป / เพื่อน) */}
+        <Box sx={{ px: 3, pb: 2 }}>
+          {tenant && (
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 2,
+                p: 2,
+                border: '1px solid #e0e0e0',
+                borderRadius: 2
+              }}
+            >
+              <Avatar src={tenant.pictureUrl || undefined} sx={{ width: 48, height: 48, bgcolor: '#2e7d32' }}>
+                {!tenant.pictureUrl && (tenant.displayName?.[0] || 'O')}
+              </Avatar>
+              <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                <Typography variant="h6" sx={{ lineHeight: 1.1 }}>
+                  {tenant.displayName || 'OA'}
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.2 }}>
+                  {tenant.basicId ? `@${tenant.basicId}` : (tenant.channelId || '')}
+                </Typography>
+                {typeof (tenant?.friendsCount ?? tenant?.stats?.friends) !== 'undefined' && (
+                  <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.2 }}>
+                    Friends: {tenant.friendsCount ?? tenant.stats?.friends}
+                  </Typography>
+                )}
+              </Box>
+            </Box>
+          )}
         </Box>
 
         <Box sx={{ p: 3, pt: 0 }}>
