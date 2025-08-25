@@ -5,7 +5,7 @@ import {
   TableCell, TableHead, TableRow, Avatar, Box, IconButton, Dialog,
   DialogTitle, DialogContent, TextField, DialogActions, List, ListItem,
   ListItemAvatar, ListItemText, ListItemSecondaryAction, Tooltip, Divider,
-  Chip, Alert, Link as MuiLink,Card, CardContent, CardMedia 
+  Chip, Alert, Link as MuiLink, Card, CardContent, CardMedia
 } from '@mui/material';
 
 import MenuIcon from '@mui/icons-material/Menu';
@@ -27,64 +27,42 @@ import {
 } from 'firebase/firestore';
 import { fullLogout } from '../lib/authx';
 
-
-// ใช้ new URL เพื่อให้ได้ URL string แน่นอนในทุก bundler
-const imgOA_Create    = new URL('../assets/oa_create_new.png', import.meta.url).href;
-const imgOA_Form      = new URL('../assets/oa_form.png', import.meta.url).href;
-const imgOA_Done      = new URL('../assets/oa_done.png', import.meta.url).href;
-const imgOA_List      = new URL('../assets/oa_list.png', import.meta.url).href;
-const imgOA_Settings  = new URL('../assets/oa_settings.png', import.meta.url).href;
-const imgOA_Enable    = new URL('../assets/oa_enable_messaging_api.png', import.meta.url).href;
-const imgOA_Provider  = new URL('../assets/oa_choose_provider.png', import.meta.url).href;
-const imgOA_OK        = new URL('../assets/oa_ok.png', import.meta.url).href;
-const imgOA_Check_id  = new URL('../assets/oa_check_id.png', import.meta.url).href;
-
+// ---------- รูปขั้นตอน B1–B9 (import แบบปกติ) ----------
+import imgOA_Create   from '../assets/oa_create_new.png';
+import imgOA_Form     from '../assets/oa_form.png';
+import imgOA_Done     from '../assets/oa_done.png';
+import imgOA_List     from '../assets/oa_list.png';
+import imgOA_Settings from '../assets/oa_settings.png';
+import imgOA_Enable   from '../assets/oa_enable_messaging_api.png';
+import imgOA_Provider from '../assets/oa_choose_provider.png';
+import imgOA_OK       from '../assets/oa_ok.png';
+import imgOA_Check_id from '../assets/oa_check_id.png';
 
 // -------- utils --------
 const normalizeUid = (input) => {
   const s = (input || '').trim();
   if (!s) return null;
 
-  // line:Uxxxx....
   const m1 = /^line:([Uu])([0-9a-f]{32})$/i.exec(s);
-  if (m1) {
-    return `line:U${m1[2].toLowerCase()}`; // force 'U' + lowercase hex
-  }
+  if (m1) return `line:U${m1[2].toLowerCase()}`;
 
-  // Uxxxx...
   const m2 = /^([Uu])([0-9a-f]{32})$/i.exec(s);
-  if (m2) {
-    return `line:U${m2[2].toLowerCase()}`;
-  }
+  if (m2) return `line:U${m2[2].toLowerCase()}`;
 
   return null;
 };
-
-// แค่เช็คว่า normalize ได้ไหมก็พอ
 const uidLooksValid = (input) => !!normalizeUid(input);
 
-// อนุญาตเฉพาะเส้นทางภายใน (กัน open redirect)
 function sanitizeNext(raw) {
   if (!raw) return '';
   try {
     const url = new URL(raw, window.location.origin);
     if (url.origin !== window.location.origin) return '';
-    return url.pathname + url.search; // ไม่ต้องเอา hash กลับ
+    return url.pathname + url.search;
   } catch {
     return String(raw).startsWith('/') ? raw : '';
   }
 }
-const StepImg = ({ src, alt }) => (
-  <Box sx={{ borderTop: '1px solid #eee', background: '#fafafa' }}>
-    <Box
-      component="img"
-      src={src}
-      alt={alt}
-      onError={(e) => { e.currentTarget.style.display = 'none'; }} // ถ้ารูปพังซ่อนทิ้ง
-      style={{ width: '100%', display: 'block', maxHeight: 520, objectFit: 'contain' }}
-    />
-  </Box>
-);
 
 export default function AccountsPage() {
   const navigate = useNavigate();
@@ -94,17 +72,10 @@ export default function AccountsPage() {
   // ---------- เมื่อเลือก OA ----------
   const openTenant = (t) => {
     if (!t?.id) return;
-
-    // จำ OA ไว้
     localStorage.setItem('activeTenantId', t.id);
-
-    // ปลายทาง: ถ้า next ว่าง หรือเป็น "/" → ให้ไป /homepage
     const baseNext = (!nextParam || nextParam === '/') ? '/homepage' : nextParam;
-
-    // แนบ tenant เข้า query
     const url = new URL(baseNext, window.location.origin);
     url.searchParams.set('tenant', t.id);
-
     navigate(url.pathname + url.search, { replace: true });
   };
 
@@ -113,7 +84,7 @@ export default function AccountsPage() {
   const [profile, setProfile] = useState(null);
   const [ready, setReady] = useState(false);
 
-  // tenants (LINE OA) ของผู้ใช้
+  // tenants
   const [tenants, setTenants] = useState([]);
 
   // dialog: เชื่อมต่อ OA
@@ -124,16 +95,16 @@ export default function AccountsPage() {
 
   // dialog: จัดการสมาชิก
   const [openMembers, setOpenMembers] = useState(false);
-  const [activeTenant, setActiveTenant] = useState(null);  // {id,...}
-  const [membersProfiles, setMembersProfiles] = useState([]); // [{uid,displayName,photoURL}]
+  const [activeTenant, setActiveTenant] = useState(null);
+  const [membersProfiles, setMembersProfiles] = useState([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
 
   const [searchText, setSearchText] = useState('');
   const [searching, setSearching] = useState(false);
-  const [searchResults, setSearchResults] = useState([]); // [{uid,displayName,photoURL}]
+  const [searchResults, setSearchResults] = useState([]);
   const searchDebounce = useRef(null);
 
-  // เพิ่ม state สำหรับ Dialog "วิธีหา Channel ID/Secret"
+  // dialog: วิธีการหา / เชื่อมต่อ (B1–B9)
   const [openHowTo, setOpenHowTo] = useState(false);
 
   // ---- เฝ้าดูสถานะผู้ใช้ ----
@@ -145,7 +116,7 @@ export default function AccountsPage() {
     });
   }, [navigate]);
 
-  // ---- subscribe โปรไฟล์จาก Firestore: users/{uid} ----
+  // ---- subscribe โปรไฟล์ ----
   useEffect(() => {
     if (!user) return;
     const ref = doc(db, 'users', user.uid);
@@ -153,7 +124,7 @@ export default function AccountsPage() {
     return () => unsub();
   }, [user]);
 
-  // ---- subscribe รายการ OA ของผู้ใช้ ----
+  // ---- subscribe รายการ OA ----
   useEffect(() => {
     if (!user) return;
 
@@ -186,18 +157,15 @@ export default function AccountsPage() {
     await fullLogout('/');
   };
 
-  // ---- เชื่อมต่อ OA: เรียก backend /api/tenants ----
+  // ---- เชื่อมต่อ OA ----
   const handleAddOA = async () => {
     try {
       setSaving(true);
-
-      // ตรวจสอบเบื้องต้นให้ใส่ครบ
       if (!channelId || !channelSecret) {
         alert('กรุณากรอก Channel ID และ Channel secret ให้ครบ');
         setSaving(false);
         return;
       }
-
       const idToken = await auth.currentUser.getIdToken();
       const res = await fetch('/api/tenants', {
         method: 'POST',
@@ -223,14 +191,13 @@ export default function AccountsPage() {
     }
   };
 
-  // ---- เปิด Dialog สมาชิก ----
+  // ---- สมาชิก ----
   const openMembersDialog = async (tenant) => {
     setActiveTenant(tenant);
     setOpenMembers(true);
     await reloadMembers(tenant);
   };
 
-  // โหลดโปรไฟล์สมาชิกจาก users/{uid}
   const reloadMembers = async (tenant) => {
     if (!tenant) return;
     try {
@@ -253,14 +220,12 @@ export default function AccountsPage() {
     }
   };
 
-  // ---- ค้นหาผู้ใช้เพื่อเพิ่ม ----
   useEffect(() => {
     if (!openMembers) return;
     if (searchDebounce.current) clearTimeout(searchDebounce.current);
     searchDebounce.current = setTimeout(() => {
       doSearch(searchText).catch(() => {});
     }, 350);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchText, openMembers]);
 
   const doSearch = async (qstr) => {
@@ -270,7 +235,6 @@ export default function AccountsPage() {
 
     setSearching(true);
     try {
-      // 1) ถ้าเป็น UID/Line userId → หาแบบตรงตัว
       if (uidLooksValid(q)) {
         const norm = normalizeUid(q);
         if (norm) {
@@ -286,7 +250,6 @@ export default function AccountsPage() {
           }
         }
       }
-      // 2) ไม่ใช่ UID → prefix search ด้วย displayName
       const qq = query(
         collection(db, 'users'),
         orderBy('displayName'),
@@ -397,19 +360,12 @@ export default function AccountsPage() {
 
           {user && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-              <Button
-                startIcon={<AddIcon />}
-                onClick={() => setOpenAdd(true)}
-                sx={{ color: '#fff', textTransform: 'none' }}
-              >
+              <Button startIcon={<AddIcon />} onClick={() => setOpenAdd(true)} sx={{ color: '#fff', textTransform: 'none' }}>
                 Add LINE OA
               </Button>
 
               <Tooltip title={`UID: ${user.uid}`}>
-                <IconButton
-                  onClick={() => navigator.clipboard.writeText(user.uid)}
-                  sx={{ color: '#fff' }}
-                >
+                <IconButton onClick={() => navigator.clipboard.writeText(user.uid)} sx={{ color: '#fff' }}>
                   <ContentCopyIcon />
                 </IconButton>
               </Tooltip>
@@ -422,9 +378,7 @@ export default function AccountsPage() {
                 {!photoURL && initial}
               </Avatar>
               <Box sx={{ display: 'flex', flexDirection: 'column', maxWidth: 180 }}>
-                <Typography sx={{ color: '#fff', fontWeight: 600 }} noWrap>
-                  {displayName}
-                </Typography>
+                <Typography sx={{ color: '#fff', fontWeight: 600 }} noWrap>{displayName}</Typography>
                 {profile?.line?.userId && (
                   <Typography sx={{ color: '#e8f5e9', fontSize: 11 }} noWrap>
                     LINE: {profile.line.userId}
@@ -433,14 +387,9 @@ export default function AccountsPage() {
               </Box>
 
               <Button
-                variant="outlined"
-                size="small"
-                startIcon={<LogoutIcon />}
-                onClick={handleSignOut}
+                variant="outlined" size="small" startIcon={<LogoutIcon />} onClick={handleSignOut}
                 sx={{
-                  color: '#fff',
-                  borderColor: '#fff',
-                  textTransform: 'none',
+                  color: '#fff', borderColor: '#fff', textTransform: 'none',
                   '&:hover': { borderColor: '#e0f2f1', backgroundColor: 'rgba(255,255,255,.08)' },
                 }}
               >
@@ -453,20 +402,16 @@ export default function AccountsPage() {
 
       {/* Page Content */}
       <Container sx={{ pt: 12 }}>
-        {/* Tips: การกรอก LINE OA */}
         <Box sx={{ mb: 2 }}>
           <Alert severity="info">
-            <strong>วิธีกรอก LINE OA</strong> — ไปที่ <em>LINE Developers Console → Providers → เลือก Channel (Messaging API)</em> <br />
-            ที่แท็บ <em>Basic settings</em> จะมี <strong>Channel ID</strong> และที่แท็บ <em>Messaging API</em> จะมี <strong>Channel secret</strong> <br />
-            จากนั้นกด <strong>Add LINE OA</strong> แล้ววางค่า 2 ช่องนี้เพื่อเชื่อมต่อ
+            <strong>วิธีกรอก LINE OA</strong> — ไปที่ <em>LINE Developers Console → Providers → เลือก Channel (Messaging API)</em> <br/>
+            แท็บ <em>Basic settings</em>: <strong>Channel ID</strong> • แท็บ <em>Messaging API</em>: <strong>Channel secret</strong>
           </Alert>
         </Box>
 
-        {/* Extra tips (Helpful) */}
         <Box sx={{ mb: 3 }}>
           <Alert severity="success">
-            <b>ทิป:</b> หลังเชื่อมต่อสำเร็จ ระบบจะดึงข้อมูล OA ให้ และถ้าเคยเชื่อมแล้วจะทำ <i>dedupe</i> ให้อัตโนมัติ (ไม่สร้างซ้ำแต่จะอัปเดตข้อมูล/โทเค็นล่าสุด) <br />
-            ถ้าคุณยังไม่เปิดใช้งาน Messaging API ใน Channel หรือไม่มีสิทธิ์ดูค่า <em>Channel secret</em> กรุณาให้แอดมินของ Provider เพิ่มสิทธิ์ให้ก่อน
+            <b>ทิป:</b> ถ้าเชื่อม OA เดิมซ้ำ ระบบจะ <i>dedupe</i> และอัปเดตโทเค็น/ข้อมูลล่าสุดให้อัตโนมัติ
           </Alert>
         </Box>
 
@@ -503,22 +448,15 @@ export default function AccountsPage() {
                 <TableCell>{t.markAsReadMode || '-'}</TableCell>
                 <TableCell>
                   <Button
-                    startIcon={<GroupIcon />}
-                    onClick={() => openMembersDialog(t)}
-                    variant="outlined"
-                    size="small"
-                    sx={{ mr: 1 }}
-                    disabled={t.ownerUid !== user?.uid}
+                    startIcon={<GroupIcon />} onClick={() => openMembersDialog(t)}
+                    variant="outlined" size="small" sx={{ mr: 1 }} disabled={t.ownerUid !== user?.uid}
                   >
                     Members
                   </Button>
-                  <Button size="small" onClick={() => openTenant(t)}>
-                    Open
-                  </Button>
+                  <Button size="small" onClick={() => openTenant(t)}>Open</Button>
                 </TableCell>
               </TableRow>
             ))}
-
             {tenants.length === 0 && (
               <TableRow>
                 <TableCell colSpan={5} sx={{ color: '#777' }}>
@@ -535,44 +473,29 @@ export default function AccountsPage() {
         <DialogTitle>เชื่อมต่อ LINE OA</DialogTitle>
         <DialogContent sx={{ display: 'grid', gap: 2, pt: 2 }}>
           <TextField
-            label="Channel ID (Messaging API)"
-            placeholder="เช่น 1651234567"
-            value={channelId}
-            onChange={(e) => setChannelId(e.target.value.trim())}
-            fullWidth
-            inputProps={{ inputMode: 'numeric', pattern: '[0-9]*' }}
+            label="Channel ID (Messaging API)" placeholder="เช่น 1651234567"
+            value={channelId} onChange={(e) => setChannelId(e.target.value.trim())}
+            fullWidth inputProps={{ inputMode: 'numeric', pattern: '[0-9]*' }}
             helperText="ค่าตัวเลขจาก LINE Developers › Basic settings"
           />
           <TextField
-            label="Channel Secret"
-            placeholder="เช่น 1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o"
-            value={channelSecret}
-            onChange={(e) => setChannelSecret(e.target.value.trim())}
-            fullWidth
-            type="password"
-            helperText="คีย์ลับจาก LINE Developers › Messaging API"
+            label="Channel Secret" placeholder="เช่น 1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o"
+            value={channelSecret} onChange={(e) => setChannelSecret(e.target.value.trim())}
+            fullWidth type="password" helperText="คีย์ลับจาก LINE Developers › Messaging API"
           />
 
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-            <Button
-              variant="text"
-              onClick={() => setOpenHowTo(true)}
-              sx={{ justifySelf: 'start', textTransform: 'none' }}
-            >
+            <Button variant="text" onClick={() => setOpenHowTo(true)} sx={{ textTransform: 'none' }}>
               ดูวิธีหา Channel ID/Secret
             </Button>
-            <MuiLink
-              href="https://developers.line.biz/en/"
-              target="_blank"
-              rel="noreferrer"
-              sx={{ display: 'inline-flex', alignItems: 'center', gap: .5 }}
-            >
+            <MuiLink href="https://developers.line.biz/en/" target="_blank" rel="noreferrer"
+              sx={{ display: 'inline-flex', alignItems: 'center', gap: .5 }}>
               เปิด LINE Developers Console <OpenInNewIcon fontSize="small" />
             </MuiLink>
           </Box>
 
           <Alert severity="warning" sx={{ mt: 1 }}>
-            <b>ย้ำ:</b> ต้องเป็น Channel ที่เปิดใช้ <em>Messaging API</em> แล้ว และบัญชีคุณมีสิทธิ์เข้าถึงค่า <em>Channel secret</em>
+            <b>ย้ำ:</b> ต้องเป็น Channel ที่เปิดใช้ <em>Messaging API</em> แล้ว และบัญชีคุณมีสิทธิ์เห็น <em>Channel secret</em>
           </Alert>
         </DialogContent>
 
@@ -584,11 +507,11 @@ export default function AccountsPage() {
         </DialogActions>
       </Dialog>
 
-      {/* Dialog: การเชื่อมต่อ LINE OA (Channel ID / Channel secret) */}
+      {/* Dialog: 3) การเชื่อมต่อ LINE OA — ข้อ B */}
       <Dialog open={openHowTo} onClose={() => setOpenHowTo(false)} fullWidth maxWidth="md">
         <DialogTitle>Tips : การเชื่อมต่อ LINE OA (Channel ID / Channel secret)</DialogTitle>
         <DialogContent dividers sx={{ display: 'grid', gap: 2 }}>
-          {/* 1 */}
+          {/* B1 */}
           <Card variant="outlined">
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
@@ -598,126 +521,112 @@ export default function AccountsPage() {
                 สร้างบัญชี LINE OA ใหม่ หากยังไม่มี (กรอกข้อมูลชื่อ ประเภท ธุรกิจ ฯลฯ ให้ครบ)
               </Typography>
             </CardContent>
-            <StepImg src={imgOA_Create} alt="Create new Official Account" />
-            <Box sx={{ px: 2, py: 1, fontSize: 12, color: 'text.secondary' }}>
-              ตัวอย่าง: หน้าสร้าง OA ใหม่
-            </Box>
+            <CardMedia component="img" image={imgOA_Create} alt="Create new Official Account"
+              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+            <Box sx={{ px: 2, py: 1, fontSize: 12, color: 'text.secondary' }}>ตัวอย่าง: หน้าสร้าง OA ใหม่</Box>
           </Card>
 
-          {/* 2 */}
+          {/* B2 */}
           <Card variant="outlined">
             <CardContent sx={{ pb: 1 }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                2) กรอกรายละเอียดให้ครบถ้วน
-              </Typography>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>2) กรอกรายละเอียดให้ครบถ้วน</Typography>
+              <Typography variant="body2" color="text.secondary">ตรวจสอบชื่อ รูปภาพ และข้อมูลธุรกิจให้ถูกต้องก่อนดำเนินการต่อ</Typography>
+            </CardContent>
+            <CardMedia component="img" image={imgOA_Form} alt="OA Form"
+              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+          </Card>
+
+          {/* B3 */}
+          <Card variant="outlined">
+            <CardContent sx={{ pb: 1 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>3) ตรวจสอบข้อมูลและกด “เสร็จสิ้น”</Typography>
+            </CardContent>
+            <CardMedia component="img" image={imgOA_Done} alt="Complete OA"
+              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+          </Card>
+
+          {/* B4 */}
+          <Card variant="outlined">
+            <CardContent sx={{ pb: 1 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>4) กลับไปเลือก Account ที่สร้างจากรายการ (List)</Typography>
+            </CardContent>
+            <CardMedia component="img" image={imgOA_List} alt="OA List"
+              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+          </Card>
+
+          {/* B5 */}
+          <Card variant="outlined">
+            <CardContent sx={{ pb: 1 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>5) กด “Settings” มุมขวาบนของ OA</Typography>
+            </CardContent>
+            <CardMedia component="img" image={imgOA_Settings} alt="OA Settings"
+              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+          </Card>
+
+          {/* B6 */}
+          <Card variant="outlined">
+            <CardContent sx={{ pb: 1 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>6) ไปที่หัวข้อ “Messaging API” และกด “Enable Messaging API”</Typography>
+            </CardContent>
+            <CardMedia component="img" image={imgOA_Enable} alt="Enable Messaging API"
+              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+          </Card>
+
+          {/* B7 */}
+          <Card variant="outlined">
+            <CardContent sx={{ pb: 1 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>7) เลือก Provider ที่ต้องการหรือสร้าง Provider ใหม่</Typography>
+            </CardContent>
+            <CardMedia component="img" image={imgOA_Provider} alt="Choose Provider"
+              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+          </Card>
+
+          {/* B8 */}
+          <Card variant="outlined">
+            <CardContent sx={{ pb: 1 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>8) กด “OK”</Typography>
+            </CardContent>
+            <CardMedia component="img" image={imgOA_OK} alt="Confirm OK"
+              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+          </Card>
+
+          {/* B9 */}
+          <Card variant="outlined">
+            <CardContent sx={{ pb: 1 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>9) ดูค่า Channel ID / Channel secret</Typography>
               <Typography variant="body2" color="text.secondary">
-                ตรวจสอบชื่อ รูปภาพ และข้อมูลธุรกิจให้ถูกต้องก่อนดำเนินการต่อ
-              </Typography>
-            </CardContent>
-            <StepImg src={imgOA_Form} alt="แบบฟอร์ม OA" />
-          </Card>
-
-          {/* 3 */}
-          <Card variant="outlined">
-            <CardContent sx={{ pb: 1 }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                3) ตรวจสอบข้อมูลและกด “เสร็จสิ้น”
-              </Typography>
-            </CardContent>
-            <StepImg src={imgOA_Done} alt="เสร็จสิ้นการสร้าง OA" />
-          </Card>
-
-          {/* 4 */}
-          <Card variant="outlined">
-            <CardContent sx={{ pb: 1 }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                4) กลับไปเลือก Account ที่สร้างจากรายการ (List)
-              </Typography>
-            </CardContent>
-            <StepImg src={imgOA_List} alt="รายการ Official Accounts" />
-          </Card>
-
-          {/* 5 */}
-          <Card variant="outlined">
-            <CardContent sx={{ pb: 1 }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                5) กด “Settings” มุมขวาบนของ OA
-              </Typography>
-            </CardContent>
-            <StepImg src={imgOA_Settings} alt="เมนู Settings ของ OA" />
-          </Card>
-
-          {/* 6 */}
-          <Card variant="outlined">
-            <CardContent sx={{ pb: 1 }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                6) ไปที่หัวข้อ “Messaging API” และกด “Enable Messaging API”
-              </Typography>
-            </CardContent>
-            <StepImg src={imgOA_Enable} alt="Enable Messaging API" />
-          </Card>
-
-          {/* 7 */}
-          <Card variant="outlined">
-            <CardContent sx={{ pb: 1 }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                7) เลือก Provider ที่ต้องการหรือสร้าง Provider ใหม่
-              </Typography>
-            </CardContent>
-            <StepImg src={imgOA_Provider} alt="เลือก Provider" />
-          </Card>
-
-          {/* 8 */}
-          <Card variant="outlined">
-            <CardContent sx={{ pb: 1 }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                8) กด “OK”
-              </Typography>
-            </CardContent>
-            <StepImg src={imgOA_OK} alt="ยืนยันการเชื่อมต่อ" />
-          </Card>
-
-          {/* 9 */}
-          <Card variant="outlined">
-            <CardContent sx={{ pb: 1 }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                9) ดูค่า Channel ID / Channel secret
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                - แท็บ <b>Basic settings</b>: ดู <b>Channel ID</b><br />
+                - แท็บ <b>Basic settings</b>: ดู <b>Channel ID</b><br/>
                 - แท็บ <b>Messaging API</b>: เลื่อนลงเพื่อดู <b>Channel secret</b>
               </Typography>
             </CardContent>
-            <StepImg src={imgOA_Check_id} alt="ตำแหน่ง Channel ID / Channel secret" />
+            <CardMedia component="img" image={imgOA_Check_id} alt="Channel ID / Channel secret"
+              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
           </Card>
 
+          {/* ใช้กับระบบเราอย่างไร */}
           <Card variant="outlined">
             <CardContent>
-              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                ใช้ค่าเหล่านี้กับระบบเราอย่างไร?
-              </Typography>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>ใช้ค่าเหล่านี้กับระบบเราอย่างไร?</Typography>
               <Typography variant="body2" color="text.secondary">
-                เปิดหน้า <b>Accounts</b> → กด <b>Add LINE OA</b> → วาง <em>Channel ID</em> และ <em>Channel secret</em> แล้วกดเชื่อมต่อ
-                (ถ้าเคยเชื่อมแล้ว ระบบจะอัปเดตข้อมูล/โทเค็นล่าสุดให้โดยไม่สร้างซ้ำ)
+                เปิด <b>Accounts</b> → กด <b>Add LINE OA</b> → วาง <em>Channel ID</em> และ <em>Channel secret</em> แล้วเชื่อมต่อ
+                (ถ้าเคยเชื่อมแล้ว ระบบจะอัปเดตข้อมูล/โทเค็นล่าสุดให้ ไม่สร้างซ้ำ)
               </Typography>
               <Box sx={{ mt: 1 }}>
                 <MuiLink href="https://developers.line.biz/en/" target="_blank" rel="noreferrer">
-                  เปิด LINE Developers Console
+                  เปิด LINE Developers Console <OpenInNewIcon fontSize="inherit" />
                 </MuiLink>
               </Box>
             </CardContent>
           </Card>
 
           <Alert severity="info">
-            <b>หมายเหตุ:</b> หากไม่เห็น <em>Channel secret</em> ให้ตรวจสอบสิทธิ์ใน Provider/Project และยืนยันว่า Channel เป็นประเภท <b>Messaging API</b>
-            (ไม่ใช่ LINE Login อย่างเดียว)
+            <b>หมายเหตุ:</b> ถ้าไม่เห็น <em>Channel secret</em> ให้ตรวจสิทธิ์ใน Provider/Project และยืนยันว่า Channel เป็น <b>Messaging API</b>
           </Alert>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpenHowTo(false)}>ปิด</Button>
         </DialogActions>
       </Dialog>
-
 
       {/* Dialog: จัดการสมาชิก */}
       <Dialog open={openMembers} onClose={() => setOpenMembers(false)} fullWidth maxWidth="md">
@@ -789,8 +698,7 @@ export default function AccountsPage() {
                     <Tooltip title={m.uid === activeTenant?.ownerUid ? 'Owner ลบไม่ได้' : 'ลบสมาชิก'}>
                       <span>
                         <IconButton
-                          edge="end"
-                          size="small"
+                          edge="end" size="small"
                           onClick={() => removeMember(m.uid)}
                           disabled={activeTenant?.ownerUid !== user?.uid || m.uid === activeTenant?.ownerUid}
                         >
