@@ -25,6 +25,7 @@ import {
   getDoc, getDocs, startAt, endAt, limit
 } from 'firebase/firestore';
 import { clearActiveTenantSelection } from '../lib/tenantSelection';
+import { fullLogout } from '../lib/authx';
 
 // -------- utils --------
 const normalizeUid = (input) => {
@@ -109,6 +110,9 @@ export default function AccountsPage() {
   const [searchResults, setSearchResults] = useState([]); // [{uid,displayName,photoURL}]
   const searchDebounce = useRef(null);
 
+  // เพิ่ม state ด้านบน component states
+  const [openHowTo, setOpenHowTo] = useState(false);
+
   // ---- เฝ้าดูสถานะผู้ใช้ ----
   useEffect(() => {
     return onAuthStateChanged(auth, (u) => {
@@ -156,9 +160,7 @@ export default function AccountsPage() {
 
   // ---- ออกจากระบบ ----
   const handleSignOut = async () => {
-    clearActiveTenantSelection();
-    await signOut(auth);
-    navigate('/', { replace: true });
+    await fullLogout('/');
   };
 
   // ---- เชื่อมต่อ OA: เรียก backend /api/tenants ----
@@ -422,6 +424,14 @@ export default function AccountsPage() {
 
       {/* Page Content */}
       <Container sx={{ pt: 12 }}>
+        {/* Tips: การกรอก LINE OA */}
+        <Box sx={{ mb: 2 }}>
+          <Alert severity="info">
+            <strong>วิธีกรอก LINE OA</strong> — ไปที่ <em>LINE Developers Console → Providers → เลือก Channel (Messaging API)</em> <br/>
+            ที่แท็บ <em>Basic settings</em> จะมี <strong>Channel ID</strong> และที่แท็บ <em>Messaging API</em> จะมี <strong>Channel secret</strong> <br/>
+            จากนั้นกด <strong>Add LINE OA</strong> แล้ววางค่า 2 ช่องนี้เพื่อเชื่อมต่อ
+          </Alert>
+        </Box>
         <Typography variant="h4" gutterBottom>Accounts</Typography>
 
         <Table>
@@ -486,14 +496,72 @@ export default function AccountsPage() {
       <Dialog open={openAdd} onClose={() => !saving && setOpenAdd(false)} fullWidth maxWidth="sm">
         <DialogTitle>เชื่อมต่อ LINE OA</DialogTitle>
         <DialogContent sx={{ display: 'grid', gap: 2, pt: 2 }}>
-          <TextField label="Channel ID (Messaging API)" value={channelId} onChange={(e) => setChannelId(e.target.value)} fullWidth />
-          <TextField label="Channel Secret" value={channelSecret} onChange={(e) => setChannelSecret(e.target.value)} fullWidth type="password" />
+          <TextField
+            label="Channel ID (Messaging API)"
+            placeholder="เช่น 1651234567"
+            value={channelId}
+            onChange={(e) => setChannelId(e.target.value.trim())}
+            fullWidth
+            helperText="ตัวเลขจาก LINE Developers › Basic settings"
+          />
+          <TextField
+            label="Channel Secret"
+            placeholder="เช่น 1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o"
+            value={channelSecret}
+            onChange={(e) => setChannelSecret(e.target.value.trim())}
+            fullWidth
+            type="password"
+            helperText="คีย์ลับจาก LINE Developers › Messaging API"
+          />
+          <Button
+            variant="text"
+            onClick={() => setOpenHowTo(true)}
+            sx={{ justifySelf: 'start', textTransform: 'none' }}
+          >
+            ดูวิธีหา Channel ID/Secret
+          </Button>
         </DialogContent>
+
         <DialogActions>
           <Button onClick={() => setOpenAdd(false)} disabled={saving}>ยกเลิก</Button>
           <Button variant="contained" onClick={handleAddOA} disabled={saving || !channelId || !channelSecret}>
             {saving ? 'กำลังบันทึก...' : 'เชื่อมต่อ'}
           </Button>
+        </DialogActions>
+      </Dialog>
+      {/* Dialog: วิธีหา Channel ID/Secret */}
+      <Dialog open={openHowTo} onClose={() => setOpenHowTo(false)} fullWidth maxWidth="sm">
+        <DialogTitle>วิธีหา Channel ID / Channel secret</DialogTitle>
+        <DialogContent dividers>
+          <List dense>
+            <ListItem>
+              <ListItemText
+                primary="1) เปิด LINE Developers Console"
+                secondary="ไปที่ Providers แล้วเลือก Channel ที่เป็น Messaging API"
+              />
+            </ListItem>
+            <ListItem>
+              <ListItemText
+                primary="2) Channel ID"
+                secondary="อยู่ในแท็บ Basic settings"
+              />
+            </ListItem>
+            <ListItem>
+              <ListItemText
+                primary="3) Channel secret"
+                secondary="อยู่ในแท็บ Messaging API"
+              />
+            </ListItem>
+            <ListItem>
+              <ListItemText
+                primary="4) นำ 2 ค่านี้มาวางในหน้า Add LINE OA"
+                secondary="ระบบจะเชื่อมต่อ OA ให้และเพิ่มเข้าในรายการของคุณ"
+              />
+            </ListItem>
+          </List>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenHowTo(false)}>ปิด</Button>
         </DialogActions>
       </Dialog>
 

@@ -16,7 +16,7 @@ import { db, auth } from '../firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
 import GuestGate from '../components/GuestGate';
-import { loginWithLine } from '../lib/authx';
+import { loginWithLine, fullLogout } from '../lib/authx';
 import { clearActiveTenantSelection } from '../lib/tenantSelection';
 
 const drawerWidthExpanded = 240;
@@ -148,9 +148,7 @@ export default function HomePage() {
 
   
   const logout = async () => {
-    clearActiveTenantSelection();
-    await signOut(auth);
-    navigate('/', { replace: true });
+    await fullLogout('/');
   };
 
   const userDisplayName =
