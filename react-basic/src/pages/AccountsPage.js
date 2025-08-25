@@ -28,15 +28,16 @@ import {
 import { fullLogout } from '../lib/authx';
 
 
-import imgOA_Create   from '../assets/oa_create_new.png';
-import imgOA_Form     from '../assets/oa_form.png';
-import imgOA_Done     from '../assets/oa_done.png';
-import imgOA_List     from '../assets/oa_list.png';
-import imgOA_Settings from '../assets/oa_settings.png';
-import imgOA_Enable   from '../assets/oa_enable_messaging_api.png';
-import imgOA_Provider from '../assets/oa_choose_provider.png';
-import imgOA_OK       from '../assets/oa_ok.png';
-import imgOA_Check_id from '../assets/oa_check_id.png';
+// ใช้ new URL เพื่อให้ได้ URL string แน่นอนในทุก bundler
+const imgOA_Create    = new URL('../assets/oa_create_new.png', import.meta.url).href;
+const imgOA_Form      = new URL('../assets/oa_form.png', import.meta.url).href;
+const imgOA_Done      = new URL('../assets/oa_done.png', import.meta.url).href;
+const imgOA_List      = new URL('../assets/oa_list.png', import.meta.url).href;
+const imgOA_Settings  = new URL('../assets/oa_settings.png', import.meta.url).href;
+const imgOA_Enable    = new URL('../assets/oa_enable_messaging_api.png', import.meta.url).href;
+const imgOA_Provider  = new URL('../assets/oa_choose_provider.png', import.meta.url).href;
+const imgOA_OK        = new URL('../assets/oa_ok.png', import.meta.url).href;
+const imgOA_Check_id  = new URL('../assets/oa_check_id.png', import.meta.url).href;
 
 
 // -------- utils --------
@@ -73,6 +74,17 @@ function sanitizeNext(raw) {
     return String(raw).startsWith('/') ? raw : '';
   }
 }
+const StepImg = ({ src, alt }) => (
+  <Box sx={{ borderTop: '1px solid #eee', background: '#fafafa' }}>
+    <Box
+      component="img"
+      src={src}
+      alt={alt}
+      onError={(e) => { e.currentTarget.style.display = 'none'; }} // ถ้ารูปพังซ่อนทิ้ง
+      style={{ width: '100%', display: 'block', maxHeight: 520, objectFit: 'contain' }}
+    />
+  </Box>
+);
 
 export default function AccountsPage() {
   const navigate = useNavigate();
@@ -500,17 +512,6 @@ export default function AccountsPage() {
                   >
                     Members
                   </Button>
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    href={`https://page.line.me/${t.basicId || ''}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    sx={{ mr: 1 }}
-                    disabled={!t.basicId}
-                  >
-                    View OA
-                  </Button>
                   <Button size="small" onClick={() => openTenant(t)}>
                     Open
                   </Button>
@@ -583,120 +584,113 @@ export default function AccountsPage() {
         </DialogActions>
       </Dialog>
 
-      {/* Dialog: 3) การเชื่อมต่อ LINE OA (Channel ID / Channel secret) — ข้อ B */}
+      {/* Dialog: การเชื่อมต่อ LINE OA (Channel ID / Channel secret) */}
       <Dialog open={openHowTo} onClose={() => setOpenHowTo(false)} fullWidth maxWidth="md">
-        <DialogTitle>3) การเชื่อมต่อ LINE OA (Channel ID / Channel secret) — ข้อ B</DialogTitle>
+        <DialogTitle>Tips : การเชื่อมต่อ LINE OA (Channel ID / Channel secret)</DialogTitle>
         <DialogContent dividers sx={{ display: 'grid', gap: 2 }}>
-
-          {/* B1: Create new OA */}
+          {/* 1 */}
           <Card variant="outlined">
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                B1) เข้าสู่ LINE Official Account Manager แล้วกด “Create new”
+                1) เข้าสู่ LINE Official Account Manager แล้วกด “Create new”
               </Typography>
               <Typography variant="body2" color="text.secondary">
                 สร้างบัญชี LINE OA ใหม่ หากยังไม่มี (กรอกข้อมูลชื่อ ประเภท ธุรกิจ ฯลฯ ให้ครบ)
               </Typography>
             </CardContent>
-            <CardMedia component="img" image={imgOA_Create} alt="Create new Official Account"
-              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+            <StepImg src={imgOA_Create} alt="Create new Official Account" />
             <Box sx={{ px: 2, py: 1, fontSize: 12, color: 'text.secondary' }}>
               ตัวอย่าง: หน้าสร้าง OA ใหม่
             </Box>
           </Card>
 
-          {/* B2: Fill form */}
+          {/* 2 */}
           <Card variant="outlined">
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                B2) กรอกรายละเอียดให้ครบถ้วน
+                2) กรอกรายละเอียดให้ครบถ้วน
               </Typography>
               <Typography variant="body2" color="text.secondary">
                 ตรวจสอบชื่อ รูปภาพ และข้อมูลธุรกิจให้ถูกต้องก่อนดำเนินการต่อ
               </Typography>
             </CardContent>
-            <CardMedia component="img" image={imgOA_Form} alt="OA Form"
-              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+            <StepImg src={imgOA_Form} alt="แบบฟอร์ม OA" />
           </Card>
 
-          {/* B3: Complete */}
+          {/* 3 */}
           <Card variant="outlined">
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                B3) ตรวจสอบข้อมูลและกด “เสร็จสิ้น”
+                3) ตรวจสอบข้อมูลและกด “เสร็จสิ้น”
               </Typography>
             </CardContent>
-            <CardMedia component="img" image={imgOA_Done} alt="Complete OA"
-              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+            <StepImg src={imgOA_Done} alt="เสร็จสิ้นการสร้าง OA" />
           </Card>
 
-          {/* B4: Back to list */}
+          {/* 4 */}
           <Card variant="outlined">
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                B4) กลับไปเลือก Account ที่สร้างจากรายการ (List)
+                4) กลับไปเลือก Account ที่สร้างจากรายการ (List)
               </Typography>
             </CardContent>
-            <CardMedia component="img" image={imgOA_List} alt="OA List"
-              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+            <StepImg src={imgOA_List} alt="รายการ Official Accounts" />
           </Card>
 
-          {/* B5: Settings */}
+          {/* 5 */}
           <Card variant="outlined">
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                B5) กด “Settings” มุมขวาบนของ OA
+                5) กด “Settings” มุมขวาบนของ OA
               </Typography>
             </CardContent>
-            <CardMedia component="img" image={imgOA_Settings} alt="OA Settings"
-              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+            <StepImg src={imgOA_Settings} alt="เมนู Settings ของ OA" />
           </Card>
 
-          {/* B6: Enable Messaging API */}
+          {/* 6 */}
           <Card variant="outlined">
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                B6) ไปที่หัวข้อ “Messaging API” และกด “Enable Messaging API”
+                6) ไปที่หัวข้อ “Messaging API” และกด “Enable Messaging API”
               </Typography>
             </CardContent>
-            <CardMedia component="img" image={imgOA_Enable} alt="Enable Messaging API"
-              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+            <StepImg src={imgOA_Enable} alt="Enable Messaging API" />
           </Card>
 
-          {/* B7: Choose provider */}
+          {/* 7 */}
           <Card variant="outlined">
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                B7) เลือก Provider ที่ต้องการหรือสร้าง Provider ใหม่
+                7) เลือก Provider ที่ต้องการหรือสร้าง Provider ใหม่
               </Typography>
             </CardContent>
-            <CardMedia component="img" image={imgOA_Provider} alt="Choose Provider"
-              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+            <StepImg src={imgOA_Provider} alt="เลือก Provider" />
           </Card>
 
-          {/* B8: Confirm */}
+          {/* 8 */}
           <Card variant="outlined">
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                B8) กด “OK”
+                8) กด “OK”
               </Typography>
             </CardContent>
-            <CardMedia component="img" image={imgOA_OK} alt="Confirm OK"
-              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
-          </Card> 
+            <StepImg src={imgOA_OK} alt="ยืนยันการเชื่อมต่อ" />
+          </Card>
 
-          {/* B9: Read Channel ID/Secret */}
+          {/* 9 */}
           <Card variant="outlined">
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                B9) ดูค่า Channel ID / Channel secret
+                9) ดูค่า Channel ID / Channel secret
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                - แท็บ <b>Basic settings</b>: ดู <b>Channel ID</b><br />
+                - แท็บ <b>Messaging API</b>: เลื่อนลงเพื่อดู <b>Channel secret</b>
               </Typography>
             </CardContent>
-            <CardMedia component="img" image={imgOA_Check_id} alt="Confirm OK"
-              sx={{ maxHeight: 520, objectFit: 'contain', background: '#fafafa', borderTop: '1px solid #eee' }} />
+            <StepImg src={imgOA_Check_id} alt="ตำแหน่ง Channel ID / Channel secret" />
           </Card>
 
-          {/* ใช้กับระบบเราอย่างไร */}
           <Card variant="outlined">
             <CardContent>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
@@ -704,18 +698,18 @@ export default function AccountsPage() {
               </Typography>
               <Typography variant="body2" color="text.secondary">
                 เปิดหน้า <b>Accounts</b> → กด <b>Add LINE OA</b> → วาง <em>Channel ID</em> และ <em>Channel secret</em> แล้วกดเชื่อมต่อ
-                (หากเคยเชื่อมแล้ว ระบบจะอัปเดตโทเค็น/ข้อมูลล่าสุดให้โดยไม่สร้างซ้ำ)
+                (ถ้าเคยเชื่อมแล้ว ระบบจะอัปเดตข้อมูล/โทเค็นล่าสุดให้โดยไม่สร้างซ้ำ)
               </Typography>
               <Box sx={{ mt: 1 }}>
                 <MuiLink href="https://developers.line.biz/en/" target="_blank" rel="noreferrer">
-                  เปิด LINE Developers Console <OpenInNewIcon fontSize="inherit" />
+                  เปิด LINE Developers Console
                 </MuiLink>
               </Box>
             </CardContent>
           </Card>
 
           <Alert severity="info">
-            <b>หมายเหตุ:</b> ถ้าคุณไม่เห็น <em>Channel secret</em> ให้ตรวจสิทธิ์ใน Provider/Project และยืนยันว่า Channel เป็นประเภท <b>Messaging API</b>
+            <b>หมายเหตุ:</b> หากไม่เห็น <em>Channel secret</em> ให้ตรวจสอบสิทธิ์ใน Provider/Project และยืนยันว่า Channel เป็นประเภท <b>Messaging API</b>
             (ไม่ใช่ LINE Login อย่างเดียว)
           </Alert>
         </DialogContent>
