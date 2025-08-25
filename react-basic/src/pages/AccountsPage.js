@@ -27,21 +27,22 @@ import {
 } from 'firebase/firestore';
 import { fullLogout } from '../lib/authx';
 
-// ---------- รูปจาก public/assets ----------
-const PUB = process.env.PUBLIC_URL || '';
+
+// ---------- รูปจาก public/assets (ใช้ absolute path) ----------
+const asset = (name) => `/assets/${name}`;
 const IMG = {
-  create:   `${PUB}/assets/oa_create_new.png`,
-  form:     `${PUB}/assets/oa_form.png`,
-  done:     `${PUB}/assets/oa_done.png`,
-  list:     `${PUB}/assets/oa_list.png`,
-  settings: `${PUB}/assets/oa_settings.png`,
-  enable:   `${PUB}/assets/oa_enable_messaging_api.png`,
-  provider: `${PUB}/assets/oa_choose_provider.png`,
-  ok:       `${PUB}/assets/oa_ok.png`,
-  checkId:  `${PUB}/assets/oa_check_id.png`,
+  create:   asset('oa_create_new.png'),
+  form:     asset('oa_form.png'),
+  done:     asset('oa_done.png'),
+  list:     asset('oa_list.png'),
+  settings: asset('oa_settings.png'),
+  enable:   asset('oa_enable_messaging_api.png'),
+  provider: asset('oa_choose_provider.png'),
+  ok:       asset('oa_ok.png'),
+  checkId:  asset('oa_check_id.png'),
 };
 
-// แสดงรูป + กัน onError ให้เห็น placeholder
+// คอมโพเนนต์รูป + onError fallback
 const StepImage = ({ src, alt }) => (
   <Box
     component="img"
@@ -52,7 +53,8 @@ const StepImage = ({ src, alt }) => (
     onError={(e) => {
       e.currentTarget.replaceWith(
         Object.assign(document.createElement('div'), {
-          style: 'height:160px;background:#f5f5f5;border-top:1px solid #eee;display:flex;align-items:center;justify-content:center;color:#777;font:500 13px/1.4 system-ui',
+          style:
+            'height:160px;background:#f5f5f5;border-top:1px solid #eee;display:flex;align-items:center;justify-content:center;color:#777;font:500 13px/1.4 system-ui',
           innerText: 'ไม่สามารถโหลดรูปได้: ' + (alt || ''),
         })
       );
