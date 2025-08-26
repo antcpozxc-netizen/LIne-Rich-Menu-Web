@@ -35,6 +35,7 @@ export default function HomePage() {
   const [richMessageOpen, setRichMessageOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [chatScreenOpen, setChatScreenOpen] = useState(false);
+  const [adminOpen, setAdminOpen] = useState(false);
 
   // auth + profile
   const [user, setUser] = useState(null);
@@ -53,7 +54,13 @@ export default function HomePage() {
     });
   }, []);
 
-  // claims/admin (เผื่อมี)
+  useEffect(() => {
+    if (location.pathname.startsWith('/homepage/admin')) {
+      setAdminOpen(true);
+    }
+  }, [location.pathname]);
+
+
   // claims/admin (เผื่อมี)
   useEffect(() => {
     let unsub = () => {};
@@ -380,22 +387,26 @@ export default function HomePage() {
               </List>
             </Collapse>
 
-            {/* Admin group */}
+            {/* Admin (collapsible) */}
             {allowAdminMenu && (
               <>
-                <Divider sx={{ my: 1 }} />
                 <ListItem disablePadding>
-                  <ListItemButton onClick={() => navigate(`/homepage/admin/templates${tenantQuery}`)}>
+                  <ListItemButton onClick={() => setAdminOpen(!adminOpen)}>
                     <ListItemIcon><AdminIcon /></ListItemIcon>
-                    {sidebarOpen && <ListItemText primary="Add Template Rich Menus" />}
+                    {sidebarOpen && <ListItemText primary="Admin" />}
+                    {sidebarOpen && (adminOpen ? <ExpandLess /> : <ExpandMore />)}
                   </ListItemButton>
                 </ListItem>
-                <ListItem disablePadding>
-                  <ListItemButton onClick={() => navigate(`/homepage/admin/users${tenantQuery}`)}>
-                    <ListItemIcon><AdminIcon /></ListItemIcon>
-                    {sidebarOpen && <ListItemText primary="Administrator management" />}
-                  </ListItemButton>
-                </ListItem>
+                <Collapse in={adminOpen && sidebarOpen} timeout="auto" unmountOnExit>
+                  <List component="div" disablePadding>
+                    <ListItemButton sx={{ pl: 4 }} onClick={() => navigate(`/homepage/admin/templates${tenantQuery}`)}>
+                      <ListItemText primary="Add Template Rich Menus" />
+                    </ListItemButton>
+                    <ListItemButton sx={{ pl: 4 }} onClick={() => navigate(`/homepage/admin/users${tenantQuery}`)}>
+                      <ListItemText primary="Administrator management" />
+                    </ListItemButton>
+                  </List>
+                </Collapse>
               </>
             )}
           </List>
