@@ -11,15 +11,29 @@ export default function RequireAdmin() {
 
   useEffect(() => {
     const off = onAuthStateChanged(auth, async (u) => {
-      if (!u) return setState({ loading: false, ok: false });
+      if (!u) {
+        setState({ loading: false, ok: false });
+        return;
+      }
       try {
+        // อ่านข้อมูลผู้ใช้จาก Firestore (role / isAdmin flag)
         const snap = await getDoc(doc(db, 'users', u.uid));
-        const role = snap.get('role');
-        const isAdminFlag = !!snap.get('isAdmin');
-        // เผื่อใช้ custom claims ด้วย
+        const role = snap.get('role');            // 'developer' | 'headAdmin' | 'admin' | 'user'
+        const isAdminFlag = !!snap.get('isAdmin'); // เพื่อรองรับของเดิม
+
+        // อ่าน custom claims จาก token (admin/head/dev)
         const token = await u.getIdTokenResult(true).catch(() => null);
         const claimAdmin = !!token?.claims?.admin;
-        setState({ loading: false, ok: role === 'admin' || isAdminFlag || claimAdmin });
+        const claimHead  = !!token?.claims?.head;
+        const claimDev   = !!token?.claims?.dev;
+
+        // ✅ ให้ dev/head/admin ผ่าน (ทั้งจาก claims และจาก doc.role)
+        const ok =
+          claimDev || claimHead || claimAdmin ||
+          role === 'developer' || role === 'headAdmin' || role === 'admin' ||
+          isAdminFlag;
+
+        setState({ loading: false, ok });
       } catch {
         setState({ loading: false, ok: false });
       }

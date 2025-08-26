@@ -12,6 +12,7 @@ import RequireAuth from './routes/RequireAuth';
 // Admin
 import AdminTemplatesPage from './pages/AdminTemplatesPage';
 import AdminTemplateEditorPage from './pages/AdminTemplateEditorPage';
+import AdminUsersPage from './pages/AdminUsersPage';
 
 import AccountsPage from './pages/AccountsPage';
 import HomePage from './pages/HomePage';
@@ -66,7 +67,7 @@ root.render(
         <Route path="template-rich-menus" element={<TemplateRichMenusPage />} />
         {/* Others */}
         <Route path="greeting-message" element={<GreetingMessagePage />} />
-        <Route path="Tips" element={<TipssPage />} />
+        <Route path="tips" element={<TipssPage />} />
         <Route path="live-chat" element={<LiveChatPage />} />
 
         {/* Admin (ต้องล็อกอิน + admin เท่านั้น) */}
@@ -75,6 +76,7 @@ root.render(
             <Route path="admin/templates" element={<AdminTemplatesPage />} />
             <Route path="admin/templates/new" element={<AdminTemplateEditorPage />} />
             <Route path="admin/templates/:id" element={<AdminTemplateEditorPage />} />
+            <Route path="admin/users" element={<AdminUsersPage />} />
           </Route>
         </Route>
       </Route>

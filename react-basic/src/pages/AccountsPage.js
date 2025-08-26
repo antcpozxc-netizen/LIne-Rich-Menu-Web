@@ -17,6 +17,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import SearchIcon from '@mui/icons-material/Search';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import AdminIcon from '@mui/icons-material/AdminPanelSettings';
 
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -26,6 +27,7 @@ import {
   getDoc, getDocs, startAt, endAt, limit
 } from 'firebase/firestore';
 import { fullLogout } from '../lib/authx';
+import useAuthClaims from '../lib/useAuthClaims';
 
 // ---------- ชี้ไฟล์รูปจาก public/assets ----------
 const PUB = process.env.PUBLIC_URL || '';
@@ -87,6 +89,7 @@ function sanitizeNext(raw) {
 }
 
 export default function AccountsPage() {
+  const { isDev } = useAuthClaims();
   const navigate = useNavigate();
   const [sp] = useSearchParams();
   const nextParam = sanitizeNext(sp.get('next') || '');
@@ -358,6 +361,25 @@ export default function AccountsPage() {
               <Button startIcon={<AddIcon />} onClick={() => setOpenAdd(true)} sx={{ color: '#fff', textTransform: 'none' }}>
                 Add LINE OA
               </Button>
+
+              {/* --- ใส่ปุ่ม Dev Console (เห็นเฉพาะ developer) --- */}
+              {isDev && (
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<AdminIcon />}
+                  onClick={() => navigate('/homepage/admin/users')}
+                  sx={{
+                    color: '#fff',
+                    borderColor: '#fff',
+                    textTransform: 'none',
+                    '&:hover': { borderColor: '#e0f2f1', backgroundColor: 'rgba(255,255,255,.08)' },
+                  }}
+                >
+                  Dev Console
+                </Button>
+              )}
+              {/* ---------------------------------------------- */}
 
               <Tooltip title={`UID: ${user.uid}`}>
                 <IconButton onClick={() => navigator.clipboard.writeText(user.uid)} sx={{ color: '#fff' }}>

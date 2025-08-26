@@ -1900,6 +1900,123 @@ app.post('/api/admin/backfill-bot-user-id', requireFirebaseAuth, requireAdmin, a
   }
 });
 
+// ======= Roles Management (Admin/Developer Console) =======
+function hasRoleFromDoc(snap, role) {
+  const r = snap.get('role');
+  const isAdminFlag = !!snap.get('isAdmin');
+  if (role === 'developer') return r === 'developer';
+  if (role === 'headAdmin') return r === 'headAdmin';
+  if (role === 'admin')     return r === 'admin' || isAdminFlag;
+  return r === 'user' || (!r && !isAdminFlag);
+}
+
+function actorRoleFromReqUser(decoded) {
+  if (decoded?.dev)  return 'developer';
+  if (decoded?.head) return 'headAdmin';
+  if (decoded?.admin) return 'admin';
+  return null;
+}
+
+async function loadActorRole(req) {
+  const viaClaims = actorRoleFromReqUser(req.user) || null;
+  if (viaClaims) return viaClaims;
+  try {
+    const snap = await admin.firestore().doc(`users/${req.user.uid}`).get();
+    if (hasRoleFromDoc(snap, 'developer')) return 'developer';
+    if (hasRoleFromDoc(snap, 'headAdmin')) return 'headAdmin';
+    if (hasRoleFromDoc(snap, 'admin'))     return 'admin';
+    return 'user';
+  } catch { return 'user'; }
+}
+
+// ✅ list users (developer/headAdmin/admin เท่านั้น)
+app.get('/api/admin/users', requireFirebaseAuth, async (req, res) => {
+  try {
+    const role = await loadActorRole(req);
+    if (!['developer', 'headAdmin', 'admin'].includes(role)) {
+      return res.status(403).json({ error: 'forbidden' });
+    }
+    const q = await admin.firestore().collection('users').orderBy('updatedAt', 'desc').limit(500).get();
+    const items = q.docs.map(d => ({ id: d.id, ...d.data() }));
+    res.json({ ok: true, items });
+  } catch (e) {
+    res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
+  }
+});
+
+// ✅ set role for a user
+// body: { role: 'developer'|'headAdmin'|'admin'|'user' }
+app.post('/api/admin/users/:uid/role', requireFirebaseAuth, async (req, res) => {
+  try {
+    const actor = await loadActorRole(req);
+    if (!['developer', 'headAdmin', 'admin'].includes(actor)) {
+      return res.status(403).json({ error: 'forbidden' });
+    }
+
+    const { uid } = req.params;
+    const { role } = req.body || {};
+    if (!['developer','headAdmin','admin','user'].includes(role)) {
+      return res.status(400).json({ error: 'invalid_role' });
+    }
+
+    const targetRef = admin.firestore().doc(`users/${uid}`);
+    const targetSnap = await targetRef.get();
+    const targetRole = targetSnap.exists ? (
+      hasRoleFromDoc(targetSnap, 'developer') ? 'developer' :
+      hasRoleFromDoc(targetSnap, 'headAdmin') ? 'headAdmin' :
+      hasRoleFromDoc(targetSnap, 'admin')     ? 'admin'     : 'user'
+    ) : 'user';
+
+    // ---- permission rules (developer > headAdmin > admin) ----
+    if (actor === 'admin') {
+      // admin: ห้ามแตะ headAdmin/developer
+      if (['developer','headAdmin'].includes(targetRole)) {
+        return res.status(403).json({ error: 'admin_cannot_touch_higher' });
+      }
+      // admin: ห้าม downgrade admin
+      if (targetRole === 'admin' && role !== 'admin') {
+        return res.status(403).json({ error: 'admin_cannot_downgrade_admin' });
+      }
+      // admin: ห้ามแต่งตั้ง headAdmin/developer
+      if (['headAdmin','developer'].includes(role)) {
+        return res.status(403).json({ error: 'admin_cannot_assign_higher' });
+      }
+    }
+
+    if (actor === 'headAdmin') {
+      // headAdmin: ห้ามแตะ developer
+      if (targetRole === 'developer' || role === 'developer') {
+        return res.status(403).json({ error: 'head_cannot_touch_developer' });
+      }
+      // นอกนั้นทำได้ (ตั้ง/ปลด headAdmin? อนุญาตเฉพาะตัวเองหรือนโยบายคุณ)
+      // ถ้าอยาก "ห้าม head ปรับ head อื่น" เพิ่ม guard นี้:
+      // if (targetRole === 'headAdmin' && role !== 'headAdmin') {
+      //   return res.status(403).json({ error: 'head_cannot_downgrade_head' });
+      // }
+    }
+
+    // developer: ทำได้ทั้งหมด
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    await targetRef.set({
+      role,
+      isAdmin: (role === 'admin' || role === 'headAdmin' || role === 'developer') ? true : false,
+      updatedAt: now
+    }, { merge: true });
+
+    // sync custom claims
+    const claims = {
+      dev:  role === 'developer',
+      head: role === 'headAdmin',
+      admin: (role === 'admin' || role === 'headAdmin' || role === 'developer'),
+    };
+    await admin.auth().setCustomUserClaims(uid, claims).catch(()=>{});
+
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
+  }
+});
+
 
 // ==============================
 // 6.x) Live Chat (Agent APIs)

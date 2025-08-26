@@ -8,23 +8,24 @@ import {
 } from '@mui/material';
 import {
   ExpandLess, ExpandMore, Send as SendIcon, Image as ImageIcon,
-  Chat as ChatIcon, TableChart as TableChartIcon,
+  Chat as ChatIcon,
   Logout as LogoutIcon, Login as LoginIcon, Menu as MenuIcon, SwapHoriz as SwapIcon,
   AdminPanelSettings as AdminIcon, HelpOutline as HelpIcon
 } from '@mui/icons-material';
 
 import { useNavigate, useLocation, useSearchParams, Outlet } from 'react-router-dom';
 import { db, auth } from '../firebase';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { onAuthStateChanged } from 'firebase/auth';
 import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
 import GuestGate from '../components/GuestGate';
 import { loginWithLine, fullLogout } from '../lib/authx';
-import { clearActiveTenantSelection } from '../lib/tenantSelection';
+import useAuthClaims  from '../lib/useAuthClaims';
 
 const drawerWidthExpanded = 240;
 const drawerWidthCollapsed = 60;
 
 export default function HomePage() {
+  
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -86,6 +87,9 @@ export default function HomePage() {
   const [activeTenantId, setActiveTenantId] = useState(null);
   const [tenant, setTenant] = useState(null);
 
+  // ใช้ custom claims สำหรับสิทธิ์ฝั่งเมนู
+  const { isAdmin: claimsAdmin, isHead, isDev } = useAuthClaims();
+
   // เมื่อมีพารามิเตอร์ tenant ก็จำไว้ใน localStorage (ทั้ง guest และ user ใช้ได้เหมือนกัน)
   useEffect(() => {
     const tFromUrl = searchParams.get('tenant');
@@ -139,6 +143,10 @@ export default function HomePage() {
   // Tabs: ตัด Insight ออก → เหลือแท็บเดียว
   const tabValue = 0;
   const handleTabChange = () => {};
+
+  const tenantQuery = activeTenantId ? `?tenant=${activeTenantId}` : '';
+  const allowAdminMenu = isAdmin || claimsAdmin || isHead || isDev;
+
 
   const switchTenant = (t) => {
     setPickerOpen(false);
@@ -372,14 +380,23 @@ export default function HomePage() {
               </List>
             </Collapse>
 
-            {/* Admin Templates (ไอคอนใหม่) */}
-            {isAdmin && (
-              <ListItem disablePadding>
-                <ListItemButton onClick={() => navigate(`/homepage/admin/templates${activeTenantId ? `?tenant=${activeTenantId}` : ''}`)}>
-                  <ListItemIcon><AdminIcon /></ListItemIcon>
-                  {sidebarOpen && <ListItemText primary="Admin: Templates" />}
-                </ListItemButton>
-              </ListItem>
+            {/* Admin group */}
+            {allowAdminMenu && (
+              <>
+                <Divider sx={{ my: 1 }} />
+                <ListItem disablePadding>
+                  <ListItemButton onClick={() => navigate(`/homepage/admin/templates${tenantQuery}`)}>
+                    <ListItemIcon><AdminIcon /></ListItemIcon>
+                    {sidebarOpen && <ListItemText primary="Add Template Rich Menus" />}
+                  </ListItemButton>
+                </ListItem>
+                <ListItem disablePadding>
+                  <ListItemButton onClick={() => navigate(`/homepage/admin/users${tenantQuery}`)}>
+                    <ListItemIcon><AdminIcon /></ListItemIcon>
+                    {sidebarOpen && <ListItemText primary="Administrator management" />}
+                  </ListItemButton>
+                </ListItem>
+              </>
             )}
           </List>
 
