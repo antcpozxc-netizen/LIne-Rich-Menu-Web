@@ -2017,6 +2017,32 @@ app.post('/api/admin/users/:uid/role', requireFirebaseAuth, async (req, res) => 
   }
 });
 
+// ======= Delete user (developer only) =======
+app.delete('/api/admin/users/:uid', requireFirebaseAuth, async (req, res) => {
+  try {
+    const actor = await loadActorRole(req); // มีอยู่แล้วใน Roles Management block
+    if (actor !== 'developer') {
+      return res.status(403).json({ error: 'forbidden' });
+    }
+    const { uid } = req.params;
+
+    // ป้องกันลบตัวเอง (กันพลาดล็อกตัวเองออกจากระบบ)
+    if (uid === req.user.uid) {
+      return res.status(400).json({ error: 'cannot_delete_self' });
+    }
+
+    // ลบ Firestore doc
+    await admin.firestore().doc(`users/${uid}`).delete().catch(() => {});
+    // ลบ Firebase Auth user (ถ้า uid นี้เป็น user จริงใน Auth)
+    await admin.auth().deleteUser(uid).catch(() => {});
+
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
+  }
+});
+
+
 
 // ==============================
 // 6.x) Live Chat (Agent APIs)
