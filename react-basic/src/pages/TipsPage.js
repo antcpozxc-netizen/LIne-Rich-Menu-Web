@@ -99,14 +99,14 @@ export default function TipsPage() {
         </AccordionSummary>
         <AccordionDetails>
           <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>
-            3) การเชื่อมต่อ LINE OA (Channel ID / Channel secret) — ข้อ B
+            การเชื่อมต่อ LINE OA (Channel ID / Channel secret)
           </Typography>
 
           {/* B1 */}
           <Card variant="outlined" sx={{ mb: 2 }}>
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                B1) เข้าสู่ LINE Official Account Manager แล้วกด “Create new”
+                1) เข้าสู่ LINE Official Account Manager แล้วกด “Create new”
               </Typography>
               <Typography variant="body2" color="text.secondary">
                 สร้างบัญชี LINE OA ใหม่ หากยังไม่มี (กรอกข้อมูลชื่อ ประเภท ธุรกิจ ฯลฯ ให้ครบ)
@@ -123,7 +123,7 @@ export default function TipsPage() {
           <Card variant="outlined" sx={{ mb: 2 }}>
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                B2) กรอกรายละเอียดให้ครบถ้วน
+                2) กรอกรายละเอียดให้ครบถ้วน
               </Typography>
               <Typography variant="body2" color="text.secondary">
                 ตรวจสอบชื่อ รูปภาพ และข้อมูลธุรกิจให้ถูกต้องก่อนดำเนินการต่อ
@@ -137,7 +137,7 @@ export default function TipsPage() {
           <Card variant="outlined" sx={{ mb: 2 }}>
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                B3) ตรวจสอบข้อมูลและกด “เสร็จสิ้น”
+                3) ตรวจสอบข้อมูลและกด “เสร็จสิ้น”
               </Typography>
             </CardContent>
             <CardMedia component="img" image={imgOA_Done} alt="Complete OA"
@@ -148,7 +148,7 @@ export default function TipsPage() {
           <Card variant="outlined" sx={{ mb: 2 }}>
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                B4) กลับไปเลือก Account ที่สร้างจากรายการ (List)
+                4) กลับไปเลือก Account ที่สร้างจากรายการ (List)
               </Typography>
             </CardContent>
             <CardMedia component="img" image={imgOA_List} alt="OA List"
@@ -159,7 +159,7 @@ export default function TipsPage() {
           <Card variant="outlined" sx={{ mb: 2 }}>
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                B5) กด “Settings” มุมขวาบนของ OA
+                5) กด “Settings” มุมขวาบนของ OA
               </Typography>
             </CardContent>
             <CardMedia component="img" image={imgOA_Settings} alt="OA Settings"
@@ -170,7 +170,7 @@ export default function TipsPage() {
           <Card variant="outlined" sx={{ mb: 2 }}>
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                B6) ไปที่หัวข้อ “Messaging API” และกด “Enable Messaging API”
+                6) ไปที่หัวข้อ “Messaging API” และกด “Enable Messaging API”
               </Typography>
             </CardContent>
             <CardMedia component="img" image={imgOA_Enable} alt="Enable Messaging API"
@@ -181,7 +181,7 @@ export default function TipsPage() {
           <Card variant="outlined" sx={{ mb: 2 }}>
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                B7) เลือก Provider ที่ต้องการหรือสร้าง Provider ใหม่
+                7) เลือก Provider ที่ต้องการหรือสร้าง Provider ใหม่
               </Typography>
             </CardContent>
             <CardMedia component="img" image={imgOA_Provider} alt="Choose Provider"
@@ -192,7 +192,7 @@ export default function TipsPage() {
           <Card variant="outlined" sx={{ mb: 2 }}>
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                B8) กด “OK”
+                8) กด “OK”
               </Typography>
             </CardContent>
             <CardMedia component="img" image={imgOA_OK} alt="Confirm OK"
@@ -203,7 +203,7 @@ export default function TipsPage() {
           <Card variant="outlined" sx={{ mb: 2 }}>
             <CardContent sx={{ pb: 1 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                B9) ดูค่า Channel ID / Channel secret
+                9) ดูค่า Channel ID / Channel secret
               </Typography>
               <Typography variant="body2" color="text.secondary">
                 - Tab <b>Basic settings</b>: ดู <b>Channel ID</b> • Tab <b>Messaging API</b>: เลื่อนลงไปด้านล่างเพื่อดู <b>Channel secret</b>
