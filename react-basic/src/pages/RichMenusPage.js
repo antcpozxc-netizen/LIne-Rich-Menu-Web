@@ -741,7 +741,7 @@ async function onSaveReady() {
                 onMouseDown={() => setSelected(null)}
               >
                 {image ? (
-                  <img src={image} alt="" style={{ width: "100%", height: "100%", display: "block", objectFit: "contain" }} />
+                  <img src={image} alt="" style={{ width: "100%", height: "100%", display: "block", objectFit: "cover" }} />
                 ) : (
                   <Box sx={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", color: "text.secondary" }}>
                     <Typography>No image</Typography>
