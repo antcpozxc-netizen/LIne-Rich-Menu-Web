@@ -224,24 +224,13 @@ export default function TipsPage() {
                 (หากเคยเชื่อมแล้ว ระบบจะอัปเดตโทเค็น/ข้อมูลล่าสุดให้โดยไม่สร้างซ้ำ)
               </Typography>
               <Box sx={{ mt: 1 }}>
-                <MuiLink href="https://developers.line.biz/en/" target="_blank" rel="noreferrer">
-                  เปิด LINE Developers Console
+                <MuiLink href="https://lineforbusiness.com/th/service/line-oa-features" target="_blank" rel="noreferrer">
+                  เปิด LINE Official Account
                 </MuiLink>
               </Box>
             </CardContent>
           </Card>
-
-          {/* โค้ดเรียกใช้งานฝั่งเรา (เก็บตัวอย่างเดิมไว้ด้วย) */}
-          <Code>
-      {`// ตัวอย่างเรียก /api/tenants (ย่อจาก AccountsPage.js)
-      const idToken = await auth.currentUser.getIdToken();
-      await fetch('/api/tenants', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: \`Bearer \${idToken}\` },
-        body: JSON.stringify({ channelId, channelSecret })
-      });`}
-          </Code>
-
+          
           <Note>
             ถ้าเชื่อม OA เดิมซ้ำ ระบบจะ “อัปเดตข้อมูล/โทเค็นล่าสุดให้” โดยไม่สร้างซ้ำ •
             หากไม่เห็นค่า <em>Channel secret</em> ให้ตรวจสิทธิ์ใน Provider/Project และยืนยันว่า Channel เป็นประเภท <b>Messaging API</b>

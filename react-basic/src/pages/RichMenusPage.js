@@ -20,6 +20,7 @@ import { auth, storage, db } from '../firebase';
 import { doc, getDoc } from 'firebase/firestore';
 
 import { useAuthx } from '../lib/authx';
+import RichMenuDesignerDialog from '../components/RichMenuDesignerDialog';
 
 const STORAGE_KEY = 'richMenuDraft';
 
@@ -67,6 +68,8 @@ const pctClamp = (n) => Math.round(clamp(Number(n) || 0, 0, 100) * 100) / 100;
 
 const readDraft = () => { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch { return {}; } };
 const writeDraft = (obj) => localStorage.setItem(STORAGE_KEY, JSON.stringify(obj));
+
+
 
 // --- resize to LINE spec ---
 async function drawToSize(file, targetW, targetH, mime='image/jpeg') {
@@ -278,6 +281,8 @@ export default function RichMenusPage() {
   const isEditing = !!draftId;
 
   const { isAuthed, ensureLogin } = useAuthx();
+
+  const [designerOpen, setDesignerOpen] = useState(false);
   
   const [snack, setSnack] = useState('');
   const [templateOpen, setTemplateOpen] = useState(false);
@@ -717,6 +722,7 @@ async function onSaveReady() {
                   <Button variant="outlined" onClick={() => applyTemplate(template)}>Reset to template</Button>
                   <Button variant="outlined" onClick={() => setTemplateOpen(true)}>Template</Button>
                   <Button variant="outlined" startIcon={<ImageIcon />} onClick={() => fileRef.current?.click()}>Change</Button>
+                  <Button variant="outlined" onClick={() => setDesignerOpen(true)}>Design image</Button>
                   <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => e.target.files?.[0] && uploadImage(e.target.files[0])} />
                 </Stack>
               </Stack>
@@ -817,7 +823,17 @@ async function onSaveReady() {
       <TemplateModal open={templateOpen} onClose={() => setTemplateOpen(false)}
         value={template}
         onApply={(tpl) => { setTemplateOpen(false); applyTemplate(tpl); setSnack("Template applied"); }} />
-
+      <RichMenuDesignerDialog
+        open={designerOpen}
+        onClose={() => setDesignerOpen(false)}
+        templateSize={template.size}     // 'large' | 'compact'
+        areas={areas}                    // ใช้บล็อกตาม template/areas ปัจจุบัน
+        onExport={async (file) => {      // ส่งไฟล์กลับมาให้เราอัปโหลดผ่านฟังก์ชันเดิม
+          await uploadImage(file);
+          setDesignerOpen(false);
+          setSnack('นำรูปที่ออกแบบมาใช้แล้ว');
+        }}
+      />
       <Snackbar open={!!snack} autoHideDuration={2200} onClose={() => setSnack("")} message={snack} />
     </Container>
   );
