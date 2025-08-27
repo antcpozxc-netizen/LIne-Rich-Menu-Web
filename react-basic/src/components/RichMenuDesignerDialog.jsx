@@ -1,11 +1,17 @@
-// src/components/RichMenuDesignerDialog.jsx
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Box, Button, Dialog, DialogTitle, DialogContent, DialogActions,
   Stack, Typography, TextField, IconButton, Paper,
-  Select, MenuItem, Slider, Tooltip, Chip, useMediaQuery
+  Select, MenuItem, Slider, Tooltip, Chip, useMediaQuery, Divider,
+  ToggleButton, ToggleButtonGroup
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
+import FormatAlignLeftIcon from '@mui/icons-material/FormatAlignLeft';
+import FormatAlignCenterIcon from '@mui/icons-material/FormatAlignCenter';
+import FormatAlignRightIcon from '@mui/icons-material/FormatAlignRight';
+import VerticalAlignTopIcon from '@mui/icons-material/VerticalAlignTop';
+import VerticalAlignCenterIcon from '@mui/icons-material/VerticalAlignCenter';
+import VerticalAlignBottomIcon from '@mui/icons-material/VerticalAlignBottom';
 
 /* ---------- helpers ---------- */
 function pctToPxRect(cellPct, width, height) {
@@ -76,15 +82,17 @@ export default function RichMenuDesignerDialog({
   areas = [],           // [{id, x, y, w, h}] (percent)
   onExport,             // async (file) => {}
 }) {
+  // Preview canvas constants
   const CANVAS_W = 1000;
   const EXPORT_W = 2500;
   const EXPORT_H = templateSize === 'compact' ? 843 : 1686;
   const CANVAS_H = Math.round((EXPORT_H / EXPORT_W) * CANVAS_W);
+  const SCALE = EXPORT_W / CANVAS_W; // << ใช้สเกลนี้ตอน export ให้เท่ากับ preview
 
   const cells = useMemo(() => (areas || []).map(a => ({ id: a.id, ...pctToPxRect(a, CANVAS_W, CANVAS_H) })), [areas]);
 
-  const [bgColor, setBgColor] = useState('#ffffff');
-  const [zoom, setZoom] = useState(100);      // preview zoom %
+  const [bgColor, setBgColor] = useState('#ffffff'); // Canvas background
+  const [zoom, setZoom] = useState(100);             // preview zoom %
   const zoomFactor = Math.max(40, Math.min(160, zoom)) / 100;
 
   // block configs
@@ -95,12 +103,16 @@ export default function RichMenuDesignerDialog({
     fontWeight: 600,
     fontFamily: FONT_OPTIONS[0].family,
     textShadow: { color: 'rgba(0,0,0,.25)', blur: 6, x: 0, y: 2 },
+    //ตำแหน่งแบบ grid
     align: 'center',
     vAlign: 'center',
+    // ขอบด้านใน
     padding: 8,
+    // พื้นหลังบล็อก
     fillColor: '#f6f6f6',
+    // รูป/การจัดวาง
     image: null,
-    imageFit: 'contain',
+    imageFit: 'contain', // contain/cover
     // stickers
     sticker: null,
     stickerScale: 1,
@@ -136,7 +148,7 @@ export default function RichMenuDesignerDialog({
       const tx = cell.x + padding, ty = cell.y + padding;
       const tw = cell.w - padding*2, th = cell.h - padding*2;
 
-      // fill
+      // block background
       if (cfg.fillColor) { ctx.fillStyle = cfg.fillColor; ctx.fillRect(cell.x, cell.y, cell.w, cell.h); }
 
       // image
@@ -209,8 +221,9 @@ export default function RichMenuDesignerDialog({
         ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
       }
 
-      // outline
-      ctx.strokeStyle = 'rgba(0,0,0,.12)'; ctx.lineWidth = 1;
+      // outline (ไฮไลต์บล็อกที่เลือก)
+      ctx.lineWidth = (idx === selIdx) ? 2 : 1;
+      ctx.strokeStyle = (idx === selIdx) ? '#1976d2' : 'rgba(0,0,0,.12)';
       ctx.strokeRect(cell.x, cell.y, cell.w, cell.h);
     });
   }, [cells, configs, bgColor]);
@@ -256,11 +269,16 @@ export default function RichMenuDesignerDialog({
     (areas || []).forEach((a, idx) => {
       const rect = pctToPxRect(a, EXPORT_W, EXPORT_H);
       const c = configs[idx] || {};
-      const padding = c.padding || 0;
+
+      // สเกลอิงจาก preview → export
+      const padding = Math.round((c.padding || 0) * SCALE);
       const tx = rect.x + padding, ty = rect.y + padding;
       const tw = rect.w - padding*2, th = rect.h - padding*2;
 
+      // block background
       if (c.fillColor) { ctx.fillStyle = c.fillColor; ctx.fillRect(rect.x, rect.y, rect.w, rect.h); }
+
+      // image (contain/cover)
       if (c.image) {
         const img = c.image;
         let dw, dh, dx, dy;
@@ -274,6 +292,8 @@ export default function RichMenuDesignerDialog({
         dx = tx + Math.round((tw - dw)/2); dy = ty + Math.round((th - dh)/2);
         ctx.drawImage(img, dx, dy, dw, dh);
       }
+
+      // sticker
       if (c.sticker) {
         const img = c.sticker;
         const base = Math.min(tw, th) * (c.stickerScale || 1);
@@ -290,10 +310,12 @@ export default function RichMenuDesignerDialog({
         }
         ctx.drawImage(img, dx, dy, base, base);
       }
+
+      // text
       const t = (c.text || '').trim();
       if (t) {
+        const fontPx = Math.round((c.fontSize || 22) * SCALE);
         ctx.fillStyle = c.textColor || '#000';
-        const fontPx = c.fontSize || 22;
         ctx.font = `${c.fontWeight || 400} ${fontPx}px ${c.fontFamily || 'system-ui'}`;
         ctx.textAlign = (c.align || 'center'); ctx.textBaseline = 'alphabetic';
 
@@ -309,9 +331,9 @@ export default function RichMenuDesignerDialog({
         }
 
         ctx.shadowColor = c.textShadow?.color || 'rgba(0,0,0,.25)';
-        ctx.shadowBlur = Math.round(c.textShadow?.blur ?? 6);
-        ctx.shadowOffsetX = Math.round(c.textShadow?.x ?? 0);
-        ctx.shadowOffsetY = Math.round(c.textShadow?.y ?? 2);
+        ctx.shadowBlur = Math.round((c.textShadow?.blur ?? 6) * SCALE);
+        ctx.shadowOffsetX = Math.round((c.textShadow?.x ?? 0) * SCALE);
+        ctx.shadowOffsetY = Math.round((c.textShadow?.y ?? 2) * SCALE);
 
         const lines = t.split(/\n/), lh = Math.round(fontPx * 1.25);
         if (lines.length === 1) ctx.fillText(lines[0], Math.round(x), Math.round(y));
@@ -431,14 +453,14 @@ export default function RichMenuDesignerDialog({
             setHistory(h=>h.slice(0,-1));
             setFuture(f=>[JSON.stringify(configs), ...f]);
             setConfigs(prev);
-          }}>Undo</Button>
+          }}>UNDO</Button>
           <Button size="small" onClick={()=>{
             if (!future.length) return;
             const next = JSON.parse(future[0]);
             setFuture(f=>f.slice(1));
             setHistory(h=>[...h, JSON.stringify(configs)]);
             setConfigs(next);
-          }}>Redo</Button>
+          }}>REDO</Button>
           <IconButton onClick={onClose}><CloseIcon /></IconButton>
         </Stack>
       </DialogTitle>
@@ -453,7 +475,7 @@ export default function RichMenuDesignerDialog({
               <Typography variant="caption">Zoom</Typography>
               <Slider value={zoom} min={40} max={160} step={10} onChange={(_, v)=>setZoom(Array.isArray(v)?v[0]:v)} sx={{ width: 140 }} />
               <Button size="small" onClick={()=>setZoom(100)}>100%</Button>
-              <Button size="small" onClick={()=>setZoom(90)}>Fit</Button>
+              <Button size="small" onClick={()=>setZoom(90)}>FIT</Button>
             </Stack>
 
             <Box sx={{ flex:1, overflow:'auto', display:'grid', placeItems:'center', bgcolor:'#f6f8f9', borderRadius:1 }}>
@@ -479,8 +501,8 @@ export default function RichMenuDesignerDialog({
           {/* RIGHT: Controls */}
           <Stack spacing={1.5} sx={{ width: 480, minWidth: 480, overflow: 'auto', pr: .5 }}>
             <Paper variant="outlined" sx={{ p: 1.5 }}>
-              <Typography variant="subtitle2" gutterBottom>Background</Typography>
-              <ColorInput label="Background color" value={bgColor} onChange={setBgColor} />
+              <Typography variant="subtitle2" gutterBottom>Canvas background</Typography>
+              <ColorInput label="Canvas color" value={bgColor} onChange={setBgColor} />
               <Stack direction="row" spacing={1} sx={{ mt: 1, flexWrap:'wrap' }}>
                 {SWATCHES.map(c => <Chip key={c} size="small" label="" onClick={()=>setBgColor(c)} sx={{ bgcolor:c, border:'1px solid rgba(0,0,0,.1)' }} />)}
               </Stack>
@@ -497,10 +519,13 @@ export default function RichMenuDesignerDialog({
                   ))}
                 </Stack>
                 <Box sx={{ flex: 1 }} />
-                <Button size="small" onClick={applyToAll}>Apply to all</Button>
-                <Button size="small" color="warning" onClick={resetBlock}>Reset block</Button>
+                <Button size="small" onClick={applyToAll}>APPLY TO ALL</Button>
+                <Button size="small" color="warning" onClick={resetBlock}>RESET BLOCK</Button>
               </Stack>
 
+              <Divider sx={{ my: 1 }} />
+
+              <Typography variant="caption" sx={{ mb:.5, display:'block' }}>Text</Typography>
               <TextField label="Text" size="small" multiline minRows={2}
                 value={cfg.text || ''} onChange={(e) => update({ text:e.target.value })} sx={{ mb: 1 }} />
 
@@ -530,24 +555,32 @@ export default function RichMenuDesignerDialog({
                 <ColorInput label="Text color" value={cfg.textColor || '#000000'} onChange={(v)=>update({ textColor:v })} />
               </Stack>
 
-              {/* grid vs free */}
-              <Stack direction="row" spacing={1} sx={{ mb:1 }}>
+              {/* grid vs free + align icons */}
+              <Stack direction="row" spacing={1} sx={{ mb:1, alignItems:'center', flexWrap:'wrap' }}>
                 <Select size="small" value={cfg.positionMode || 'grid'} onChange={(e)=>update({ positionMode:e.target.value })}>
                   <MenuItem value="grid">Grid position</MenuItem>
                   <MenuItem value="free">Free position</MenuItem>
                 </Select>
+
                 {cfg.positionMode === 'grid' ? (
                   <>
-                    <Select size="small" value={cfg.align || 'center'} onChange={(e) => update({ align:e.target.value })}>
-                      <MenuItem value="left">Align left</MenuItem>
-                      <MenuItem value="center">Align center</MenuItem>
-                      <MenuItem value="right">Align right</MenuItem>
-                    </Select>
-                    <Select size="small" value={cfg.vAlign || 'center'} onChange={(e) => update({ vAlign:e.target.value })}>
-                      <MenuItem value="top">Top</MenuItem>
-                      <MenuItem value="center">Middle</MenuItem>
-                      <MenuItem value="bottom">Bottom</MenuItem>
-                    </Select>
+                    <ToggleButtonGroup exclusive size="small"
+                      value={cfg.align || 'center'}
+                      onChange={(_, v)=> v && update({ align:v })}
+                    >
+                      <ToggleButton value="left"><FormatAlignLeftIcon fontSize="small" /></ToggleButton>
+                      <ToggleButton value="center"><FormatAlignCenterIcon fontSize="small" /></ToggleButton>
+                      <ToggleButton value="right"><FormatAlignRightIcon fontSize="small" /></ToggleButton>
+                    </ToggleButtonGroup>
+
+                    <ToggleButtonGroup exclusive size="small"
+                      value={cfg.vAlign || 'center'}
+                      onChange={(_, v)=> v && update({ vAlign:v })}
+                    >
+                      <ToggleButton value="top"><VerticalAlignTopIcon fontSize="small" /></ToggleButton>
+                      <ToggleButton value="center"><VerticalAlignCenterIcon fontSize="small" /></ToggleButton>
+                      <ToggleButton value="bottom"><VerticalAlignBottomIcon fontSize="small" /></ToggleButton>
+                    </ToggleButtonGroup>
                   </>
                 ) : (
                   <>
@@ -561,13 +594,14 @@ export default function RichMenuDesignerDialog({
                       value={cfg.textPos?.y ?? 50} onChange={(e)=>update({ textPos:{...cfg.textPos, y:Number(e.target.value||0)} })}/>
                   </>
                 )}
+
                 <TextField label="Padding" size="small" type="number" inputProps={{ min:0, max:60 }}
                   value={cfg.padding || 8} onChange={(e) => update({ padding:Number(e.target.value||0) })} sx={{ width: 120 }}
                 />
-                <Button size="small" onClick={autoFitText}>Auto-fit text</Button>
+
+                <Button size="small" onClick={autoFitText}>AUTO-FIT TEXT</Button>
               </Stack>
 
-              {/* shadow */}
               <Typography variant="caption" sx={{ display:'block', mb:.5 }}>Text shadow</Typography>
               <Stack direction="row" spacing={1} alignItems="center">
                 <ColorInput label="Color" value={cfg.textShadow?.color || 'rgba(0,0,0,.25)'} onChange={(v)=>update({ textShadow: { ...(cfg.textShadow||{}), color:v } })} />
@@ -590,11 +624,14 @@ export default function RichMenuDesignerDialog({
                 </Box>
               </Stack>
 
-              {/* block color & image */}
-              <ColorInput label="Block color" value={cfg.fillColor || '#f6f6f6'} onChange={(v)=>update({ fillColor:v })} sx={{ mt: 1 }} />
+              <Divider sx={{ my: 1 }} />
+
+              <Typography variant="caption" sx={{ display:'block', mb:.5 }}>Block background</Typography>
+              <ColorInput label="Block color" value={cfg.fillColor || '#f6f6f6'} onChange={(v)=>update({ fillColor:v })} />
               <Stack direction="row" spacing={1} sx={{ mt: 1, flexWrap:'wrap' }}>
                 {SWATCHES.map(c => <Chip key={c} size="small" label="" onClick={()=>update({ fillColor:c })} sx={{ bgcolor:c, border:'1px solid rgba(0,0,0,.1)' }} />)}
               </Stack>
+
               <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
                 <Button component="label" variant="outlined" size="small">
                   Upload image
@@ -606,8 +643,9 @@ export default function RichMenuDesignerDialog({
                 </Select>
               </Stack>
 
-              {/* stickers */}
-              <Typography variant="caption" sx={{ mt:1, display:'block' }}>Stickers</Typography>
+              <Divider sx={{ my: 1 }} />
+
+              <Typography variant="caption" sx={{ display:'block', mb:.5 }}>Stickers</Typography>
               <Stack direction="row" spacing={1} sx={{ flexWrap:'wrap' }}>
                 {STICKERS.map(s => (
                   <Tooltip key={s.name} title={s.name}>
@@ -616,7 +654,7 @@ export default function RichMenuDesignerDialog({
                     </IconButton>
                   </Tooltip>
                 ))}
-                {cfg.sticker && <Button size="small" onClick={() => update({ sticker:null })}>Clear</Button>}
+                {cfg.sticker && <Button size="small" onClick={() => update({ sticker:null })}>CLEAR</Button>}
               </Stack>
               {cfg.sticker && (
                 <Stack direction="row" spacing={1} sx={{ mt:1 }}>
@@ -663,8 +701,8 @@ export default function RichMenuDesignerDialog({
       </DialogContent>
 
       <DialogActions>
-        <Button onClick={onClose}>Cancel</Button>
-        <Button variant="contained" onClick={exportImage}>Export image</Button>
+        <Button onClick={onClose}>CANCEL</Button>
+        <Button variant="contained" onClick={exportImage}>EXPORT IMAGE</Button>
       </DialogActions>
     </Dialog>
   );
