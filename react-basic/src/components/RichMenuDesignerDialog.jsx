@@ -387,6 +387,53 @@ export default function RichMenuDesignerDialog({
   const [selIdx, setSelIdx] = useState(0);
   const cfg = configs[selIdx] || defaultCfg();
   const [selLayerIdx, setSelLayerIdx] = useState(0);
+
+  // --- layer list ops (ยึด index ของแถวนั้น ไม่อิง selLayerIdx) ---
+  // --- layer list ops (ยึด index ของแถวนั้น ไม่อิง selLayerIdx) ---
+  const moveLayerAt = (i, dir) => {
+    setCfg(c => {
+      const layers = [...c.layers];
+      const j = dir === 'up' ? i - 1 : i + 1;
+      if (j < 0 || j >= layers.length) return c;
+      [layers[i], layers[j]] = [layers[j], layers[i]];
+      return { ...c, layers };
+    });
+    // อัปเดตเลเยอร์ที่เลือก ให้ตามชิ้นที่เพิ่งย้าย
+    setSelLayerIdx(prev =>
+      prev === i ? (dir === 'up' ? i - 1 : i + 1)
+      : prev === (dir === 'up' ? i - 1 : i + 1) ? i
+      : prev
+    );
+  };
+
+  const toggleLayerAt = (i) => {
+    setCfg(c => {
+      const layers = c.layers.map((L, idx) => idx === i ? { ...L, hidden: !L.hidden } : L);
+      return { ...c, layers };
+    });
+  };
+
+  const deleteLayerAt = (i) => {
+    setCfg(c => ({ ...c, layers: c.layers.filter((_, idx) => idx !== i) }));
+    // เลือกตัวที่เหมาะหลังลบ
+    setSelLayerIdx(prev => (prev > i ? prev - 1 : Math.max(0, Math.min(prev, i - 1))));
+  };
+
+  const copyLayerAt = (i) => {
+    const L = cfg.layers[i];
+    if (!L) return;
+    const cloned = JSON.parse(JSON.stringify({ ...L, id: 'L' + Math.random().toString(36).slice(2) }));
+    // รูป/สติกเกอร์ยังชี้ออบเจ็กต์เดิมได้ เพื่อความเร็ว
+    if (cloned.type === 'image' || cloned.type === 'sticker') cloned.img = L.img;
+    setCfg(c => {
+      const layers = [...c.layers];
+      layers.splice(i + 1, 0, cloned);
+      return { ...c, layers };
+    });
+    setSelLayerIdx(i + 1);
+  };
+
+
   useEffect(() => {
     if (selLayerIdx > (cfg.layers.length - 1)) setSelLayerIdx(Math.max(0, cfg.layers.length - 1));
   }, [selIdx, cfg.layers.length, selLayerIdx]);
@@ -845,27 +892,51 @@ export default function RichMenuDesignerDialog({
 
               <Stack spacing={1}>
                 {cfg.layers.map((L, i) => (
-                  <Stack key={L.id} direction="row" alignItems="center" spacing={1} sx={{
-                    p: .75, border: '1px solid ' + (i===selLayerIdx?'#1976d2':'rgba(0,0,0,.12)'),
-                    borderRadius: 1, bgcolor: i===selLayerIdx?'rgba(25,118,210,.06)':'#fff', cursor:'pointer'
-                  }}
-                    onClick={()=>setSelLayerIdx(i)}
+                  <Stack
+                    key={L.id}
+                    direction="row"
+                    alignItems="center"
+                    spacing={1}
+                    sx={{
+                      p: .75,
+                      border: '1px solid ' + (i === selLayerIdx ? '#1976d2' : 'rgba(0,0,0,.12)'),
+                      borderRadius: 1,
+                      bgcolor: i === selLayerIdx ? 'rgba(25,118,210,.06)' : '#fff',
+                      cursor: 'pointer'
+                    }}
+                    onClick={() => setSelLayerIdx(i)}
                   >
-                    <Chip size="small" label={L.type} color={L.type==='text'?'primary':(L.type==='sticker'?'success':'default')} />
-                    <Typography variant="body2" sx={{ flex:1 }} noWrap>
-                      {L.type==='text' ? (L.text || '(text)') : (L.type==='sticker' ? '(sticker)' : '(image)')}
+                    <Chip
+                      size="small"
+                      label={L.type}
+                      color={L.type === 'text' ? 'primary' : (L.type === 'sticker' ? 'success' : 'default')}
+                    />
+                    <Typography variant="body2" sx={{ flex: 1 }} noWrap>
+                      {L.type === 'text' ? (L.text || '(text)') : (L.type === 'sticker' ? '(sticker)' : '(image)')}
                     </Typography>
-                    <IconButton size="small" onClick={(e)=>{ e.stopPropagation(); moveLayer('up'); }}><ArrowUpwardIcon fontSize="small" /></IconButton>
-                    <IconButton size="small" onClick={(e)=>{ e.stopPropagation(); moveLayer('down'); }}><ArrowDownwardIcon fontSize="small" /></IconButton>
-                    <IconButton size="small" onClick={(e)=>{ e.stopPropagation(); copyLayer(); }}><ContentCopyIcon fontSize="small" /></IconButton>
-                    <IconButton size="small" onClick={(e)=>{ e.stopPropagation(); toggleLayer(); }}>
+
+                    {/* ใช้ฟังก์ชันแบบอิง index */}
+                    <IconButton size="small" onClick={(e) => { e.stopPropagation(); moveLayerAt(i, 'up'); }}>
+                      <ArrowUpwardIcon fontSize="small" />
+                    </IconButton>
+                    <IconButton size="small" onClick={(e) => { e.stopPropagation(); moveLayerAt(i, 'down'); }}>
+                      <ArrowDownwardIcon fontSize="small" />
+                    </IconButton>
+                    <IconButton size="small" onClick={(e) => { e.stopPropagation(); copyLayerAt(i); }}>
+                      <ContentCopyIcon fontSize="small" />
+                    </IconButton>
+                    <IconButton size="small" onClick={(e) => { e.stopPropagation(); toggleLayerAt(i); }}>
                       {L.hidden ? <VisibilityOffIcon fontSize="small" /> : <VisibilityIcon fontSize="small" />}
                     </IconButton>
-                    <IconButton size="small" color="error" onClick={(e)=>{ e.stopPropagation(); deleteLayer(); }}><DeleteIcon fontSize="small" /></IconButton>
+                    <IconButton size="small" color="error" onClick={(e) => { e.stopPropagation(); deleteLayerAt(i); }}>
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
                   </Stack>
                 ))}
                 {cfg.layers.length === 0 && (
-                  <Box sx={{ color:'text.secondary', fontSize: 14, p:.5 }}>No layers — เพิ่มด้วยปุ่ม Add text / Add sticker / Add image</Box>
+                  <Box sx={{ color: 'text.secondary', fontSize: 14, p: .5 }}>
+                    No layers — เพิ่มด้วยปุ่ม Add text / Add sticker / Add image
+                  </Box>
                 )}
               </Stack>
             </Paper>
