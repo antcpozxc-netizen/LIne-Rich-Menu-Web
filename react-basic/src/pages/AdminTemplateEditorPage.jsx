@@ -20,6 +20,9 @@ import { auth, storage } from '../firebase';
 import { ref as sref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { CATEGORY_OPTIONS } from '../constants/categories';
 
+import LayersIcon from '@mui/icons-material/Layers';
+import RichMenuDesignerDialog from '../components/RichMenuDesignerDialog';
+
 // -------------------- utils / helpers --------------------
 async function authedFetch(url, opts = {}) {
   const token = await auth.currentUser?.getIdToken();
@@ -295,6 +298,7 @@ export default function AdminTemplateEditorPage() {
   const [image, setImage] = useState('');
   const [chatBarText, setChatBarText] = useState('Menu');
   const [behavior, setBehavior] = useState('shown');
+  const [designerOpen, setDesignerOpen] = useState(false);
 
   const [templateOpen, setTemplateOpen] = useState(false);
   const [snack, setSnack] = useState('');
@@ -316,6 +320,37 @@ export default function AdminTemplateEditorPage() {
   const MIN_W = 5, MIN_H = 5;
 
   const actionRefs = useRef([]);
+
+   // รับผลจาก Designer แล้วอัปโหลดขึ้น Storage → setImage(url)
+  const handleDesignerExport = async (out) => {
+    try {
+      // แปลง output ให้เป็น Blob
+      let blob;
+      if (out instanceof Blob) blob = out;
+      else if (typeof out === 'string' && out.startsWith('data:')) {
+        const resp = await fetch(out); blob = await resp.blob();
+      } else {
+        throw new Error('Unsupported export output');
+      }
+
+      // บีบอัดและย่อ/ขยายให้พอดีสเปค LINE (กว้าง 2500, สูง 1686/843)
+      const targetH = (size === 'compact') ? 843 : 1686;
+      const jpg = await drawToSize(blob, 2500, targetH, 'image/jpeg');
+
+      // อัปโหลดขึ้น Storage
+      const path = `admin/templates/${Date.now()}-designer.jpg`;
+      const ref  = sref(storage, path);
+      await uploadBytes(ref, jpg, { contentType: 'image/jpeg' });
+      const url = await getDownloadURL(ref);
+
+      setImage(url);
+      setSnack('นำเข้ารูปจาก Designer แล้ว');
+      setDesignerOpen(false);
+    } catch (e) {
+      console.error(e);
+      setSnack('Export/Upload ล้มเหลว');
+    }
+  };
 
   // ---------- load when edit ----------
   useEffect(() => {
@@ -383,7 +418,7 @@ export default function AdminTemplateEditorPage() {
       // อัปโหลดขึ้น Storage (โฟลเดอร์ global ของ admin templates)
       const base = (file.name || 'template').replace(/\.[^.]+$/, '');
       const safeName = `${base.replace(/\s+/g, '-')}.jpg`;
-      const r = sref(storage, `admin/templates/${Date.now()}-${safeName}`);
+      const r = sref(storage, `admin_templates/${Date.now()}-${safeName}`);
       await uploadBytes(r, blob, { contentType: 'image/jpeg' });
       const url = await getDownloadURL(r);
       setImage(url);
@@ -559,6 +594,13 @@ export default function AdminTemplateEditorPage() {
                   <Button variant="outlined" onClick={() => setTemplateOpen(true)}>Template</Button>
                   <Button variant="outlined" onClick={() => applyTemplate(TEMPLATES.find(t => t.size === size) || TEMPLATES[0])}>Reset to template</Button>
                   <Button variant="outlined" startIcon={<ImageIcon />} onClick={() => fileRef.current?.click()}>Change</Button>
+                  <Button
+                    variant="outlined"
+                    startIcon={<LayersIcon />}
+                    onClick={() => setDesignerOpen(true)}
+                  >
+                    Design Image (Layers)
+                  </Button>
                   <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => e.target.files?.[0] && uploadImage(e.target.files[0])} />
                 </Stack>
               </Stack>
@@ -657,6 +699,13 @@ export default function AdminTemplateEditorPage() {
               ))}
             </CardContent>
           </Card>
+          <RichMenuDesignerDialog
+            open={designerOpen}
+            onClose={() => setDesignerOpen(false)}
+            templateSize={size}                               // 'large' | 'compact'
+            areas={areas.map(a => ({ x: a.x, y: a.y, w: a.w, h: a.h }))} // ส่งกริดปัจจุบันให้ preview
+            onExport={handleDesignerExport}                   // เซฟขึ้น Storage แล้ว setImage
+          />
         </Grid>
       </Grid>
 

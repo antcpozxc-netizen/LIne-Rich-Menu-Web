@@ -1,9 +1,10 @@
+// src/components/RichMenuDesignerDialog.jsx
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Box, Button, Dialog, DialogTitle, DialogContent, DialogActions,
   Stack, Typography, TextField, IconButton, Paper,
   Select, MenuItem, Slider, Tooltip, Chip, useMediaQuery, Divider,
-  ToggleButton, ToggleButtonGroup
+  ToggleButton, ToggleButtonGroup, Popover
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import FormatAlignLeftIcon from '@mui/icons-material/FormatAlignLeft';
@@ -55,34 +56,47 @@ function ensureGoogleFontLoaded(gf) {
 /* ---------- stickers (data URLs, เร็ว/คม) ---------- */
 const mk = (svg) => `data:image/svg+xml;utf8,${svg}`;
 
-// ชุดไอคอนพื้นฐานสำหรับ Rich Menu (จอง/ปักหมุด/คุย/โทร/สั่ง/คูปอง/QR/ไรเดอร์/แผนที่/ปฏิทิน/ไลฟ์/ร้านอาหาร ฯลฯ)
 const ico = {
-  // เดิม
-  cart: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M40 64h24l20 96h96l20-64H92" fill="none" stroke="%233F51B5" stroke-width="16"/><circle cx="112" cy="192" r="16" fill="%233F51B5"/><circle cx="176" cy="192" r="16" fill="%233F51B5"/></svg>`),
-  bell: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M128 224c16 0 28-8 32-24H96c4 16 16 24 32 24zm80-64c0-56-24-80-64-88V64a16 16 0 0 0-32 0v8c-40 8-64 32-64 88l-16 16h208z" fill="%23FFB300"/></svg>`),
-  chat: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M32 48h192c13 0 24 11 24 24v88c0 13-11 24-24 24H112l-56 40v-40H32c-13 0-24-11-24-24V72c0-13 11-24 24-24z" fill="%2334A853"/></svg>`),
-  clock: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><circle cx="128" cy="128" r="96" fill="%2360738B"/><path d="M128 72v56l48 32" stroke="%23fff" stroke-width="16" fill="none"/></svg>`),
-  plate: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><circle cx="128" cy="128" r="96" fill="%23FFC107"/><rect x="70" y="120" width="116" height="18" rx="9" fill="%23fff"/></svg>`),
-
-  // เพิ่มใหม่
   calendar: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect x="32" y="56" width="192" height="168" rx="12" fill="%2342A5F5"/><rect x="32" y="56" width="192" height="36" fill="%232877D7"/><path d="M72 40v32M184 40v32" stroke="%23fff" stroke-width="12"/><path d="M72 128l28 28 56-56" stroke="%23fff" stroke-width="16" fill="none"/></svg>`),
   pin: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M128 232s88-96 88-144a88 88 0 1 0-176 0c0 48 88 144 88 144z" fill="%23E53935"/><circle cx="128" cy="104" r="28" fill="%23fff"/></svg>`),
+  chat: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M32 48h192c13 0 24 11 24 24v88c0 13-11 24-24 24H112l-56 40v-40H32c-13 0-24-11-24-24V72c0-13 11-24 24-24z" fill="%2334A853"/></svg>`),
   phone: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M72 40l48 24-16 32c16 32 40 56 72 72l32-16 24 48-32 16c-72-16-128-72-144-144z" fill="%2327AE60"/></svg>`),
+  cart: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M40 64h24l20 96h96l20-64H92" fill="none" stroke="%233F51B5" stroke-width="16"/><circle cx="112" cy="192" r="16" fill="%233F51B5"/><circle cx="176" cy="192" r="16" fill="%233F51B5"/></svg>`),
+  utensils: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect x="72" y="32" width="16" height="192" fill="%239E9E9E"/><rect x="104" y="32" width="16" height="192" fill="%239E9E9E"/><path d="M168 32h16v96c0 18-16 18-16 0z" fill="%239E9E9E"/></svg>`),
+  plate: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><circle cx="128" cy="128" r="96" fill="%23FFC107"/><rect x="70" y="120" width="116" height="18" rx="9" fill="%23fff"/></svg>`),
   ticket: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect x="32" y="88" width="192" height="80" rx="12" fill="%23F57C00"/><circle cx="48" cy="128" r="12" fill="%23fff"/><circle cx="208" cy="128" r="12" fill="%23fff"/><rect x="96" y="108" width="64" height="8" fill="%23fff"/><rect x="96" y="132" width="64" height="8" fill="%23fff"/></svg>`),
   qr: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="%23000"/><rect x="12" y="12" width="232" height="232" fill="%23fff"/><rect x="32" y="32" width="56" height="56"/><rect x="168" y="32" width="56" height="56"/><rect x="32" y="168" width="56" height="56"/><rect x="120" y="120" width="24" height="24"/><rect x="152" y="152" width="40" height="16"/></svg>`),
   rider: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><circle cx="72" cy="192" r="20" fill="%232196F3"/><circle cx="184" cy="192" r="20" fill="%232196F3"/><path d="M56 192h80l24-72h48" stroke="%232196F3" stroke-width="12" fill="none"/><rect x="160" y="96" width="56" height="40" rx="6" fill="%2342A5F5"/></svg>`),
   map: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><polygon points="64,48 128,72 192,48 192,208 128,184 64,208" fill="%234CAF50"/><polyline points="64,48 64,208 128,184 128,72 192,48 192,208" fill="none" stroke="%232E7D32" stroke-width="6"/></svg>`),
   live: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect x="24" y="80" width="208" height="96" rx="14" fill="%23D32F2F"/><polygon points="116,112 156,128 116,144" fill="%23fff"/><rect x="36" y="92" width="56" height="16" rx="8" fill="%23fff"/></svg>`),
-  utensils: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect x="72" y="32" width="16" height="192" fill="%239E9E9E"/><rect x="104" y="32" width="16" height="192" fill="%239E9E9E"/><path d="M168 32h16v96c0 18-16 18-16 0z" fill="%239E9E9E"/></svg>`),
+  clock: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><circle cx="128" cy="128" r="96" fill="%2360738B"/><path d="M128 72v56l48 32" stroke="%23fff" stroke-width="16" fill="none"/></svg>`),
+  bell: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M128 224c16 0 28-8 32-24H96c4 16 16 24 32 24zm80-64c0-56-24-80-64-88V64a16 16 0 0 0-32 0v8c-40 8-64 32-64 88l-16 16h208z" fill="%23FFB300"/></svg>`),
   home: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M32 128l96-72 96 72v96H32z" fill="%23FF7043"/><rect x="96" y="160" width="64" height="64" fill="%23fff"/></svg>`),
   star: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><polygon points="128,20 158,98 240,98 172,146 198,228 128,178 58,228 84,146 16,98 98,98" fill="%23FFC107"/></svg>`),
+
+  // เพิ่มไอคอนเฉพาะงาน Rich Menu
+  hotel: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect x="32" y="64" width="192" height="128" rx="12" fill="%2367B7DC"/><rect x="56" y="112" width="144" height="40" rx="8" fill="%23fff"/><circle cx="88" cy="132" r="10" fill="%2367B7DC"/></svg>`),
+  coupon: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect x="32" y="88" width="192" height="80" rx="16" fill="%23FF7043"/><path d="M88 120l80 16" stroke="%23fff" stroke-width="12"/><text x="56" y="140" font-size="24" fill="%23fff">%</text></svg>`),
 };
 
-// รวมสติ๊กเกอร์ทั้งหมดไว้ถาดเดียว (เรียงอันที่ใช้บ่อยไว้ต้นๆ)
 const STICKERS = [
-  ico.calendar, ico.pin, ico.chat, ico.phone, ico.cart, ico.plate, ico.utensils,
-  ico.ticket, ico.qr, ico.rider, ico.map, ico.live, ico.clock, ico.bell,
-  ico.home, ico.star,
+  { label: 'Calendar / นัดหมาย', url: ico.calendar },
+  { label: 'Pin / สถานที่', url: ico.pin },
+  { label: 'Live chat', url: ico.chat },
+  { label: 'Call', url: ico.phone },
+  { label: 'Order', url: ico.cart },
+  { label: 'Food', url: ico.utensils },
+  { label: 'Plate', url: ico.plate },
+  { label: 'Coupon', url: ico.coupon },
+  { label: 'QR', url: ico.qr },
+  { label: 'Rider', url: ico.rider },
+  { label: 'Map', url: ico.map },
+  { label: 'Live', url: ico.live },
+  { label: 'Clock / เวลา', url: ico.clock },
+  { label: 'Bell / แจ้งเตือน', url: ico.bell },
+  { label: 'Hotel / Booking', url: ico.hotel },
+  { label: 'Home', url: ico.home },
+  { label: 'Star', url: ico.star },
 ];
 
 /* ---------- tiny controls ---------- */
@@ -135,7 +149,7 @@ export default function RichMenuDesignerDialog({
   const newSticker = (img=null) => ({
     id: 'L' + Math.random().toString(36).slice(2),
     type: 'sticker',
-    img, // HTMLImageElement
+    img,
     scale: 1,
     posMode: 'grid',
     anchor: 'center', // center|topLeft|topRight|bottomLeft|bottomRight
@@ -144,7 +158,7 @@ export default function RichMenuDesignerDialog({
   const newImage = (img=null) => ({
     id: 'L' + Math.random().toString(36).slice(2),
     type: 'image',
-    img, // HTMLImageElement
+    img,
     fit: 'cover', // cover | contain
     opacity: 1,
   });
@@ -167,7 +181,7 @@ export default function RichMenuDesignerDialog({
   }, [selIdx, cfg.layers.length, selLayerIdx]);
   const curLayer = cfg.layers[selLayerIdx];
 
-  // history
+  // history (safe)
   const [history, setHistory] = useState([]);
   const [future, setFuture] = useState([]);
   const pushHistory = (next) => {
@@ -192,6 +206,16 @@ export default function RichMenuDesignerDialog({
     const ctx = cvs.getContext('2d');
     ctx.clearRect(0,0,cvs.width,cvs.height);
     ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,cvs.width,cvs.height);
+
+    if (!cells.length) {
+      // ไม่มี areas → แสดงข้อความแนะนำแทน “จอขาว”
+      ctx.fillStyle = '#90a4ae';
+      ctx.font = `600 18px system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('ยังไม่มีบล็อกในเทมเพลต — กรุณาปิดหน้าต่างนี้แล้วเลือก Template ก่อน', cvs.width/2, cvs.height/2);
+      return;
+    }
 
     cells.forEach((cell, idx) => {
       const c = configs[idx] || defaultCfg();
@@ -234,7 +258,6 @@ export default function RichMenuDesignerDialog({
             if (L.anchor === 'topRight') { dx = tx + tw - base; dy = ty; }
             if (L.anchor === 'bottomLeft') { dx = tx; dy = ty + th - base; }
             if (L.anchor === 'bottomRight') { dx = tx + tw - base; dy = ty + th - base; }
-            // center คือ default
           }
           ctx.drawImage(img, dx, dy, base, base);
         }
@@ -338,15 +361,12 @@ export default function RichMenuDesignerDialog({
   const copyLayer = () => {
     if (!curLayer) return;
     const cloned = JSON.parse(JSON.stringify({ ...curLayer, id: 'L' + Math.random().toString(36).slice(2) }));
-    // image/sticker need rebind Image object (ไม่ serialize)
     if (cloned.type === 'image' || cloned.type === 'sticker') {
-      const srcCanvas = document.createElement('canvas');
-      srcCanvas.width = 1; srcCanvas.height = 1; // เราไม่มี src เดิม → คัดลอกอ็อบเจ็กต์เดิมแทน
-      // โคลนแบบอ้างอิงเดิม (ปลอดภัยพอในหน้านี้)
+      // อ้างอิง object เดิม (เพียงพอสำหรับงานนี้)
       cloned.img = curLayer.img;
     }
     setCfg(c => ({ ...c, layers: [...c.layers, cloned] }));
-    setSelLayerIdx(cfg.layers.length); // เลเยอร์ใหม่ท้ายสุด
+    setSelLayerIdx(cfg.layers.length);
   };
 
   // image fit update
@@ -378,7 +398,7 @@ export default function RichMenuDesignerDialog({
   }
 
   /* --------- drag (free) ---------- */
-  const [drag, setDrag] = useState(null); // { offsetX, offsetY }
+  const [drag, setDrag] = useState(null);
   function canvasToLocal(e, cvs) {
     const r = cvs.getBoundingClientRect();
     const x = (e.clientX - r.left) * (cvs.width / r.width);
@@ -388,15 +408,13 @@ export default function RichMenuDesignerDialog({
   function handleDown(e) {
     const cvs = canvasRef.current; if (!cvs) return;
     const { x, y } = canvasToLocal(e, cvs);
-
-    // click เลือกบล็อกก่อน
+    // เลือกบล็อก
     const idx = findCellIndexByPoint(x, y);
     if (idx !== selIdx) { setSelIdx(idx); return; }
 
-    // drag เฉพาะเลเยอร์ที่เลือก และ posMode = free
+    // ลากเฉพาะ text/sticker ที่ posMode=free
     const L = curLayer;
     if (!L || (L.type !== 'text' && L.type !== 'sticker') || L.posMode !== 'free') return;
-
     setDrag({ offsetX: 0, offsetY: 0 });
   }
   function handleMove(e) {
@@ -465,7 +483,6 @@ export default function RichMenuDesignerDialog({
             if (L.anchor === 'topRight') { dx = tx + tw - base; dy = ty; }
             if (L.anchor === 'bottomLeft') { dx = tx; dy = ty + th - base; }
             if (L.anchor === 'bottomRight') { dx = tx + tw - base; dy = ty + th - base; }
-            // center default
           }
           ctx.drawImage(img, dx, dy, base, base);
         }
@@ -512,6 +529,12 @@ export default function RichMenuDesignerDialog({
 
   const fullScreen = useMediaQuery('(max-width:1200px)');
 
+  // Sticker picker (popover)
+  const [stickerAnchor, setStickerAnchor] = useState(null);
+  const openSticker = Boolean(stickerAnchor);
+  const handleOpenSticker = (e) => setStickerAnchor(e.currentTarget);
+  const handleCloseSticker = () => setStickerAnchor(null);
+
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xl" fullWidth fullScreen={fullScreen}>
       <DialogTitle sx={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
@@ -519,17 +542,24 @@ export default function RichMenuDesignerDialog({
         <Stack direction="row" spacing={1} alignItems="center">
           <Button size="small" onClick={()=>{
             if (!history.length) return;
-            const prev = JSON.parse(history[history.length-1]);
-            setHistory(h=>h.slice(0,-1));
-            setFuture(f=>[JSON.stringify(configs), ...f]);
-            setConfigs(prev);
+            try {
+              const prev = JSON.parse(history[history.length-1]);
+              setHistory(h=>h.slice(0,-1));
+              setFuture(f=>[JSON.stringify(configs), ...f]);
+              setConfigs(prev);
+              // normalize selection after undo
+              setSelLayerIdx(0);
+            } catch {}
           }}>UNDO</Button>
           <Button size="small" onClick={()=>{
             if (!future.length) return;
-            const next = JSON.parse(future[0]);
-            setFuture(f=>f.slice(1));
-            setHistory(h=>[...h, JSON.stringify(configs)]);
-            setConfigs(next);
+            try {
+              const next = JSON.parse(future[0]);
+              setFuture(f=>f.slice(1));
+              setHistory(h=>[...h, JSON.stringify(configs)]);
+              setConfigs(next);
+              setSelLayerIdx(0);
+            } catch {}
           }}>REDO</Button>
           <IconButton onClick={onClose}><CloseIcon /></IconButton>
         </Stack>
@@ -595,7 +625,7 @@ export default function RichMenuDesignerDialog({
                 <Typography variant="subtitle2">Layers</Typography>
                 <Box sx={{ flex: 1 }} />
                 <Button size="small" startIcon={<TextFieldsIcon />} onClick={addTextLayer}>Add text</Button>
-                <Button size="small" startIcon={<AddIcon />} onClick={()=>addStickerLayerFromUrl(STICKERS[0])}>Add sticker</Button>
+                <Button size="small" startIcon={<AddIcon />} onClick={handleOpenSticker}>Add sticker</Button>
                 <Button size="small" startIcon={<PhotoIcon />} component="label">
                   Add image
                   <input type="file" accept="image/*" hidden onChange={(e)=> addImageLayerFromFile(e.target.files?.[0])} />
@@ -770,16 +800,16 @@ export default function RichMenuDesignerDialog({
 
                     <Typography variant="caption" sx={{ display:'block', mb:.5 }}>Sticker palette</Typography>
                     <Stack direction="row" spacing={1} sx={{ flexWrap:'wrap' }}>
-                      {STICKERS.map((url, i) => (
-                        <Tooltip key={i} title="sticker">
-                          <IconButton size="small" onClick={() => addStickerLayerFromUrl(url)}>
-                            <img src={url} alt="" width={24} height={24} />
+                      {STICKERS.map((s, i) => (
+                        <Tooltip key={i} title={s.label}>
+                          <IconButton size="small" onClick={() => addStickerLayerFromUrl(s.url)}>
+                            <img src={s.url} alt={s.label} width={24} height={24} />
                           </IconButton>
                         </Tooltip>
                       ))}
                     </Stack>
                     <Typography variant="caption" sx={{ mt: .5, color:'text.secondary' }}>
-                      * คลิกไอคอนเพื่อเพิ่มสติ๊กเกอร์เป็นเลเยอร์ใหม่ (สามารถมีหลายอันได้)
+                      * คลิกไอคอนเพื่อเพิ่มสติ๊กเกอร์เป็นเลเยอร์ใหม่ (เพิ่มได้หลายอัน)
                     </Typography>
                   </>
                 )}
@@ -816,6 +846,28 @@ export default function RichMenuDesignerDialog({
         <Button onClick={onClose}>CANCEL</Button>
         <Button variant="contained" onClick={exportImage}>EXPORT IMAGE</Button>
       </DialogActions>
+
+      {/* Sticker picker popover */}
+      <Popover
+        open={openSticker}
+        anchorEl={stickerAnchor}
+        onClose={handleCloseSticker}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+      >
+        <Box sx={{ p: 1.25, maxWidth: 360 }}>
+          <Typography variant="caption" sx={{ ml: .5, color:'text.secondary' }}>เลือกสติ๊กเกอร์</Typography>
+          <Stack direction="row" spacing={1} sx={{ flexWrap:'wrap', mt: .5 }}>
+            {STICKERS.map((s, i) => (
+              <Tooltip key={i} title={s.label}>
+                <IconButton size="small" onClick={() => { addStickerLayerFromUrl(s.url); handleCloseSticker(); }}>
+                  <img src={s.url} alt={s.label} width={28} height={28} />
+                </IconButton>
+              </Tooltip>
+            ))}
+          </Stack>
+        </Box>
+      </Popover>
     </Dialog>
   );
 }
