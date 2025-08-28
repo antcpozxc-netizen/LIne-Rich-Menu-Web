@@ -53,6 +53,48 @@ import twitchPng           from '../assets/stickers/twitch.png';
 import twitterPng          from '../assets/stickers/twitter.png';
 import whatsappPng         from '../assets/stickers/whatsapp.png';
 
+// ==== new stickers (PNG) ====
+import yummyPng           from '../assets/stickers/yummy.png';
+import learningPng        from '../assets/stickers/learning.png';
+import planePng           from '../assets/stickers/plane.png';
+import thankYou1Png       from '../assets/stickers/thank-you (1).png';
+import calendarAltPng     from '../assets/stickers/calendar.png';
+import heyPng             from '../assets/stickers/hey.png';
+import reviewPng          from '../assets/stickers/review.png';
+import doctorPng          from '../assets/stickers/doctor.png';
+import healthyFoodPng     from '../assets/stickers/healthy-food.png';
+
+import burgerPng          from '../assets/stickers/burger.png';
+import lightbulbPng       from '../assets/stickers/lightbulb.png';
+import airplanePng        from '../assets/stickers/airplane.png';
+import thankYouPng        from '../assets/stickers/thank-you.png';
+import byePng             from '../assets/stickers/bye.png';
+import webChatPng         from '../assets/stickers/web-chat.png';
+import hotelPng           from '../assets/stickers/hotel.png';
+import hospitalAltPng     from '../assets/stickers/hospital.png';
+import foodiePng          from '../assets/stickers/foodie.png';
+
+import spoonAndForkPng    from '../assets/stickers/spoon-and-fork.png';
+import heartWingsPng      from '../assets/stickers/heart-wings.png';
+import welcomeBackPng     from '../assets/stickers/welcome-back.png';
+import woodenSignPng      from '../assets/stickers/wooden-sign.png';
+import letsGoPng          from '../assets/stickers/lets-go.png';
+import discussionPng      from '../assets/stickers/discussion.png';
+import hotelBoardPng      from '../assets/stickers/hotel-board.png';
+import scooterPng         from '../assets/stickers/scooter.png';
+import friedEggPng        from '../assets/stickers/fried-egg.png';
+
+import drinkPng           from '../assets/stickers/drink.png';
+import flyingPng          from '../assets/stickers/flying.png';
+import welcomePng         from '../assets/stickers/welcome.png';
+import clockAltPng        from '../assets/stickers/clock.png';
+import omgPng             from '../assets/stickers/omg.png';
+import coffeePng          from '../assets/stickers/coffee.png';
+import stethoscopePng     from '../assets/stickers/stethoscope.png';
+import eatPng             from '../assets/stickers/eat.png';
+import interrogationPng   from '../assets/stickers/interrogation.png';
+
+
 
 /* ---------- helpers ---------- */
 function pctToPxRect(cellPct, width, height) {
@@ -171,8 +213,6 @@ const STICKERS = [
   // Commerce / Cafe
   { label: 'Cart / สั่งซื้อ', url: ico.cart },
   { label: 'Menu / แก้ว', url: ico.cup },
-  { label: 'Delivery / ไรเดอร์', url: ico.rider },
-  { label: 'Promotion / ของขวัญ', url: ico.gift },
   { label: 'Ticket / คูปอง', url: ico.ticket },
 
   // Clinic / Service / Edu / Real-estate (ใช้ชื่อกลาง ๆ)
@@ -216,7 +256,58 @@ const STICKERS = [
   { label: 'เดลิเวอรี่ (มอเตอร์ไซค์) 2', url: moped1Png },
   { label: 'แท็กซี่/การเดินทาง', url: taxiPng },
   { label: 'สัญญาณเช่า', url: rentSignalPng },
+
+  // Food & Cafe
+  { label: 'Burger', url: burgerPng },
+  { label: 'Foodie', url: foodiePng },
+  { label: 'Healthy food', url: healthyFoodPng },
+  { label: 'Spoon & Fork', url: spoonAndForkPng },
+  { label: 'Fried egg', url: friedEggPng },
+  { label: 'Drink', url: drinkPng },
+  { label: 'Coffee', url: coffeePng },
+
+  // Travel & Hotel
+  { label: 'Plane', url: planePng },
+  { label: 'Airplane', url: airplanePng },
+  { label: 'Flying', url: flyingPng },
+  { label: 'Hotel', url: hotelPng },
+  { label: 'Hotel board', url: hotelBoardPng },
+  { label: 'Scooter (travel)', url: scooterPng },
+  { label: 'Wooden sign', url: woodenSignPng },
+
+  // Medical / Wellness
+  { label: 'Doctor', url: doctorPng },
+  { label: 'Hospital', url: hospitalAltPng },
+  { label: 'Stethoscope', url: stethoscopePng },
+
+  // Time / Calendar
+  { label: 'Calendar (PNG)', url: calendarAltPng },
+  { label: 'Clock (PNG)', url: clockAltPng },
+
+  // Communication / Chat / Review
+  { label: 'Web chat', url: webChatPng },
+  { label: 'Discussion', url: discussionPng },
+  { label: 'Review', url: reviewPng },
+  { label: 'Hey', url: heyPng },
+  { label: 'Bye', url: byePng },
+  { label: 'OMG', url: omgPng },
+  { label: 'Interrogation', url: interrogationPng },
+
+  // Greeting / CTA
+  { label: 'Welcome', url: welcomePng },
+  { label: 'Welcome back', url: welcomeBackPng },
+  { label: 'Let’s go', url: letsGoPng },
+  { label: 'Thank you', url: thankYouPng },
+  { label: 'Thank you (alt)', url: thankYou1Png },
+  { label: 'Yummy', url: yummyPng },
+  { label: 'Eat', url: eatPng },
+
+  // Knowledge / Idea
+  { label: 'Learning', url: learningPng },
+  { label: 'Light bulb', url: lightbulbPng },
 ];
+
+
 
 
 /* ---------- tiny controls ---------- */
