@@ -57,47 +57,100 @@ function ensureGoogleFontLoaded(gf) {
 const mk = (svg) => `data:image/svg+xml;utf8,${svg}`;
 
 const ico = {
-  calendar: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect x="32" y="56" width="192" height="168" rx="12" fill="%2342A5F5"/><rect x="32" y="56" width="192" height="36" fill="%232877D7"/><path d="M72 40v32M184 40v32" stroke="%23fff" stroke-width="12"/><path d="M72 128l28 28 56-56" stroke="%23fff" stroke-width="16" fill="none"/></svg>`),
-  pin: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M128 232s88-96 88-144a88 88 0 1 0-176 0c0 48 88 144 88 144z" fill="%23E53935"/><circle cx="128" cy="104" r="28" fill="%23fff"/></svg>`),
-  chat: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M32 48h192c13 0 24 11 24 24v88c0 13-11 24-24 24H112l-56 40v-40H32c-13 0-24-11-24-24V72c0-13 11-24 24-24z" fill="%2334A853"/></svg>`),
-  phone: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M72 40l48 24-16 32c16 32 40 56 72 72l32-16 24 48-32 16c-72-16-128-72-144-144z" fill="%2327AE60"/></svg>`),
-  cart: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M40 64h24l20 96h96l20-64H92" fill="none" stroke="%233F51B5" stroke-width="16"/><circle cx="112" cy="192" r="16" fill="%233F51B5"/><circle cx="176" cy="192" r="16" fill="%233F51B5"/></svg>`),
-  utensils: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect x="72" y="32" width="16" height="192" fill="%239E9E9E"/><rect x="104" y="32" width="16" height="192" fill="%239E9E9E"/><path d="M168 32h16v96c0 18-16 18-16 0z" fill="%239E9E9E"/></svg>`),
-  plate: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><circle cx="128" cy="128" r="96" fill="%23FFC107"/><rect x="70" y="120" width="116" height="18" rx="9" fill="%23fff"/></svg>`),
-  ticket: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect x="32" y="88" width="192" height="80" rx="12" fill="%23F57C00"/><circle cx="48" cy="128" r="12" fill="%23fff"/><circle cx="208" cy="128" r="12" fill="%23fff"/><rect x="96" y="108" width="64" height="8" fill="%23fff"/><rect x="96" y="132" width="64" height="8" fill="%23fff"/></svg>`),
-  qr: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="%23000"/><rect x="12" y="12" width="232" height="232" fill="%23fff"/><rect x="32" y="32" width="56" height="56"/><rect x="168" y="32" width="56" height="56"/><rect x="32" y="168" width="56" height="56"/><rect x="120" y="120" width="24" height="24"/><rect x="152" y="152" width="40" height="16"/></svg>`),
-  rider: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><circle cx="72" cy="192" r="20" fill="%232196F3"/><circle cx="184" cy="192" r="20" fill="%232196F3"/><path d="M56 192h80l24-72h48" stroke="%232196F3" stroke-width="12" fill="none"/><rect x="160" y="96" width="56" height="40" rx="6" fill="%2342A5F5"/></svg>`),
-  map: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><polygon points="64,48 128,72 192,48 192,208 128,184 64,208" fill="%234CAF50"/><polyline points="64,48 64,208 128,184 128,72 192,48 192,208" fill="none" stroke="%232E7D32" stroke-width="6"/></svg>`),
-  live: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect x="24" y="80" width="208" height="96" rx="14" fill="%23D32F2F"/><polygon points="116,112 156,128 116,144" fill="%23fff"/><rect x="36" y="92" width="56" height="16" rx="8" fill="%23fff"/></svg>`),
-  clock: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><circle cx="128" cy="128" r="96" fill="%2360738B"/><path d="M128 72v56l48 32" stroke="%23fff" stroke-width="16" fill="none"/></svg>`),
-  bell: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M128 224c16 0 28-8 32-24H96c4 16 16 24 32 24zm80-64c0-56-24-80-64-88V64a16 16 0 0 0-32 0v8c-40 8-64 32-64 88l-16 16h208z" fill="%23FFB300"/></svg>`),
-  home: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M32 128l96-72 96 72v96H32z" fill="%23FF7043"/><rect x="96" y="160" width="64" height="64" fill="%23fff"/></svg>`),
-  star: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><polygon points="128,20 158,98 240,98 172,146 198,228 128,178 58,228 84,146 16,98 98,98" fill="%23FFC107"/></svg>`),
+  // Action / General
+  website: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256">
+    <circle cx="128" cy="128" r="100" fill="%2327ae60"/>
+    <path d="M40 128h176M128 40c36 26 36 150 0 176M128 40c-36 26-36 150 0 176"
+      stroke="%23fff" stroke-width="12" fill="none" stroke-linecap="round"/></svg>`),
+  call: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256">
+    <path d="M72 40l48 24-16 32c16 32 40 56 72 72l32-16 24 48-32 16C128 208 72 152 56 80z"
+      fill="%2327AE60"/></svg>`),
+  chat: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256">
+    <rect x="24" y="64" width="208" height="128" rx="16" fill="%2334A853"/>
+    <rect x="40" y="86" width="80" height="14" rx="7" fill="%23fff"/></svg>`),
+  pin: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256">
+    <path d="M128 232s88-96 88-144a88 88 0 1 0-176 0c0 48 88 144 88 144z" fill="%23E53935"/>
+    <circle cx="128" cy="104" r="28" fill="%23fff"/></svg>`),
+  clock: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256">
+    <circle cx="128" cy="128" r="100" fill="%2360738B"/><path d="M128 64v64l48 32"
+    stroke="%23fff" stroke-width="16" fill="none"/></svg>`),
+  calendar: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256">
+    <rect x="32" y="56" width="192" height="168" rx="12" fill="%2342A5F5"/>
+    <rect x="32" y="56" width="192" height="36" fill="%232877D7"/>
+    <path d="M72 40v32M184 40v32" stroke="%23fff" stroke-width="12"/>
+    <path d="M72 128l28 28 56-56" stroke="%23fff" stroke-width="16" fill="none"/></svg>`),
+  qr: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256">
+    <rect width="256" height="256" fill="%23000"/><rect x="12" y="12" width="232" height="232" fill="%23fff"/>
+    <rect x="32" y="32" width="56" height="56"/><rect x="168" y="32" width="56" height="56"/>
+    <rect x="32" y="168" width="56" height="56"/><rect x="120" y="120" width="24" height="24"/>
+    <rect x="152" y="152" width="40" height="16"/></svg>`),
+  coupon: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256">
+    <rect x="32" y="88" width="192" height="80" rx="16" fill="%23FF7043"/>
+    <path d="M88 120l80 16" stroke="%23fff" stroke-width="12"/>
+    <text x="60" y="140" font-size="28" fill="%23fff">%</text></svg>`),
+  star: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256">
+    <polygon points="128,20 158,98 240,98 172,146 198,228 128,178 58,228 84,146 16,98 98,98" fill="%23FFC107"/></svg>`),
 
-  // เพิ่มไอคอนเฉพาะงาน Rich Menu
-  hotel: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect x="32" y="64" width="192" height="128" rx="12" fill="%2367B7DC"/><rect x="56" y="112" width="144" height="40" rx="8" fill="%23fff"/><circle cx="88" cy="132" r="10" fill="%2367B7DC"/></svg>`),
-  coupon: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect x="32" y="88" width="192" height="80" rx="16" fill="%23FF7043"/><path d="M88 120l80 16" stroke="%23fff" stroke-width="12"/><text x="56" y="140" font-size="24" fill="%23fff">%</text></svg>`),
+  // Commerce / Cafe / Food
+  cart: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256">
+    <path d="M40 64h24l20 96h96l20-64H92" fill="none" stroke="%233F51B5" stroke-width="16"/>
+    <circle cx="112" cy="192" r="16" fill="%233F51B5"/><circle cx="176" cy="192" r="16" fill="%233F51B5"/></svg>`),
+  cup: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256">
+    <rect x="72" y="56" width="120" height="120" rx="14" fill="%238D6E63"/>
+    <rect x="116" y="40" width="32" height="16" rx="8" fill="%238D6E63"/></svg>`),
+  rider: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256">
+    <circle cx="72" cy="192" r="20" fill="%232196F3"/><circle cx="184" cy="192" r="20" fill="%232196F3"/>
+    <path d="M56 192h80l24-72h48" stroke="%232196F3" stroke-width="12" fill="none"/>
+    <rect x="160" y="96" width="56" height="40" rx="6" fill="%2342A5F5"/></svg>`),
+  gift: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256">
+    <rect x="40" y="96" width="176" height="120" rx="12" fill="%23F57C00"/>
+    <rect x="40" y="96" width="176" height="24" fill="%23EF6C00"/>
+    <rect x="120" y="96" width="16" height="120" fill="%23fff"/></svg>`),
+  ticket: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256">
+    <rect x="32" y="96" width="192" height="64" rx="12" fill="%23F57C00"/>
+    <circle cx="48" cy="128" r="10" fill="%23fff"/><circle cx="208" cy="128" r="10" fill="%23fff"/></svg>`),
+
+  // Clinic / Service / Education / Real-estate (ตัวอย่างที่ใช้ได้กว้าง)
+  clipboard: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256">
+    <rect x="64" y="48" width="128" height="168" rx="12" fill="%2390CAF9"/>
+    <rect x="88" y="40" width="80" height="24" rx="6" fill="%232877D7"/></svg>`),
+  fee: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256">
+    <circle cx="96" cy="160" r="28" fill="%23FFD54F"/><rect x="128" y="96" width="72" height="88" rx="8" fill="%23FFB300"/></svg>`),
+  hospital: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256">
+    <rect x="48" y="72" width="160" height="136" rx="12" fill="%23B3E5FC"/>
+    <rect x="112" y="104" width="32" height="72" fill="%23fff"/><rect x="96" y="120" width="64" height="16" fill="%23fff"/></svg>`),
+  mapbook: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256">
+    <polygon points="64,48 128,72 192,48 192,208 128,184 64,208" fill="%234CAF50"/>
+    <polyline points="64,48 64,208 128,184 128,72 192,48 192,208"
+      fill="none" stroke="%232E7D32" stroke-width="6"/></svg>`),
 };
 
 const STICKERS = [
-  { label: 'Calendar / นัดหมาย', url: ico.calendar },
-  { label: 'Pin / สถานที่', url: ico.pin },
-  { label: 'Live chat', url: ico.chat },
-  { label: 'Call', url: ico.phone },
-  { label: 'Order', url: ico.cart },
-  { label: 'Food', url: ico.utensils },
-  { label: 'Plate', url: ico.plate },
-  { label: 'Coupon', url: ico.coupon },
+  // General
+  { label: 'Website / เว็บ', url: ico.website },
+  { label: 'Call / โทร', url: ico.call },
+  { label: 'Live chat / แชท', url: ico.chat },
+  { label: 'Location / แผนที่', url: ico.pin },
+  { label: 'Hours / เวลา', url: ico.clock },
+  { label: 'Appointment / นัดหมาย', url: ico.calendar },
   { label: 'QR', url: ico.qr },
-  { label: 'Rider', url: ico.rider },
-  { label: 'Map', url: ico.map },
-  { label: 'Live', url: ico.live },
-  { label: 'Clock / เวลา', url: ico.clock },
-  { label: 'Bell / แจ้งเตือน', url: ico.bell },
-  { label: 'Hotel / Booking', url: ico.hotel },
-  { label: 'Home', url: ico.home },
-  { label: 'Star', url: ico.star },
+  { label: 'Coupon', url: ico.coupon },
+  { label: 'Reward / ดาว', url: ico.star },
+
+  // Commerce / Cafe
+  { label: 'Cart / สั่งซื้อ', url: ico.cart },
+  { label: 'Menu / แก้ว', url: ico.cup },
+  { label: 'Delivery / ไรเดอร์', url: ico.rider },
+  { label: 'Promotion / ของขวัญ', url: ico.gift },
+  { label: 'Ticket / คูปอง', url: ico.ticket },
+
+  // Clinic / Service / Edu / Real-estate (ใช้ชื่อกลาง ๆ)
+  { label: 'บริการของเรา (clipboard)', url: ico.clipboard },
+  { label: 'อัตราค่าบริการ (fee)', url: ico.fee },
+  { label: 'คลินิก/โรงพยาบาล', url: ico.hospital },
+  { label: 'เส้นทาง/ไกด์ (mapbook)', url: ico.mapbook },
 ];
+
 
 /* ---------- tiny controls ---------- */
 function ColorInput({ label, value, onChange, sx }) {
