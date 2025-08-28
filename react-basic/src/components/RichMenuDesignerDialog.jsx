@@ -23,6 +23,37 @@ import AddIcon from '@mui/icons-material/Add';
 import PhotoIcon from '@mui/icons-material/Photo';
 import TextFieldsIcon from '@mui/icons-material/TextFields';
 
+// --- Stickers (PNG) from /src/assets/stickers ---
+import appStoreIosPng      from '../assets/stickers/app-store-ios.png';
+import envelopePng         from '../assets/stickers/envelope.png';
+import facebookMessengerPng from '../assets/stickers/facebook-messenger.png';
+import globePng            from '../assets/stickers/globe.png';
+import hamburgerSodaPng    from '../assets/stickers/hamburger-soda.png';
+import hatChefPng          from '../assets/stickers/hat-chef.png';
+import homePng             from '../assets/stickers/home.png';
+import instagramPng        from '../assets/stickers/instagram.png';
+import instagram1Png       from '../assets/stickers/instagram (1).png';
+import linePng             from '../assets/stickers/line.png';
+import megaphonePng        from '../assets/stickers/megaphone.png';
+import mopedPng            from '../assets/stickers/moped.png';
+import moped1Png           from '../assets/stickers/moped (1).png';
+import paperPlanePng       from '../assets/stickers/paper-plane.png';
+import phoneCallPng        from '../assets/stickers/phone-call.png';
+import rentSignalPng       from '../assets/stickers/rent-signal.png';
+import restaurantPng       from '../assets/stickers/restaurant.png';
+import roomServicePng      from '../assets/stickers/room-service.png';
+import searchPng           from '../assets/stickers/search.png';
+import sharePng            from '../assets/stickers/share.png';
+import shoppingCartPng     from '../assets/stickers/shopping-cart.png';
+import socialNetworkPng    from '../assets/stickers/social-network.png';
+import spotifyPng          from '../assets/stickers/spotify.png';
+import taxiPng             from '../assets/stickers/taxi.png';
+import tikTokPng           from '../assets/stickers/tik-tok.png';
+import twitchPng           from '../assets/stickers/twitch.png';
+import twitterPng          from '../assets/stickers/twitter.png';
+import whatsappPng         from '../assets/stickers/whatsapp.png';
+
+
 /* ---------- helpers ---------- */
 function pctToPxRect(cellPct, width, height) {
   const x = Math.round((cellPct.x / 100) * width);
@@ -149,6 +180,42 @@ const STICKERS = [
   { label: 'อัตราค่าบริการ (fee)', url: ico.fee },
   { label: 'คลินิก/โรงพยาบาล', url: ico.hospital },
   { label: 'เส้นทาง/ไกด์ (mapbook)', url: ico.mapbook },
+
+   // Communication / Social
+  { label: 'โทรศัพท์', url: phoneCallPng },
+  { label: 'ส่งข้อความ', url: paperPlanePng },
+  { label: 'อีเมล', url: envelopePng },
+  { label: 'LINE', url: linePng },
+  { label: 'Messenger', url: facebookMessengerPng },
+  { label: 'Instagram', url: instagramPng },
+  { label: 'Instagram (alt)', url: instagram1Png },
+  { label: 'Twitter', url: twitterPng },
+  { label: 'TikTok', url: tikTokPng },
+  { label: 'Twitch', url: twitchPng },
+  { label: 'Spotify', url: spotifyPng },
+  { label: 'WhatsApp', url: whatsappPng },
+  { label: 'แชร์', url: sharePng },
+  { label: 'โซเชียล (รวม)', url: socialNetworkPng },
+
+  // Navigation / Utility
+  { label: 'เว็บไซต์/โลก', url: globePng },
+  { label: 'ค้นหา', url: searchPng },
+  { label: 'โฮม', url: homePng },
+  { label: 'ประกาศ', url: megaphonePng },
+  { label: 'App Store (iOS)', url: appStoreIosPng },
+
+  // Commerce / Food
+  { label: 'รถเข็น', url: shoppingCartPng },
+  { label: 'อาหาร/โซดา', url: hamburgerSodaPng },
+  { label: 'หมวกเชฟ', url: hatChefPng },
+  { label: 'ร้านอาหาร', url: restaurantPng },
+  { label: 'รูมเซอร์วิส', url: roomServicePng },
+
+  // Delivery / Transport
+  { label: 'เดลิเวอรี่ (มอเตอร์ไซค์)', url: mopedPng },
+  { label: 'เดลิเวอรี่ (มอเตอร์ไซค์) 2', url: moped1Png },
+  { label: 'แท็กซี่/การเดินทาง', url: taxiPng },
+  { label: 'สัญญาณเช่า', url: rentSignalPng },
 ];
 
 
