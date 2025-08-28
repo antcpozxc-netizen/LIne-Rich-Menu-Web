@@ -23,7 +23,9 @@ export default function AdminUsersPage() {
   const [saving, setSaving] = useState(null);
   const [err, setErr] = useState('');
   const me = auth.currentUser?.uid || null;
-  const { isDev } = useAuthClaims(); // ใช้เพื่อตัดสินใจแสดงปุ่มลบ
+
+  // ใช้ claims จาก hook เพื่อคุมสิทธิ์บน UI
+  const { isDev, isHead, isAdmin: isAdminRole } = useAuthClaims();
 
   async function load() {
     setErr('');
@@ -40,7 +42,7 @@ export default function AdminUsersPage() {
   useEffect(() => { load(); }, []);
 
   async function changeRole(uid, role) {
-    // ป้องกัน dev ลดขั้นตัวเอง (รวมถึงกด SET USER)
+    // กัน dev ลดขั้น/เปลี่ยนบทบาทตัวเอง
     if (uid === me && role !== 'developer') {
       alert('Developer ไม่สามารถเปลี่ยนบทบาทของตัวเองได้');
       return;
@@ -63,18 +65,30 @@ export default function AdminUsersPage() {
     }
   }
 
-  async function deleteUser(uid, displayName) {
-    if (!isDev) return; // เฉพาะ dev เท่านั้น
-    if (uid === me) {
+  // ลบผู้ใช้ — เปิดสิทธิ์ให้ dev/head/admin ตามเงื่อนไข และห้ามลบตัวเอง
+  async function handleDeleteUser(target) {
+    const targetUid = target.id;
+    const targetRole = roleOf(target);
+
+    if (targetUid === me) {
       alert('ไม่สามารถลบบัญชีของตัวเองได้');
       return;
     }
-    const ok = window.confirm(`ต้องการลบผู้ใช้ "${displayName || uid}" จริงหรือไม่?`);
+    // ตรวจสิทธิ์ลบตามกติกา
+    const canDelete =
+      (isDev) ||
+      (isHead && (targetRole === 'admin' || targetRole === 'user')) ||
+      (isAdminRole && targetRole === 'user');
+
+    if (!canDelete) return;
+
+    const ok = window.confirm(`ต้องการลบผู้ใช้ "${target.displayName || targetUid}" จริงหรือไม่?`);
     if (!ok) return;
+
     try {
-      setSaving('del:' + uid);
+      setSaving('del:' + targetUid);
       const idToken = await auth.currentUser?.getIdToken();
-      const r = await fetch('/api/admin/users/' + encodeURIComponent(uid), {
+      const r = await fetch('/api/admin/users/' + encodeURIComponent(targetUid), {
         method: 'DELETE',
         headers: { Authorization: 'Bearer ' + idToken },
       });
@@ -114,16 +128,25 @@ export default function AdminUsersPage() {
                 <TableCell>User</TableCell>
                 <TableCell>Role</TableCell>
                 <TableCell>isAdmin</TableCell>
-                <TableCell width={320}>Action</TableCell>
+                <TableCell width={360}>Action</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {items.map(u => {
                 const role = roleOf(u);
                 const isSelf = u.id === me;
-                const disableSelect = saving?.startsWith(u.id + ':') || (isSelf && role === 'developer'); // dev แก้ตัวเองไม่ได้
-                const disableSetUser = saving?.startsWith(u.id + ':') || (isSelf && role === 'developer');
-                const canDelete = isDev && !isSelf; // dev ลบทุกคน ยกเว้นตัวเอง
+                const disableSelect =
+                  saving?.startsWith(u.id + ':') || (isSelf && role === 'developer'); // dev แก้ตัวเองไม่ได้
+                const disableSetUser =
+                  saving?.startsWith(u.id + ':') || (isSelf && role === 'developer');
+
+                // สิทธิ์ลบของผู้ดูแลปัจจุบัน
+                const canDelete =
+                  !isSelf && (
+                    isDev ||
+                    (isHead && (role === 'admin' || role === 'user')) ||
+                    (isAdminRole && role === 'user')
+                  );
 
                 return (
                   <TableRow key={u.id} hover>
@@ -146,7 +169,6 @@ export default function AdminUsersPage() {
                           onChange={(e) => changeRole(u.id, e.target.value)}
                           disabled={disableSelect}
                         >
-                          {/* เรียงตามความต้องการ */}
                           <MenuItem value="user">user</MenuItem>
                           <MenuItem value="admin">admin</MenuItem>
                           <MenuItem value="headAdmin">headAdmin</MenuItem>
@@ -162,12 +184,12 @@ export default function AdminUsersPage() {
                           SET USER
                         </Button>
 
-                        {isDev && (
+                        {canDelete && (
                           <IconButton
                             aria-label="delete user"
                             size="small"
-                            onClick={() => deleteUser(u.id, u.displayName)}
-                            disabled={!canDelete || saving === 'del:' + u.id}
+                            onClick={() => handleDeleteUser(u)}
+                            disabled={saving === 'del:' + u.id}
                           >
                             <DeleteOutlineIcon fontSize="small" />
                           </IconButton>

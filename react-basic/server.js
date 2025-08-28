@@ -2017,30 +2017,58 @@ app.post('/api/admin/users/:uid/role', requireFirebaseAuth, async (req, res) => 
   }
 });
 
-// ======= Delete user (developer only) =======
+// ======= Delete user (dev/head/admin ตามสิทธิ์) =======
 app.delete('/api/admin/users/:uid', requireFirebaseAuth, async (req, res) => {
   try {
-    const actor = await loadActorRole(req); // มีอยู่แล้วใน Roles Management block
-    if (actor !== 'developer') {
-      return res.status(403).json({ error: 'forbidden' });
-    }
-    const { uid } = req.params;
+    const actorRole = await loadActorRole(req);         // 'developer' | 'headAdmin' | 'admin' | 'user'
+    const targetUid = req.params.uid;
 
-    // ป้องกันลบตัวเอง (กันพลาดล็อกตัวเองออกจากระบบ)
-    if (uid === req.user.uid) {
+    if (!targetUid) return res.status(400).json({ error: 'missing_target' });
+    if (targetUid === req.user.uid) {
       return res.status(400).json({ error: 'cannot_delete_self' });
     }
 
-    // ลบ Firestore doc
-    await admin.firestore().doc(`users/${uid}`).delete().catch(() => {});
-    // ลบ Firebase Auth user (ถ้า uid นี้เป็น user จริงใน Auth)
-    await admin.auth().deleteUser(uid).catch(() => {});
+    // อนุญาตเฉพาะ dev/head/admin เข้าถึง endpoint นี้
+    if (!['developer', 'headAdmin', 'admin'].includes(actorRole)) {
+      return res.status(403).json({ error: 'forbidden' });
+    }
 
-    res.json({ ok: true });
+    // อ่าน role ของ target จาก Firestore (ถ้าไม่มี doc → user)
+    const tRef = admin.firestore().doc(`users/${targetUid}`);
+    const tSnap = await tRef.get();
+    const targetRole = tSnap.exists
+      ? (tSnap.get('role') || (tSnap.get('isAdmin') ? 'admin' : 'user'))
+      : 'user';
+
+    // ตรวจสิทธิ์ตามบทบาทผู้กระทำ
+    let canDelete = false;
+    if (actorRole === 'developer') {
+      canDelete = true; // dev ลบได้ทุกคน
+    } else if (actorRole === 'headAdmin') {
+      // head admin: ลบ admin / user ได้
+      canDelete = (targetRole === 'admin' || targetRole === 'user');
+    } else if (actorRole === 'admin') {
+      // admin: ลบได้เฉพาะ user
+      canDelete = (targetRole === 'user');
+    }
+
+    if (!canDelete) {
+      return res.status(403).json({ error: 'not_allowed_to_delete_target' });
+    }
+
+    // ลบ Firestore doc
+    await tRef.delete().catch(() => {});
+
+    // ลบบัญชีใน Firebase Auth (ถ้า uid นี้เป็น user จริงใน Auth)
+    await admin.auth().deleteUser(targetUid).catch(() => {});
+
+    return res.json({ ok: true });
   } catch (e) {
-    res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
+    console.error('delete user error', e);
+    return res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
   }
 });
+
 
 
 
