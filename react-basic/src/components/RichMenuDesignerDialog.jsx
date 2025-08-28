@@ -12,6 +12,15 @@ import FormatAlignRightIcon from '@mui/icons-material/FormatAlignRight';
 import VerticalAlignTopIcon from '@mui/icons-material/VerticalAlignTop';
 import VerticalAlignCenterIcon from '@mui/icons-material/VerticalAlignCenter';
 import VerticalAlignBottomIcon from '@mui/icons-material/VerticalAlignBottom';
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
+import DeleteIcon from '@mui/icons-material/Delete';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import AddIcon from '@mui/icons-material/Add';
+import PhotoIcon from '@mui/icons-material/Photo';
+import TextFieldsIcon from '@mui/icons-material/TextFields';
 
 /* ---------- helpers ---------- */
 function pctToPxRect(cellPct, width, height) {
@@ -43,51 +52,38 @@ function ensureGoogleFontLoaded(gf) {
   document.head.appendChild(link);
 }
 
-/* ---------- sticker sets (by category) ---------- */
-/* ไอคอนเป็น SVG อย่างง่ายแบบ data URL ให้โหลดเร็วและคมชัดทุกขนาด */
-const C = encodeURIComponent;
+/* ---------- stickers (data URLs, เร็ว/คม) ---------- */
 const mk = (svg) => `data:image/svg+xml;utf8,${svg}`;
+
+// ชุดไอคอนพื้นฐานสำหรับ Rich Menu (จอง/ปักหมุด/คุย/โทร/สั่ง/คูปอง/QR/ไรเดอร์/แผนที่/ปฏิทิน/ไลฟ์/ร้านอาหาร ฯลฯ)
 const ico = {
-  plate: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><circle cx="128" cy="128" r="96" fill="%23FFC107"/><rect x="70" y="120" width="116" height="18" rx="9" fill="%23fff"/></svg>`),
-  coffee: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect x="40" y="96" width="176" height="80" rx="10" fill="%235D4037"/><rect x="176" y="70" width="24" height="56" rx="10" fill="%235D4037"/><rect x="56" y="112" width="144" height="48" rx="6" fill="%23A1887F"/></svg>`),
-  tshirt: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M64 64l32-24h64l32 24-24 24v104H88V88z" fill="%23E91E63"/></svg>`),
-  bag: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect x="48" y="96" width="160" height="112" rx="16" fill="%239C27B0"/><path d="M88 96a40 40 0 0 1 80 0" stroke="%23fff" stroke-width="12" fill="none"/></svg>`),
-  plane: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M16 144l224-80-96 96 24 64-32-40-56 24 24-56z" fill="%2300ACC1"/></svg>`),
-  palm: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M128 80c-32-48-96-16-96-16s64 8 80 32c-64-8-96 48-96 48s80-24 112-8V240h24V136c32-16 112 8 112 8s-32-56-96-48c16-24 80-32 80-32s-64-32-96 16z" fill="%234CAF50"/></svg>`),
-  house: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M32 128l96-72 96 72v96H32z" fill="%23FF7043"/><rect x="96" y="160" width="64" height="64" fill="%23fff"/></svg>`),
-  bldg: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect x="48" y="48" width="160" height="160" rx="8" fill="%233F51B5"/><g fill="%23fff"><rect x="72" y="72" width="32" height="24"/><rect x="120" y="72" width="32" height="24"/><rect x="72" y="112" width="32" height="24"/><rect x="120" y="112" width="32" height="24"/></g></svg>`),
-  bell: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M128 224c16 0 28-8 32-24H96c4 16 16 24 32 24zm80-64c0-56-24-80-64-88V64a16 16 0 0 0-32 0v8c-40 8-64 32-64 88l-16 16h208z" fill="%23FFB300"/></svg>`),
-  mega: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M32 176l64-16 96-96 32 32-96 96-16 64-24-40-40-24z" fill="%23F4511E"/></svg>`),
-  heart: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M128 226s-92-54-92-122c0-27 21-48 48-48 20 0 34 10 44 24 10-14 24-24 44-24 27 0 48 21 48 48 0 68-92 122-92 122z" fill="%23E53935"/></svg>`),
-  leaf: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M224 64C96 48 48 176 48 176s128 48 160-80c0 96-64 144-64 144s128-48 80-176z" fill="%234CAF50"/></svg>`),
-  cap: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M16 120l112-40 112 40-112 40z" fill="%23009688"/><rect x="56" y="160" width="144" height="32" fill="%23009688"/></svg>`),
-  book: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M56 48h96a24 24 0 0 1 24 24v136a24 24 0 0 0-24-24H56z" fill="%233F51B5"/><rect x="128" y="48" width="72" height="160" fill="%235C6BC0"/></svg>`),
-  wrench: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M224 64l-48 48-24-8-72 72 24 24 72-72-8-24z" fill="%239E9D24"/></svg>`),
-  clock: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><circle cx="128" cy="128" r="96" fill="%2360738B"/><path d="M128 72v56l48 32" stroke="%23fff" stroke-width="16" fill="none"/></svg>`),
-  cross: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect x="40" y="104" width="176" height="48" fill="%23D32F2F"/><rect x="104" y="40" width="48" height="176" fill="%23D32F2F"/></svg>`),
-  stetho: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M80 64v64a48 48 0 0 0 96 0V64" stroke="%23009688" stroke-width="16" fill="none"/><circle cx="192" cy="64" r="16" fill="%23009688"/></svg>`),
-  car: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M48 144l24-56h112l24 56v40H48z" fill="%230E88F2"/><circle cx="80" cy="192" r="16" fill="%23033E8C"/><circle cx="176" cy="192" r="16" fill="%23033E8C"/></svg>`),
-  wheel: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><circle cx="128" cy="128" r="96" fill="%23033E8C"/><circle cx="128" cy="128" r="40" fill="%23fff"/></svg>`),
+  // เดิม
   cart: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M40 64h24l20 96h96l20-64H92" fill="none" stroke="%233F51B5" stroke-width="16"/><circle cx="112" cy="192" r="16" fill="%233F51B5"/><circle cx="176" cy="192" r="16" fill="%233F51B5"/></svg>`),
-  box: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M48 96l80-32 80 32v96l-80 32-80-32z" fill="%23A1887F"/><path d="M128 64v160" stroke="%23755C4A" stroke-width="12"/></svg>`),
-  star: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><polygon points="128,20 158,98 240,98 172,146 198,228 128,178 58,228 84,146 16,98 98,98" fill="%23FFC107"/></svg>`),
+  bell: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M128 224c16 0 28-8 32-24H96c4 16 16 24 32 24zm80-64c0-56-24-80-64-88V64a16 16 0 0 0-32 0v8c-40 8-64 32-64 88l-16 16h208z" fill="%23FFB300"/></svg>`),
   chat: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M32 48h192c13 0 24 11 24 24v88c0 13-11 24-24 24H112l-56 40v-40H32c-13 0-24-11-24-24V72c0-13 11-24 24-24z" fill="%2334A853"/></svg>`),
+  clock: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><circle cx="128" cy="128" r="96" fill="%2360738B"/><path d="M128 72v56l48 32" stroke="%23fff" stroke-width="16" fill="none"/></svg>`),
+  plate: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><circle cx="128" cy="128" r="96" fill="%23FFC107"/><rect x="70" y="120" width="116" height="18" rx="9" fill="%23fff"/></svg>`),
+
+  // เพิ่มใหม่
+  calendar: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect x="32" y="56" width="192" height="168" rx="12" fill="%2342A5F5"/><rect x="32" y="56" width="192" height="36" fill="%232877D7"/><path d="M72 40v32M184 40v32" stroke="%23fff" stroke-width="12"/><path d="M72 128l28 28 56-56" stroke="%23fff" stroke-width="16" fill="none"/></svg>`),
+  pin: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M128 232s88-96 88-144a88 88 0 1 0-176 0c0 48 88 144 88 144z" fill="%23E53935"/><circle cx="128" cy="104" r="28" fill="%23fff"/></svg>`),
+  phone: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M72 40l48 24-16 32c16 32 40 56 72 72l32-16 24 48-32 16c-72-16-128-72-144-144z" fill="%2327AE60"/></svg>`),
+  ticket: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect x="32" y="88" width="192" height="80" rx="12" fill="%23F57C00"/><circle cx="48" cy="128" r="12" fill="%23fff"/><circle cx="208" cy="128" r="12" fill="%23fff"/><rect x="96" y="108" width="64" height="8" fill="%23fff"/><rect x="96" y="132" width="64" height="8" fill="%23fff"/></svg>`),
+  qr: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="%23000"/><rect x="12" y="12" width="232" height="232" fill="%23fff"/><rect x="32" y="32" width="56" height="56"/><rect x="168" y="32" width="56" height="56"/><rect x="32" y="168" width="56" height="56"/><rect x="120" y="120" width="24" height="24"/><rect x="152" y="152" width="40" height="16"/></svg>`),
+  rider: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><circle cx="72" cy="192" r="20" fill="%232196F3"/><circle cx="184" cy="192" r="20" fill="%232196F3"/><path d="M56 192h80l24-72h48" stroke="%232196F3" stroke-width="12" fill="none"/><rect x="160" y="96" width="56" height="40" rx="6" fill="%2342A5F5"/></svg>`),
+  map: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><polygon points="64,48 128,72 192,48 192,208 128,184 64,208" fill="%234CAF50"/><polyline points="64,48 64,208 128,184 128,72 192,48 192,208" fill="none" stroke="%232E7D32" stroke-width="6"/></svg>`),
+  live: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect x="24" y="80" width="208" height="96" rx="14" fill="%23D32F2F"/><polygon points="116,112 156,128 116,144" fill="%23fff"/><rect x="36" y="92" width="56" height="16" rx="8" fill="%23fff"/></svg>`),
+  utensils: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect x="72" y="32" width="16" height="192" fill="%239E9E9E"/><rect x="104" y="32" width="16" height="192" fill="%239E9E9E"/><path d="M168 32h16v96c0 18-16 18-16 0z" fill="%239E9E9E"/></svg>`),
+  home: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><path d="M32 128l96-72 96 72v96H32z" fill="%23FF7043"/><rect x="96" y="160" width="64" height="64" fill="%23fff"/></svg>`),
+  star: mk(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><polygon points="128,20 158,98 240,98 172,146 198,228 128,178 58,228 84,146 16,98 98,98" fill="%23FFC107"/></svg>`),
 };
 
-const STICKER_CATS = {
-  'ร้านอาหาร / คาเฟ่': [ico.plate, ico.coffee],
-  'แฟชั่น / สินค้าทั่วไป': [ico.tshirt, ico.bag],
-  'ท่องเที่ยว / รีสอร์ต': [ico.plane, ico.palm],
-  'อสังหาริมทรัพย์': [ico.house, ico.bldg],
-  'ข่าว / อัปเดต / บริการร้าน': [ico.bell, ico.mega],
-  'สุขภาพ / ความงาม': [ico.heart, ico.leaf],
-  'การศึกษา / สถาบัน': [ico.cap, ico.book],
-  'ไลฟ์สไตล์ / บริการ': [ico.wrench, ico.clock],
-  'คลินิก / โรงพยาบาล': [ico.cross, ico.stetho],
-  'ยานยนต์ / รถยนต์': [ico.car, ico.wheel],
-  'E-Commerce': [ico.cart, ico.box],
-  'อื่น ๆ': [ico.star, ico.chat],
-};
+// รวมสติ๊กเกอร์ทั้งหมดไว้ถาดเดียว (เรียงอันที่ใช้บ่อยไว้ต้นๆ)
+const STICKERS = [
+  ico.calendar, ico.pin, ico.chat, ico.phone, ico.cart, ico.plate, ico.utensils,
+  ico.ticket, ico.qr, ico.rider, ico.map, ico.live, ico.clock, ico.bell,
+  ico.home, ico.star,
+];
 
 /* ---------- tiny controls ---------- */
 function ColorInput({ label, value, onChange, sx }) {
@@ -118,140 +114,164 @@ export default function RichMenuDesignerDialog({
 
   const cells = useMemo(() => (areas || []).map(a => ({ id: a.id, ...pctToPxRect(a, CANVAS_W, CANVAS_H) })), [areas]);
 
-  const [bgColor] = useState('#ffffff'); // canvas fixed = white
   const [zoom, setZoom] = useState(100);
   const zoomFactor = Math.max(40, Math.min(160, zoom)) / 100;
 
-  // block configs
-  const defaultCfg = () => ({
-    text: '',
-    textColor: '#000000',
+  // layer factories
+  const newText = () => ({
+    id: 'L' + Math.random().toString(36).slice(2),
+    type: 'text',
+    text: 'ข้อความ',
+    color: '#000000',
     fontSize: 22,
     fontWeight: 600,
     fontFamily: FONT_OPTIONS[0].family,
-    textShadow: { color: 'rgba(0,0,0,.25)', blur: 6, x: 0, y: 2 },
+    shadow: { color: 'rgba(0,0,0,.25)', blur: 6, x: 0, y: 2 },
+    posMode: 'grid', // 'grid' | 'free'
     align: 'center',
     vAlign: 'center',
+    pos: { x: 50, y: 50 }, // free
+  });
+  const newSticker = (img=null) => ({
+    id: 'L' + Math.random().toString(36).slice(2),
+    type: 'sticker',
+    img, // HTMLImageElement
+    scale: 1,
+    posMode: 'grid',
+    anchor: 'center', // center|topLeft|topRight|bottomLeft|bottomRight
+    pos: { x: 50, y: 50 }, // free
+  });
+  const newImage = (img=null) => ({
+    id: 'L' + Math.random().toString(36).slice(2),
+    type: 'image',
+    img, // HTMLImageElement
+    fit: 'cover', // cover | contain
+    opacity: 1,
+  });
+
+  const defaultCfg = () => ({
     padding: 8,
     fillColor: '#f6f6f6',
-    image: null,
-    imageFit: 'cover',          // default → เติมเต็มช่อง
-    sticker: null,
-    stickerScale: 1,
-    stickerPos: 'center',
-    positionMode: 'grid',       // 'grid' | 'free'
-    textPos: { x: 50, y: 50 },
-    stickerPosFree: { x: 50, y: 50 },
-    dragTarget: 'text',
+    layers: [ newText() ],
   });
 
   const [configs, setConfigs] = useState(() => (areas || []).map(defaultCfg));
   useEffect(() => { setConfigs((areas || []).map(defaultCfg)); }, [areas?.length]);
 
-  const canvasRef = useRef(null);
+  // selection
+  const [selIdx, setSelIdx] = useState(0);
+  const cfg = configs[selIdx] || defaultCfg();
+  const [selLayerIdx, setSelLayerIdx] = useState(0);
+  useEffect(() => {
+    if (selLayerIdx > (cfg.layers.length - 1)) setSelLayerIdx(Math.max(0, cfg.layers.length - 1));
+  }, [selIdx, cfg.layers.length, selLayerIdx]);
+  const curLayer = cfg.layers[selLayerIdx];
 
-  /* --------- history: undo/redo ---------- */
+  // history
   const [history, setHistory] = useState([]);
   const [future, setFuture] = useState([]);
   const pushHistory = (next) => {
     const cur = JSON.stringify(configs);
     const nxt = JSON.stringify(next);
     if (cur === nxt) return;
-    setHistory((h) => [...h, cur].slice(-100)); // cap 100 steps
+    setHistory((h) => [...h, cur].slice(-100));
     setFuture([]);
     setConfigs(next);
   };
 
-  // selection + click-to-select from preview
-  const [selIdx, setSelIdx] = useState(0);
-  const cfg = configs[selIdx] || {};
+  const canvasRef = useRef(null);
 
   function findCellIndexByPoint(px, py) {
     const i = cells.findIndex((r) => px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h);
     return i >= 0 ? i : 0;
   }
 
-  /* --------- draw preview ---------- */
+  /* --------- drawing ---------- */
   useEffect(() => {
     const cvs = canvasRef.current; if (!cvs) return;
     const ctx = cvs.getContext('2d');
     ctx.clearRect(0,0,cvs.width,cvs.height);
-    ctx.fillStyle = bgColor; ctx.fillRect(0,0,cvs.width,cvs.height);
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,cvs.width,cvs.height);
 
     cells.forEach((cell, idx) => {
-      const cg = configs[idx] || {};
-      const padding = cg.padding || 0;
+      const c = configs[idx] || defaultCfg();
+      const padding = c.padding || 0;
       const tx = cell.x + padding, ty = cell.y + padding;
       const tw = cell.w - padding*2, th = cell.h - padding*2;
 
-      if (cg.fillColor) { ctx.fillStyle = cg.fillColor; ctx.fillRect(cell.x, cell.y, cell.w, cell.h); }
+      // block background
+      if (c.fillColor) { ctx.fillStyle = c.fillColor; ctx.fillRect(cell.x, cell.y, cell.w, cell.h); }
 
-      if (cg.image) {
-        const img = cg.image;
-        let dw, dh, dx, dy;
-        if (cg.imageFit === 'contain') {
-          const r = Math.min(tw / img.width, th / img.height);
-          dw = Math.round(img.width * r); dh = Math.round(img.height * r);
-        } else {
-          const r = Math.max(tw / img.width, th / img.height);
-          dw = Math.round(img.width * r); dh = Math.round(img.height * r);
-        }
-        dx = tx + Math.round((tw - dw) / 2);
-        dy = ty + Math.round((th - dh) / 2);
-        ctx.drawImage(img, dx, dy, dw, dh);
-      }
-
-      if (cg.sticker) {
-        const img = cg.sticker;
-        const base = Math.min(tw, th) * (cg.stickerScale || 1);
-        let dx = tx + Math.round((tw - base)/2);
-        let dy = ty + Math.round((th - base)/2);
-        if (cg.positionMode === 'free') {
-          const cx = tx + (cg.stickerPosFree?.x ?? 50) * tw / 100;
-          const cy = ty + (cg.stickerPosFree?.y ?? 50) * th / 100;
-          dx = Math.round(cx - base/2); dy = Math.round(cy - base/2);
-        } else {
-          if (cg.stickerPos === 'topLeft') { dx = tx; dy = ty; }
-          if (cg.stickerPos === 'topRight') { dx = tx + tw - base; dy = ty; }
-          if (cg.stickerPos === 'bottomLeft') { dx = tx; dy = ty + th - base; }
-          if (cg.stickerPos === 'bottomRight') { dx = tx + tw - base; dy = ty + th - base; }
-        }
-        ctx.drawImage(img, dx, dy, base, base);
-      }
-
-      const t = (cg.text || '').trim();
-      if (t) {
-        ctx.fillStyle = cg.textColor || '#000';
-        ctx.font = `${cg.fontWeight || 400} ${cg.fontSize || 22}px ${cg.fontFamily || 'system-ui'}`;
-        ctx.textAlign = (cg.align || 'center'); ctx.textBaseline = 'alphabetic';
-
-        let x = tx + tw/2, y = ty + th/2;
-        if (cg.positionMode === 'grid') {
-          if (cg.align === 'left')  x = tx;
-          if (cg.align === 'right') x = tx + tw;
-          if (cg.vAlign === 'top') y = ty + (cg.fontSize || 22);
-          if (cg.vAlign === 'bottom') y = ty + th - 6;
-        } else {
-          x = tx + (cg.textPos?.x ?? 50) * tw / 100;
-          y = ty + (cg.textPos?.y ?? 50) * th / 100;
+      // draw layers in order
+      (c.layers || []).forEach((L) => {
+        if (L.hidden) return;
+        if (L.type === 'image' && L.img) {
+          const img = L.img;
+          let dw, dh, dx, dy;
+          if (L.fit === 'contain') {
+            const r = Math.min(tw / img.width, th / img.height);
+            dw = Math.round(img.width * r); dh = Math.round(img.height * r);
+          } else {
+            const r = Math.max(tw / img.width, th / img.height);
+            dw = Math.round(img.width * r); dh = Math.round(img.height * r);
+          }
+          dx = tx + Math.round((tw - dw)/2); dy = ty + Math.round((th - dh)/2);
+          if (L.opacity !== 1) { ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1, L.opacity)); }
+          ctx.drawImage(img, dx, dy, dw, dh);
+          if (L.opacity !== 1) ctx.restore();
         }
 
-        const lines = t.split(/\n/), lh = Math.round((cg.fontSize || 22) * 1.25);
-
-        ctx.shadowColor = cg.textShadow?.color || 'rgba(0,0,0,.25)';
-        ctx.shadowBlur = cg.textShadow?.blur ?? 6;
-        ctx.shadowOffsetX = cg.textShadow?.x ?? 0;
-        ctx.shadowOffsetY = cg.textShadow?.y ?? 2;
-
-        if (lines.length === 1) ctx.fillText(lines[0], Math.round(x), Math.round(y));
-        else {
-          const startY = Math.round(y - ((lines.length-1) * lh)/2);
-          lines.forEach((ln, i) => ctx.fillText(ln, Math.round(x), startY + i*lh));
+        if (L.type === 'sticker' && L.img) {
+          const img = L.img;
+          const base = Math.min(tw, th) * (L.scale || 1);
+          let dx = tx + Math.round((tw - base)/2), dy = ty + Math.round((th - base)/2);
+          if (L.posMode === 'free') {
+            const cx = tx + (L.pos?.x ?? 50) * tw / 100;
+            const cy = ty + (L.pos?.y ?? 50) * th / 100;
+            dx = Math.round(cx - base/2); dy = Math.round(cy - base/2);
+          } else {
+            if (L.anchor === 'topLeft') { dx = tx; dy = ty; }
+            if (L.anchor === 'topRight') { dx = tx + tw - base; dy = ty; }
+            if (L.anchor === 'bottomLeft') { dx = tx; dy = ty + th - base; }
+            if (L.anchor === 'bottomRight') { dx = tx + tw - base; dy = ty + th - base; }
+            // center คือ default
+          }
+          ctx.drawImage(img, dx, dy, base, base);
         }
 
-        ctx.shadowColor = 'transparent';
-        ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
-      }
+        if (L.type === 'text' && (L.text || '').trim()) {
+          ctx.fillStyle = L.color || '#000';
+          ctx.font = `${L.fontWeight || 400} ${L.fontSize || 22}px ${L.fontFamily || 'system-ui'}`;
+          ctx.textAlign = (L.align || 'center'); ctx.textBaseline = 'alphabetic';
+
+          let x = tx + tw/2, y = ty + th/2;
+          if (L.posMode === 'grid') {
+            if (L.align === 'left')  x = tx;
+            if (L.align === 'right') x = tx + tw;
+            if (L.vAlign === 'top') y = ty + (L.fontSize || 22);
+            if (L.vAlign === 'bottom') y = ty + th - 6;
+          } else {
+            x = tx + (L.pos?.x ?? 50) * tw / 100;
+            y = ty + (L.pos?.y ?? 50) * th / 100;
+          }
+
+          const lines = String(L.text).split(/\n/);
+          const lh = Math.round((L.fontSize || 22) * 1.25);
+
+          ctx.shadowColor = L.shadow?.color || 'rgba(0,0,0,.25)';
+          ctx.shadowBlur = L.shadow?.blur ?? 6;
+          ctx.shadowOffsetX = L.shadow?.x ?? 0;
+          ctx.shadowOffsetY = L.shadow?.y ?? 2;
+
+          if (lines.length === 1) ctx.fillText(lines[0], Math.round(x), Math.round(y));
+          else {
+            const startY = Math.round(y - ((lines.length-1) * lh)/2);
+            lines.forEach((ln, i) => ctx.fillText(ln, Math.round(x), startY + i*lh));
+          }
+
+          ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+        }
+      });
 
       // outline + block tag
       ctx.lineWidth = (idx === selIdx) ? 2 : 1;
@@ -267,147 +287,98 @@ export default function RichMenuDesignerDialog({
       ctx.textBaseline = 'middle';
       ctx.fillText(`#${idx+1}`, cell.x + 6 + 13, cell.y + 6 + 9);
     });
-  }, [cells, configs, bgColor, selIdx]);
+  }, [cells, configs, selIdx]);
 
-  // update helper
-  const update = (partial) => {
-    const next = configs.map((c,i)=> i===selIdx ? { ...c, ...partial } : c);
+  // update helpers
+  const setCfg = (updater) => {
+    const next = configs.map((c,i)=> i===selIdx ? updater(c) : c);
     pushHistory(next);
   };
+  const updateLayer = (partial) => {
+    setCfg((c) => {
+      const layers = c.layers.map((L,i)=> i===selLayerIdx ? { ...L, ...partial } : L);
+      return { ...c, layers };
+    });
+  };
 
-  // image pick
-  async function onPickImage(idx, file) {
+  // add layers
+  const addTextLayer = () => setCfg(c => ({ ...c, layers: [...c.layers, newText()] }));
+  const addStickerLayerFromUrl = async (url) => {
+    const img = await new Promise((resolve) => { const im = new Image(); im.onload = ()=>resolve(im); im.src = url; });
+    setCfg(c => ({ ...c, layers: [...c.layers, newSticker(img)] }));
+  };
+  const addImageLayerFromFile = (file) => {
     if (!file) return;
     const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
+    const im = new Image();
+    im.onload = () => {
       URL.revokeObjectURL(url);
-      const next = configs.map((c,i)=> i===idx ? { ...c, image: img } : c);
-      pushHistory(next);
+      setCfg(c => ({ ...c, layers: [...c.layers, newImage(im)] }));
     };
-    img.src = url;
-  }
+    im.src = url;
+  };
 
-  // stickers
-  const [stCat, setStCat] = useState(Object.keys(STICKER_CATS)[0]);
-  async function onPickSticker(url) {
-    const img = await new Promise((resolve) => { const im = new Image(); im.onload = ()=>resolve(im); im.src = url; });
-    const next = configs.map((c,i)=> i===selIdx ? { ...c, sticker: img } : c);
-    pushHistory(next);
-  }
-
-  // export (JPEG fixed)
-  async function exportImage() {
-    const cvs = document.createElement('canvas');
-    cvs.width = EXPORT_W; cvs.height = EXPORT_H;
-    const ctx = cvs.getContext('2d');
-    ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,cvs.width,cvs.height);
-
-    (areas || []).forEach((a, idx) => {
-      const rect = pctToPxRect(a, EXPORT_W, EXPORT_H);
-      const c = configs[idx] || {};
-      const padding = Math.round((c.padding || 0) * SCALE);
-      const tx = rect.x + padding, ty = rect.y + padding;
-      const tw = rect.w - padding*2, th = rect.h - padding*2;
-
-      if (c.fillColor) { ctx.fillStyle = c.fillColor; ctx.fillRect(rect.x, rect.y, rect.w, rect.h); }
-
-      if (c.image) {
-        const img = c.image;
-        let dw, dh, dx, dy;
-        if (c.imageFit === 'contain') {
-          const r = Math.min(tw / img.width, th / img.height);
-          dw = Math.round(img.width * r); dh = Math.round(img.height * r);
-        } else {
-          const r = Math.max(tw / img.width, th / img.height);
-          dw = Math.round(img.width * r); dh = Math.round(img.height * r);
-        }
-        dx = tx + Math.round((tw - dw)/2); dy = ty + Math.round((th - dh)/2);
-        ctx.drawImage(img, dx, dy, dw, dh);
-      }
-
-      if (c.sticker) {
-        const img = c.sticker;
-        const base = Math.min(tw, th) * (c.stickerScale || 1);
-        let dx = tx + Math.round((tw - base)/2), dy = ty + Math.round((th - base)/2);
-        if (c.positionMode === 'free') {
-          const cx = tx + (c.stickerPosFree?.x ?? 50) * tw / 100;
-          const cy = ty + (c.stickerPosFree?.y ?? 50) * th / 100;
-          dx = Math.round(cx - base/2); dy = Math.round(cy - base/2);
-        } else {
-          if (c.stickerPos === 'topLeft') { dx = tx; dy = ty; }
-          if (c.stickerPos === 'topRight') { dx = tx + tw - base; dy = ty; }
-          if (c.stickerPos === 'bottomLeft') { dx = tx; dy = ty + th - base; }
-          if (c.stickerPos === 'bottomRight') { dx = tx + tw - base; dy = ty + th - base; }
-        }
-        ctx.drawImage(img, dx, dy, base, base);
-      }
-
-      const t = (c.text || '').trim();
-      if (t) {
-        const fontPx = Math.round((c.fontSize || 22) * SCALE);
-        ctx.fillStyle = c.textColor || '#000';
-        ctx.font = `${c.fontWeight || 400} ${fontPx}px ${c.fontFamily || 'system-ui'}`;
-        ctx.textAlign = (c.align || 'center'); ctx.textBaseline = 'alphabetic';
-
-        let x = tx + tw/2, y = ty + th/2;
-        if (c.positionMode === 'grid') {
-          if (c.align === 'left')  x = tx;
-          if (c.align === 'right') x = tx + tw;
-          if (c.vAlign === 'top') y = ty + fontPx;
-          if (c.vAlign === 'bottom') y = ty + th - Math.round(fontPx*0.25);
-        } else {
-          x = tx + (c.textPos?.x ?? 50) * tw / 100;
-          y = ty + (c.textPos?.y ?? 50) * th / 100;
-        }
-
-        ctx.shadowColor = c.textShadow?.color || 'rgba(0,0,0,.25)';
-        ctx.shadowBlur = Math.round((c.textShadow?.blur ?? 6) * SCALE);
-        ctx.shadowOffsetX = Math.round((c.textShadow?.x ?? 0) * SCALE);
-        ctx.shadowOffsetY = Math.round((c.textShadow?.y ?? 2) * SCALE);
-
-        const lines = t.split(/\n/), lh = Math.round(fontPx * 1.25);
-        if (lines.length === 1) ctx.fillText(lines[0], Math.round(x), Math.round(y));
-        else {
-          const startY = Math.round(y - ((lines.length-1) * lh)/2);
-          lines.forEach((ln, i) => ctx.fillText(ln, Math.round(x), startY + i*lh));
-        }
-        ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
-      }
+  // layer list ops
+  const moveLayer = (dir) => {
+    setCfg(c => {
+      const layers = [...c.layers];
+      const i = selLayerIdx;
+      const j = dir === 'up' ? i - 1 : i + 1;
+      if (j < 0 || j >= layers.length) return c;
+      [layers[i], layers[j]] = [layers[j], layers[i]];
+      return { ...c, layers };
     });
+    setSelLayerIdx((i)=> Math.max(0, Math.min(cfg.layers.length-1, dir==='up'? i-1:i+1)));
+  };
+  const toggleLayer = () => updateLayer({ hidden: !curLayer?.hidden });
+  const deleteLayer = () => {
+    setCfg(c => ({ ...c, layers: c.layers.filter((_,i)=> i!==selLayerIdx) }));
+    setSelLayerIdx((i)=> Math.max(0, i-1));
+  };
+  const copyLayer = () => {
+    if (!curLayer) return;
+    const cloned = JSON.parse(JSON.stringify({ ...curLayer, id: 'L' + Math.random().toString(36).slice(2) }));
+    // image/sticker need rebind Image object (ไม่ serialize)
+    if (cloned.type === 'image' || cloned.type === 'sticker') {
+      const srcCanvas = document.createElement('canvas');
+      srcCanvas.width = 1; srcCanvas.height = 1; // เราไม่มี src เดิม → คัดลอกอ็อบเจ็กต์เดิมแทน
+      // โคลนแบบอ้างอิงเดิม (ปลอดภัยพอในหน้านี้)
+      cloned.img = curLayer.img;
+    }
+    setCfg(c => ({ ...c, layers: [...c.layers, cloned] }));
+    setSelLayerIdx(cfg.layers.length); // เลเยอร์ใหม่ท้ายสุด
+  };
 
-    const blob = await new Promise(r => cvs.toBlob(r, 'image/jpeg', 0.92));
-    if (!blob) return;
-    const file = new File([blob], `richmenu-designed.jpg`, { type: 'image/jpeg' });
-    if (onExport) await onExport(file);
-  }
+  // image fit update
+  const updateImageFit = (fit) => updateLayer({ fit });
 
-  // measure & auto-fit
-  function measureMultiline(ctx, text, fontPx) {
+  // text auto-fit
+  function measureMultiline(ctx, text, fontPx, fontWeight, fontFamily) {
     const lines = (text||'').split(/\n/);
+    ctx.font = `${fontWeight || 400} ${fontPx}px ${fontFamily || 'system-ui'}`;
     const widths = lines.map(l => ctx.measureText(l).width);
     const maxW = Math.max(0, ...widths);
     const totalH = Math.round(fontPx * 1.25 * lines.length);
     return { maxW, totalH };
   }
   function autoFitText() {
+    if (!curLayer || curLayer.type !== 'text') return;
     const cvs = canvasRef.current; if (!cvs) return;
     const ctx = cvs.getContext('2d');
-    const c = configs[selIdx]; if (!c) return;
-    const cell = cells[selIdx]; const padding = c.padding || 0;
+    const cell = cells[selIdx];
+    const padding = cfg.padding || 0;
     const tw = cell.w - padding*2, th = cell.h - padding*2;
-    let fontPx = c.fontSize || 22;
+    let fontPx = curLayer.fontSize || 22;
     for (let i=0;i<60;i++) {
-      ctx.font = `${c.fontWeight||400} ${fontPx}px ${c.fontFamily||'system-ui'}`;
-      const { maxW, totalH } = measureMultiline(ctx, c.text, fontPx);
+      const { maxW, totalH } = measureMultiline(ctx, curLayer.text, fontPx, curLayer.fontWeight, curLayer.fontFamily);
       if (maxW <= tw*0.95 && totalH <= th*0.95) break;
       fontPx -= 1; if (fontPx < 10) break;
     }
-    update({ fontSize: fontPx });
+    updateLayer({ fontSize: fontPx });
   }
 
-  /* --------- dragging (free) + click selection ---------- */
-  const [drag, setDrag] = useState(null); // { type:'text'|'sticker', offsetX, offsetY }
+  /* --------- drag (free) ---------- */
+  const [drag, setDrag] = useState(null); // { offsetX, offsetY }
   function canvasToLocal(e, cvs) {
     const r = cvs.getBoundingClientRect();
     const x = (e.clientX - r.left) * (cvs.width / r.width);
@@ -418,49 +389,125 @@ export default function RichMenuDesignerDialog({
     const cvs = canvasRef.current; if (!cvs) return;
     const { x, y } = canvasToLocal(e, cvs);
 
-    // คลิกเลือกบล็อกก่อน
+    // click เลือกบล็อกก่อน
     const idx = findCellIndexByPoint(x, y);
     if (idx !== selIdx) { setSelIdx(idx); return; }
 
-    const c = configs[selIdx];
-    if (!c || c.positionMode !== 'free') return;
+    // drag เฉพาะเลเยอร์ที่เลือก และ posMode = free
+    const L = curLayer;
+    if (!L || (L.type !== 'text' && L.type !== 'sticker') || L.posMode !== 'free') return;
 
-    const cell = cells[selIdx]; const padding = c.padding || 0;
-    const tx = cell.x + padding, ty = cell.y + padding;
-    const tw = cell.w - padding*2, th = cell.h - padding*2;
-
-    if (c.dragTarget === 'sticker' && c.sticker) {
-      const base = Math.min(tw, th) * (c.stickerScale || 1);
-      const cx = tx + (c.stickerPosFree?.x ?? 50) * tw / 100;
-      const cy = ty + (c.stickerPosFree?.y ?? 50) * th / 100;
-      if (x >= cx-base/2 && x <= cx+base/2 && y >= cy-base/2 && y <= cy+base/2) {
-        setDrag({ type:'sticker', offsetX: x - cx, offsetY: y - cy });
-        return;
-      }
-    }
-    setDrag({ type:'text', offsetX: 0, offsetY: 0 });
+    setDrag({ offsetX: 0, offsetY: 0 });
   }
   function handleMove(e) {
     if (!drag) return;
     const cvs = canvasRef.current; if (!cvs) return;
     const { x, y } = canvasToLocal(e, cvs);
-    setConfigs(prev => {
-      const n=[...prev]; const c={...n[selIdx]};
-      const cell = cells[selIdx]; const padding = c.padding || 0;
-      const tx = cell.x + padding, ty = cell.y + padding;
-      const tw = cell.w - padding*2, th = cell.h - padding*2;
-      if (drag.type === 'text') {
-        const px = Math.min(100, Math.max(0, ((x - tx) / tw) * 100));
-        const py = Math.min(100, Math.max(0, ((y - ty) / th) * 100));
-        c.textPos = { x: Math.round(px), y: Math.round(py) };
-      } else {
-        const cx = x - drag.offsetX, cy = y - drag.offsetY;
-        const px = Math.min(100, Math.max(0, ((cx - tx) / tw) * 100));
-        const py = Math.min(100, Math.max(0, ((cy - ty) / th) * 100));
-        c.stickerPosFree = { x: Math.round(px), y: Math.round(py) };
-      }
-      n[selIdx] = c; return n;
+    const L = curLayer;
+    if (!L) return;
+
+    const cell = cells[selIdx]; const padding = cfg.padding || 0;
+    const tx = cell.x + padding, ty = cell.y + padding;
+    const tw = cell.w - padding*2, th = cell.h - padding*2;
+
+    const px = Math.min(100, Math.max(0, ((x - tx) / tw) * 100));
+    const py = Math.min(100, Math.max(0, ((y - ty) / th) * 100));
+    updateLayer({ pos: { x: Math.round(px), y: Math.round(py) } });
+  }
+
+  /* --------- export (JPEG) ---------- */
+  async function exportImage() {
+    const cvs = document.createElement('canvas');
+    cvs.width = EXPORT_W; cvs.height = EXPORT_H;
+    const ctx = cvs.getContext('2d');
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,cvs.width,cvs.height);
+
+    (areas || []).forEach((a, idx) => {
+      const rect = pctToPxRect(a, EXPORT_W, EXPORT_H);
+      const c = configs[idx] || defaultCfg();
+      const padding = Math.round((c.padding || 0) * SCALE);
+      const tx = rect.x + padding, ty = rect.y + padding;
+      const tw = rect.w - padding*2, th = rect.h - padding*2;
+
+      // block bg
+      if (c.fillColor) { ctx.fillStyle = c.fillColor; ctx.fillRect(rect.x, rect.y, rect.w, rect.h); }
+
+      // layers
+      (c.layers || []).forEach((L) => {
+        if (L.hidden) return;
+
+        if (L.type === 'image' && L.img) {
+          const img = L.img;
+          let dw, dh, dx, dy;
+          if (L.fit === 'contain') {
+            const r = Math.min(tw / img.width, th / img.height);
+            dw = Math.round(img.width * r); dh = Math.round(img.height * r);
+          } else {
+            const r = Math.max(tw / img.width, th / img.height);
+            dw = Math.round(img.width * r); dh = Math.round(img.height * r);
+          }
+          dx = tx + Math.round((tw - dw)/2); dy = ty + Math.round((th - dh)/2);
+          if (L.opacity !== 1) { ctx.save(); ctx.globalAlpha = Math.max(0, Math.min(1, L.opacity)); }
+          ctx.drawImage(img, dx, dy, dw, dh);
+          if (L.opacity !== 1) ctx.restore();
+        }
+
+        if (L.type === 'sticker' && L.img) {
+          const img = L.img;
+          const base = Math.min(tw, th) * (L.scale || 1);
+          let dx = tx + Math.round((tw - base)/2), dy = ty + Math.round((th - base)/2);
+          if (L.posMode === 'free') {
+            const cx = tx + (L.pos?.x ?? 50) * tw / 100;
+            const cy = ty + (L.pos?.y ?? 50) * th / 100;
+            dx = Math.round(cx - base/2); dy = Math.round(cy - base/2);
+          } else {
+            if (L.anchor === 'topLeft') { dx = tx; dy = ty; }
+            if (L.anchor === 'topRight') { dx = tx + tw - base; dy = ty; }
+            if (L.anchor === 'bottomLeft') { dx = tx; dy = ty + th - base; }
+            if (L.anchor === 'bottomRight') { dx = tx + tw - base; dy = ty + th - base; }
+            // center default
+          }
+          ctx.drawImage(img, dx, dy, base, base);
+        }
+
+        if (L.type === 'text' && (L.text || '').trim()) {
+          const fontPx = Math.round((L.fontSize || 22) * SCALE);
+          ctx.fillStyle = L.color || '#000';
+          ctx.font = `${L.fontWeight || 400} ${fontPx}px ${L.fontFamily || 'system-ui'}`;
+          ctx.textAlign = (L.align || 'center'); ctx.textBaseline = 'alphabetic';
+
+          let x = tx + tw/2, y = ty + th/2;
+          if (L.posMode === 'grid') {
+            if (L.align === 'left')  x = tx;
+            if (L.align === 'right') x = tx + tw;
+            if (L.vAlign === 'top') y = ty + fontPx;
+            if (L.vAlign === 'bottom') y = ty + th - Math.round(fontPx*0.25);
+          } else {
+            x = tx + (L.pos?.x ?? 50) * tw / 100;
+            y = ty + (L.pos?.y ?? 50) * th / 100;
+          }
+
+          ctx.shadowColor = L.shadow?.color || 'rgba(0,0,0,.25)';
+          ctx.shadowBlur = Math.round((L.shadow?.blur ?? 6) * SCALE);
+          ctx.shadowOffsetX = Math.round((L.shadow?.x ?? 0) * SCALE);
+          ctx.shadowOffsetY = Math.round((L.shadow?.y ?? 2) * SCALE);
+
+          const lines = String(L.text).split(/\n/), lh = Math.round(fontPx * 1.25);
+          if (lines.length === 1) ctx.fillText(lines[0], Math.round(x), Math.round(y));
+          else {
+            const startY = Math.round(y - ((lines.length-1) * lh)/2);
+            lines.forEach((ln, i) => ctx.fillText(ln, Math.round(x), startY + i*lh));
+          }
+
+          ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+        }
+      });
     });
+
+    const blob = await new Promise(r => cvs.toBlob(r, 'image/jpeg', 0.92));
+    if (!blob) return;
+    const file = new File([blob], `richmenu-designed.jpg`, { type: 'image/jpeg' });
+    if (onExport) await onExport(file);
   }
 
   const fullScreen = useMediaQuery('(max-width:1200px)');
@@ -468,7 +515,7 @@ export default function RichMenuDesignerDialog({
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xl" fullWidth fullScreen={fullScreen}>
       <DialogTitle sx={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-        Design menu image
+        Design menu image (Layers)
         <Stack direction="row" spacing={1} alignItems="center">
           <Button size="small" onClick={()=>{
             if (!history.length) return;
@@ -522,186 +569,245 @@ export default function RichMenuDesignerDialog({
           </Paper>
 
           {/* RIGHT: Controls */}
-          <Stack spacing={1.5} sx={{ width: 480, minWidth: 480, overflow: 'auto', pr: .5 }}>
+          <Stack spacing={1.5} sx={{ width: 520, minWidth: 520, overflow: 'auto', pr: .5 }}>
             {/* Block selector */}
             <Paper variant="outlined" sx={{ p: 1.5 }}>
-              <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
+              <Stack direction="row" alignItems="center" spacing={1}>
                 <Typography variant="subtitle2">Block</Typography>
                 <Stack direction="row" spacing={1} sx={{ ml: 1 }}>
                   {cells.map((c, idx) => (
-                    <Button key={idx} variant={selIdx===idx?'contained':'outlined'} size="small" onClick={() => setSelIdx(idx)}>
+                    <Button key={idx} variant={selIdx===idx?'contained':'outlined'} size="small" onClick={() => { setSelIdx(idx); setSelLayerIdx(0); }}>
                       #{idx+1}
                     </Button>
                   ))}
                 </Stack>
                 <Box sx={{ flex: 1 }} />
-                <Button size="small" color="warning" onClick={()=>pushHistory(configs.map((c,i)=>i===selIdx? defaultCfg():c))}>RESET BLOCK</Button>
+                <Button size="small" color="warning" onClick={()=>{
+                  setCfg(()=> defaultCfg());
+                  setSelLayerIdx(0);
+                }}>RESET BLOCK</Button>
+              </Stack>
+            </Paper>
+
+            {/* Layers */}
+            <Paper variant="outlined" sx={{ p: 1.5 }}>
+              <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
+                <Typography variant="subtitle2">Layers</Typography>
+                <Box sx={{ flex: 1 }} />
+                <Button size="small" startIcon={<TextFieldsIcon />} onClick={addTextLayer}>Add text</Button>
+                <Button size="small" startIcon={<AddIcon />} onClick={()=>addStickerLayerFromUrl(STICKERS[0])}>Add sticker</Button>
+                <Button size="small" startIcon={<PhotoIcon />} component="label">
+                  Add image
+                  <input type="file" accept="image/*" hidden onChange={(e)=> addImageLayerFromFile(e.target.files?.[0])} />
+                </Button>
               </Stack>
 
-              <Divider sx={{ my: 1 }} />
-
-              {/* Text */}
-              <Typography variant="caption" sx={{ mb:.5, display:'block' }}>Text</Typography>
-              <TextField label="Text" size="small" multiline minRows={2}
-                value={cfg.text || ''} onChange={(e) => update({ text:e.target.value })} sx={{ mb: 1 }} />
-
-              <Stack direction="row" spacing={1} sx={{ mb:1 }}>
-                <Select
-                  size="small"
-                  value={FONT_OPTIONS.find(f => f.family === cfg.fontFamily)?.label || FONT_OPTIONS[0].label}
-                  onChange={(e) => {
-                    const selected = FONT_OPTIONS.find(f => f.label === e.target.value) || FONT_OPTIONS[0];
-                    if (selected.gf) ensureGoogleFontLoaded(selected.gf);
-                    update({ fontFamily: selected.family });
+              <Stack spacing={1}>
+                {cfg.layers.map((L, i) => (
+                  <Stack key={L.id} direction="row" alignItems="center" spacing={1} sx={{
+                    p: .75, border: '1px solid ' + (i===selLayerIdx?'#1976d2':'rgba(0,0,0,.12)'),
+                    borderRadius: 1, bgcolor: i===selLayerIdx?'rgba(25,118,210,.06)':'#fff', cursor:'pointer'
                   }}
-                  sx={{ flex: 1 }}
-                >
-                  {FONT_OPTIONS.map(f => <MenuItem key={f.label} value={f.label}>{f.label}</MenuItem>)}
-                </Select>
-                <TextField label="Font size" size="small" type="number" inputProps={{ min: 10, max: 120 }}
-                  value={cfg.fontSize || 22} onChange={(e) => update({ fontSize:Number(e.target.value||22) })} sx={{ width: 140 }} />
-                <Select size="small" value={cfg.fontWeight || 400} onChange={(e) => update({ fontWeight:Number(e.target.value) })} sx={{ width: 140 }}>
-                  <MenuItem value={400}>Regular</MenuItem>
-                  <MenuItem value={600}>SemiBold</MenuItem>
-                  <MenuItem value={700}>Bold</MenuItem>
-                </Select>
+                    onClick={()=>setSelLayerIdx(i)}
+                  >
+                    <Chip size="small" label={L.type} color={L.type==='text'?'primary':(L.type==='sticker'?'success':'default')} />
+                    <Typography variant="body2" sx={{ flex:1 }} noWrap>
+                      {L.type==='text' ? (L.text || '(text)') : (L.type==='sticker' ? '(sticker)' : '(image)')}
+                    </Typography>
+                    <IconButton size="small" onClick={(e)=>{ e.stopPropagation(); moveLayer('up'); }}><ArrowUpwardIcon fontSize="small" /></IconButton>
+                    <IconButton size="small" onClick={(e)=>{ e.stopPropagation(); moveLayer('down'); }}><ArrowDownwardIcon fontSize="small" /></IconButton>
+                    <IconButton size="small" onClick={(e)=>{ e.stopPropagation(); copyLayer(); }}><ContentCopyIcon fontSize="small" /></IconButton>
+                    <IconButton size="small" onClick={(e)=>{ e.stopPropagation(); toggleLayer(); }}>
+                      {L.hidden ? <VisibilityOffIcon fontSize="small" /> : <VisibilityIcon fontSize="small" />}
+                    </IconButton>
+                    <IconButton size="small" color="error" onClick={(e)=>{ e.stopPropagation(); deleteLayer(); }}><DeleteIcon fontSize="small" /></IconButton>
+                  </Stack>
+                ))}
+                {cfg.layers.length === 0 && (
+                  <Box sx={{ color:'text.secondary', fontSize: 14, p:.5 }}>No layers — เพิ่มด้วยปุ่ม Add text / Add sticker / Add image</Box>
+                )}
               </Stack>
+            </Paper>
 
-              <Stack direction="row" spacing={1} sx={{ mb:1 }}>
-                <ColorInput label="Text color" value={cfg.textColor || '#000000'} onChange={(v)=>update({ textColor:v })} />
+            {/* Block appearance */}
+            <Paper variant="outlined" sx={{ p: 1.5 }}>
+              <Typography variant="caption" sx={{ display:'block', mb:.5 }}>Block background</Typography>
+              <ColorInput label="Block color" value={cfg.fillColor} onChange={(v)=> setCfg(c=>({ ...c, fillColor:v }))} />
+              <Stack direction="row" spacing={1} sx={{ mt: 1, flexWrap:'wrap' }}>
+                {['#ffffff','#000000','#66bb6a','#43a047','#1e88e5','#fbc02d','#e53935','#8e24aa','#ff7043','#455a64']
+                  .map(c => <Chip key={c} size="small" label="" onClick={()=>setCfg(s=>({ ...s, fillColor:c }))} sx={{ bgcolor:c, border:'1px solid rgba(0,0,0,.1)' }} />)}
               </Stack>
+              <TextField label="Padding" size="small" type="number" inputProps={{ min:0, max:60 }}
+                value={cfg.padding} onChange={(e)=> setCfg(c=>({ ...c, padding:Number(e.target.value||0) }))} sx={{ mt:1, width: 140 }} />
+            </Paper>
 
-              {/* grid vs free + align icons */}
-              <Stack direction="row" spacing={1} sx={{ mb:1, alignItems:'center', flexWrap:'wrap' }}>
-                <Select size="small" value={cfg.positionMode || 'grid'} onChange={(e)=>update({ positionMode:e.target.value })}>
-                  <MenuItem value="grid">Grid position</MenuItem>
-                  <MenuItem value="free">Free position</MenuItem>
-                </Select>
+            {/* Layer properties */}
+            {curLayer && (
+              <Paper variant="outlined" sx={{ p: 1.5 }}>
+                <Typography variant="subtitle2" sx={{ mb: 1 }}>Layer properties</Typography>
 
-                {cfg.positionMode === 'grid' ? (
+                {curLayer.type === 'text' && (
                   <>
-                    <ToggleButtonGroup exclusive size="small"
-                      value={cfg.align || 'center'}
-                      onChange={(_, v)=> v && update({ align:v })}
-                    >
-                      <ToggleButton value="left"><FormatAlignLeftIcon fontSize="small" /></ToggleButton>
-                      <ToggleButton value="center"><FormatAlignCenterIcon fontSize="small" /></ToggleButton>
-                      <ToggleButton value="right"><FormatAlignRightIcon fontSize="small" /></ToggleButton>
-                    </ToggleButtonGroup>
+                    <TextField label="Text" size="small" multiline minRows={2}
+                      value={curLayer.text || ''} onChange={(e) => updateLayer({ text:e.target.value })} sx={{ mb: 1, width:'100%' }} />
 
-                    <ToggleButtonGroup exclusive size="small"
-                      value={cfg.vAlign || 'center'}
-                      onChange={(_, v)=> v && update({ vAlign:v })}
-                    >
-                      <ToggleButton value="top"><VerticalAlignTopIcon fontSize="small" /></ToggleButton>
-                      <ToggleButton value="center"><VerticalAlignCenterIcon fontSize="small" /></ToggleButton>
-                      <ToggleButton value="bottom"><VerticalAlignBottomIcon fontSize="small" /></ToggleButton>
-                    </ToggleButtonGroup>
-                  </>
-                ) : (
-                  <>
-                    <Select size="small" value={cfg.dragTarget || 'text'} onChange={(e)=>update({ dragTarget:e.target.value })}>
-                      <MenuItem value="text">Move text</MenuItem>
-                      <MenuItem value="sticker">Move sticker</MenuItem>
-                    </Select>
-                    <TextField size="small" label="Text X%" type="number"
-                      value={cfg.textPos?.x ?? 50} onChange={(e)=>update({ textPos:{...cfg.textPos, x:Number(e.target.value||0)} })}/>
-                    <TextField size="small" label="Text Y%" type="number"
-                      value={cfg.textPos?.y ?? 50} onChange={(e)=>update({ textPos:{...cfg.textPos, y:Number(e.target.value||0)} })}/>
+                    <Stack direction="row" spacing={1} sx={{ mb:1 }}>
+                      <Select
+                        size="small"
+                        value={FONT_OPTIONS.find(f => f.family === curLayer.fontFamily)?.label || FONT_OPTIONS[0].label}
+                        onChange={(e) => {
+                          const selected = FONT_OPTIONS.find(f => f.label === e.target.value) || FONT_OPTIONS[0];
+                          if (selected.gf) ensureGoogleFontLoaded(selected.gf);
+                          updateLayer({ fontFamily: selected.family });
+                        }}
+                        sx={{ flex: 1 }}
+                      >
+                        {FONT_OPTIONS.map(f => <MenuItem key={f.label} value={f.label}>{f.label}</MenuItem>)}
+                      </Select>
+                      <TextField label="Font size" size="small" type="number" inputProps={{ min: 10, max: 120 }}
+                        value={curLayer.fontSize || 22} onChange={(e) => updateLayer({ fontSize:Number(e.target.value||22) })} sx={{ width: 140 }} />
+                      <Select size="small" value={curLayer.fontWeight || 400} onChange={(e) => updateLayer({ fontWeight:Number(e.target.value) })} sx={{ width: 140 }}>
+                        <MenuItem value={400}>Regular</MenuItem>
+                        <MenuItem value={600}>SemiBold</MenuItem>
+                        <MenuItem value={700}>Bold</MenuItem>
+                      </Select>
+                    </Stack>
+
+                    <ColorInput label="Text color" value={curLayer.color || '#000000'} onChange={(v)=>updateLayer({ color:v })} sx={{ mb:1 }} />
+
+                    <Stack direction="row" spacing={1} sx={{ mb:1, alignItems:'center', flexWrap:'wrap' }}>
+                      <Select size="small" value={curLayer.posMode || 'grid'} onChange={(e)=>updateLayer({ posMode:e.target.value })}>
+                        <MenuItem value="grid">Grid position</MenuItem>
+                        <MenuItem value="free">Free position</MenuItem>
+                      </Select>
+
+                      {curLayer.posMode === 'grid' ? (
+                        <>
+                          <ToggleButtonGroup exclusive size="small"
+                            value={curLayer.align || 'center'}
+                            onChange={(_, v)=> v && updateLayer({ align:v })}
+                          >
+                            <ToggleButton value="left"><FormatAlignLeftIcon fontSize="small" /></ToggleButton>
+                            <ToggleButton value="center"><FormatAlignCenterIcon fontSize="small" /></ToggleButton>
+                            <ToggleButton value="right"><FormatAlignRightIcon fontSize="small" /></ToggleButton>
+                          </ToggleButtonGroup>
+
+                          <ToggleButtonGroup exclusive size="small"
+                            value={curLayer.vAlign || 'center'}
+                            onChange={(_, v)=> v && updateLayer({ vAlign:v })}
+                          >
+                            <ToggleButton value="top"><VerticalAlignTopIcon fontSize="small" /></ToggleButton>
+                            <ToggleButton value="center"><VerticalAlignCenterIcon fontSize="small" /></ToggleButton>
+                            <ToggleButton value="bottom"><VerticalAlignBottomIcon fontSize="small" /></ToggleButton>
+                          </ToggleButtonGroup>
+                        </>
+                      ) : (
+                        <>
+                          <TextField size="small" label="X%" type="number"
+                            value={curLayer.pos?.x ?? 50} onChange={(e)=>updateLayer({ pos:{...curLayer.pos, x:Number(e.target.value||0)} })}/>
+                          <TextField size="small" label="Y%" type="number"
+                            value={curLayer.pos?.y ?? 50} onChange={(e)=>updateLayer({ pos:{...curLayer.pos, y:Number(e.target.value||0)} })}/>
+                          <Typography variant="caption">* สามารถลากที่แคนวาสได้</Typography>
+                        </>
+                      )}
+
+                      <Button size="small" onClick={autoFitText}>AUTO-FIT TEXT</Button>
+                    </Stack>
+
+                    <Typography variant="caption" sx={{ display:'block', mb:.5 }}>Text shadow</Typography>
+                    <ColorInput label="Color" value={curLayer.shadow?.color || 'rgba(0,0,0,.25)'} onChange={(v)=>updateLayer({ shadow: { ...(curLayer.shadow||{}), color:v } })} />
+                    <Stack direction="row" spacing={2} alignItems="center" sx={{ mt: .5 }}>
+                      <Box sx={{ minWidth: 100 }}>
+                        <Typography variant="caption">Blur</Typography>
+                        <Slider size="small" min={0} max={24} value={curLayer.shadow?.blur ?? 6}
+                          onChange={(_, v)=>updateLayer({ shadow: { ...(curLayer.shadow||{}), blur: Array.isArray(v)?v[0]:v } })}/>
+                      </Box>
+                      <Box sx={{ minWidth: 120 }}>
+                        <Typography variant="caption">Offset X</Typography>
+                        <Slider size="small" min={-20} max={20} value={curLayer.shadow?.x ?? 0}
+                          onChange={(_, v)=>updateLayer({ shadow: { ...(curLayer.shadow||{}), x: Array.isArray(v)?v[0]:v } })}/>
+                      </Box>
+                      <Box sx={{ minWidth: 120 }}>
+                        <Typography variant="caption">Offset Y</Typography>
+                        <Slider size="small" min={-20} max={20} value={curLayer.shadow?.y ?? 2}
+                          onChange={(_, v)=>updateLayer({ shadow: { ...(curLayer.shadow||{}), y: Array.isArray(v)?v[0]:v } })}/>
+                      </Box>
+                    </Stack>
                   </>
                 )}
 
-                <TextField label="Padding" size="small" type="number" inputProps={{ min:0, max:60 }}
-                  value={cfg.padding || 8} onChange={(e) => update({ padding:Number(e.target.value||0) })} sx={{ width: 120 }}
-                />
+                {curLayer?.type === 'sticker' && (
+                  <>
+                    <Stack direction="row" spacing={1} sx={{ mb:1 }}>
+                      <Select size="small" value={curLayer.posMode || 'grid'} onChange={(e)=>updateLayer({ posMode:e.target.value })}>
+                        <MenuItem value="grid">Grid position</MenuItem>
+                        <MenuItem value="free">Free position</MenuItem>
+                      </Select>
+                      {curLayer.posMode === 'grid' ? (
+                        <Select size="small" value={curLayer.anchor || 'center'} onChange={(e)=>updateLayer({ anchor:e.target.value })}>
+                          <MenuItem value="center">Center</MenuItem>
+                          <MenuItem value="topLeft">Top-left</MenuItem>
+                          <MenuItem value="topRight">Top-right</MenuItem>
+                          <MenuItem value="bottomLeft">Bottom-left</MenuItem>
+                          <MenuItem value="bottomRight">Bottom-right</MenuItem>
+                        </Select>
+                      ) : (
+                        <>
+                          <TextField size="small" label="X%" type="number"
+                            value={curLayer.pos?.x ?? 50} onChange={(e)=>updateLayer({ pos:{...curLayer.pos, x:Number(e.target.value||0)} })}/>
+                          <TextField size="small" label="Y%" type="number"
+                            value={curLayer.pos?.y ?? 50} onChange={(e)=>updateLayer({ pos:{...curLayer.pos, y:Number(e.target.value||0)} })}/>
+                          <Typography variant="caption">* ลากบนแคนวาสได้</Typography>
+                        </>
+                      )}
+                    </Stack>
+                    <Box sx={{ px:1, minWidth: 240, mb:1 }}>
+                      <Typography variant="caption">Size</Typography>
+                      <Slider size="small" value={(curLayer.scale||1)*100}
+                        onChange={(_, v) => updateLayer({ scale: (Array.isArray(v)?v[0]:v) / 100 })}
+                        min={40} max={220} />
+                    </Box>
 
-                <Button size="small" onClick={autoFitText}>AUTO-FIT TEXT</Button>
-              </Stack>
+                    <Typography variant="caption" sx={{ display:'block', mb:.5 }}>Sticker palette</Typography>
+                    <Stack direction="row" spacing={1} sx={{ flexWrap:'wrap' }}>
+                      {STICKERS.map((url, i) => (
+                        <Tooltip key={i} title="sticker">
+                          <IconButton size="small" onClick={() => addStickerLayerFromUrl(url)}>
+                            <img src={url} alt="" width={24} height={24} />
+                          </IconButton>
+                        </Tooltip>
+                      ))}
+                    </Stack>
+                    <Typography variant="caption" sx={{ mt: .5, color:'text.secondary' }}>
+                      * คลิกไอคอนเพื่อเพิ่มสติ๊กเกอร์เป็นเลเยอร์ใหม่ (สามารถมีหลายอันได้)
+                    </Typography>
+                  </>
+                )}
 
-              <Typography variant="caption" sx={{ display:'block', mb:.5 }}>Text shadow</Typography>
-              <Stack direction="row" spacing={1} alignItems="center">
-                <ColorInput label="Color" value={cfg.textShadow?.color || 'rgba(0,0,0,.25)'} onChange={(v)=>update({ textShadow: { ...(cfg.textShadow||{}), color:v } })} />
-              </Stack>
-              <Stack direction="row" spacing={2} alignItems="center" sx={{ mt: .5 }}>
-                <Box sx={{ minWidth: 100 }}>
-                  <Typography variant="caption">Blur</Typography>
-                  <Slider size="small" min={0} max={24} value={cfg.textShadow?.blur ?? 6}
-                    onChange={(_, v)=>update({ textShadow: { ...(cfg.textShadow||{}), blur: Array.isArray(v)?v[0]:v } })}/>
-                </Box>
-                <Box sx={{ minWidth: 120 }}>
-                  <Typography variant="caption">Offset X</Typography>
-                  <Slider size="small" min={-20} max={20} value={cfg.textShadow?.x ?? 0}
-                    onChange={(_, v)=>update({ textShadow: { ...(cfg.textShadow||{}), x: Array.isArray(v)?v[0]:v } })}/>
-                </Box>
-                <Box sx={{ minWidth: 120 }}>
-                  <Typography variant="caption">Offset Y</Typography>
-                  <Slider size="small" min={-20} max={20} value={cfg.textShadow?.y ?? 2}
-                    onChange={(_, v)=>update({ textShadow: { ...(cfg.textShadow||{}), y: Array.isArray(v)?v[0]:v } })}/>
-                </Box>
-              </Stack>
-
-              <Divider sx={{ my: 1 }} />
-
-              {/* Block background + image */}
-              <Typography variant="caption" sx={{ display:'block', mb:.5 }}>Block background</Typography>
-              <ColorInput label="Block color" value={cfg.fillColor || '#f6f6f6'} onChange={(v)=>update({ fillColor:v })} />
-              <Stack direction="row" spacing={1} sx={{ mt: 1, flexWrap:'wrap' }}>
-                {['#ffffff','#000000','#66bb6a','#43a047','#1e88e5','#fbc02d','#e53935','#8e24aa','#ff7043','#455a64']
-                  .map(c => <Chip key={c} size="small" label="" onClick={()=>update({ fillColor:c })} sx={{ bgcolor:c, border:'1px solid rgba(0,0,0,.1)' }} />)}
-              </Stack>
-
-              <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-                <Button component="label" variant="outlined" size="small">
-                  Upload image
-                  <input type="file" accept="image/*" hidden onChange={(e)=> onPickImage(selIdx, e.target.files?.[0])} />
-                </Button>
-                <Select size="small" value={cfg.imageFit || 'cover'} onChange={(e) => update({ imageFit:e.target.value })}>
-                  <MenuItem value="contain">Contain</MenuItem>
-                  <MenuItem value="cover">Cover</MenuItem>
-                </Select>
-              </Stack>
-
-              <Divider sx={{ my: 1 }} />
-
-              {/* Stickers by category */}
-              <Typography variant="caption" sx={{ display:'block', mb:.5 }}>Stickers</Typography>
-              <Stack direction="row" spacing={1} sx={{ mb:1 }}>
-                <Select size="small" value={stCat} onChange={(e)=>setStCat(e.target.value)} sx={{ flex: 1 }}>
-                  {Object.keys(STICKER_CATS).map(k => <MenuItem key={k} value={k}>{k}</MenuItem>)}
-                </Select>
-                {cfg.sticker && <Button size="small" onClick={() => update({ sticker:null })}>CLEAR</Button>}
-              </Stack>
-              <Stack direction="row" spacing={1} sx={{ flexWrap:'wrap' }}>
-                {STICKER_CATS[stCat].map((url, i) => (
-                  <Tooltip key={i} title={stCat}>
-                    <IconButton size="small" onClick={() => onPickSticker(url)}>
-                      <img src={url} alt="" width={24} height={24} />
-                    </IconButton>
-                  </Tooltip>
-                ))}
-              </Stack>
-              {cfg.sticker && (
-                <Stack direction="row" spacing={1} sx={{ mt:1 }}>
-                  {cfg.positionMode === 'grid' ? (
-                    <Select size="small" value={cfg.stickerPos || 'center'} onChange={(e) => update({ stickerPos:e.target.value })}>
-                      <MenuItem value="center">Center</MenuItem>
-                      <MenuItem value="topLeft">Top-left</MenuItem>
-                      <MenuItem value="topRight">Top-right</MenuItem>
-                      <MenuItem value="bottomLeft">Bottom-left</MenuItem>
-                      <MenuItem value="bottomRight">Bottom-right</MenuItem>
-                    </Select>
-                  ) : (
-                    <Typography variant="caption" sx={{ display:'flex', alignItems:'center' }}>Drag on canvas</Typography>
-                  )}
-                  <Box sx={{ px:1, minWidth: 220 }}>
-                    <Typography variant="caption">Size</Typography>
-                    <Slider size="small" value={(cfg.stickerScale||1)*100}
-                      onChange={(_, v) => update({ stickerScale: (Array.isArray(v)?v[0]:v) / 100 })}
-                      min={40} max={200} />
-                  </Box>
-                </Stack>
-              )}
-            </Paper>
+                {curLayer?.type === 'image' && (
+                  <>
+                    <Stack direction="row" spacing={1} alignItems="center" sx={{ mb:1 }}>
+                      <Button component="label" variant="outlined" size="small">
+                        Replace image
+                        <input type="file" accept="image/*" hidden onChange={(e)=> addImageLayerFromFile(e.target.files?.[0])} />
+                      </Button>
+                      <Select size="small" value={curLayer.fit || 'cover'} onChange={(e)=>updateImageFit(e.target.value)}>
+                        <MenuItem value="contain">Contain</MenuItem>
+                        <MenuItem value="cover">Cover</MenuItem>
+                      </Select>
+                      <Box sx={{ minWidth: 160 }}>
+                        <Typography variant="caption">Opacity</Typography>
+                        <Slider size="small" min={10} max={100} value={Math.round((curLayer.opacity ?? 1)*100)}
+                          onChange={(_, v)=>updateLayer({ opacity: (Array.isArray(v)?v[0]:v) / 100 })}/>
+                      </Box>
+                    </Stack>
+                    <Typography variant="caption" sx={{ color:'text.secondary' }}>
+                      * รูปแบบ “Cover” จะพยายามเติมเต็มช่องเสมอ (แก้ปัญหามีช่องว่าง)
+                    </Typography>
+                  </>
+                )}
+              </Paper>
+            )}
           </Stack>
         </Stack>
       </DialogContent>
