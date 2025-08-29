@@ -407,7 +407,6 @@ export default function BroadcastPage() {
         <FormControl>
           <RadioGroup row value={recipient} onChange={(e) => setRecipient(e.target.value)}>
             <FormControlLabel value="all" control={<Radio />} label="All friends" />
-            <FormControlLabel value="target" control={<Radio />} label="Targeting" />
           </RadioGroup>
           <FormHelperText sx={{ ml: 0, color: 'text.secondary' }}>
             You can narrow down your friends into smaller groups based on demographics or past actions. This can make your broadcasts more effective.

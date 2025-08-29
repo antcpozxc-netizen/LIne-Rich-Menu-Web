@@ -126,6 +126,40 @@ function ensureGoogleFontLoaded(gf) {
   document.head.appendChild(link);
 }
 
+/* ---------- history snapshots (serialize/deserialize) ---------- */
+// แปลง configs เป็น string: สำหรับ image/sticker เก็บแค่ .src (ไม่ยัด Image object ลง history)
+const snapshot = (cfgs) => JSON.stringify(
+  (cfgs || []).map(c => ({
+    ...c,
+    layers: (c.layers || []).map(L => {
+      if ((L.type === 'image' || L.type === 'sticker') && L.img) {
+        const src = typeof L.img === 'string' ? L.img : L.img.src || null;
+        return { ...L, img: src };
+      }
+      return L;
+    })
+  }))
+);
+
+// แปลง string -> configs: สร้าง Image object ใหม่จาก src
+const restore = (snap) => {
+  const plain = JSON.parse(snap || '[]');
+  return plain.map(c => ({
+    ...c,
+    layers: (c.layers || []).map(L => {
+      if ((L.type === 'image' || L.type === 'sticker') && L.img && typeof L.img === 'string') {
+        const im = new Image(); im.src = L.img;
+        return { ...L, img: im };
+      }
+      return L;
+    })
+  }));
+};
+
+// เทียบสอง state แบบปลอดภัย (เปรียบเทียบผ่าน snapshot)
+const equalSnap = (a, b) => snapshot(a) === snapshot(b);
+
+
 /* ---------- stickers (data URLs, เร็ว/คม) ---------- */
 const mk = (svg) => `data:image/svg+xml;utf8,${svg}`;
 
@@ -439,17 +473,19 @@ export default function RichMenuDesignerDialog({
   }, [selIdx, cfg.layers.length, selLayerIdx]);
   const curLayer = cfg.layers[selLayerIdx];
 
-  // history (safe)
-  const [history, setHistory] = useState([]);
+  // history (safe) – เก็บเป็น snapshot string ล้วน
+  const [history, setHistory] = useState([]); // array ของ snapshot (string)
   const [future, setFuture] = useState([]);
+
   const pushHistory = (next) => {
-    const cur = JSON.stringify(configs);
-    const nxt = JSON.stringify(next);
-    if (cur === nxt) return;
-    setHistory((h) => [...h, cur].slice(-100));
-    setFuture([]);
+    if (equalSnap(configs, next)) return;           // ถ้า state เหมือนเดิม ไม่ต้อง push
+    setHistory(h => [...h, snapshot(configs)].slice(-100));
+    setFuture([]);                                  // ตัดกิ่งอนาคตทุกครั้งที่แก้ใหม่
     setConfigs(next);
   };
+
+  // เวลาเปลี่ยนจำนวน areas หรือเปิด dialog ใหม่ รีเซ็ตกอง undo/redo
+  useEffect(() => { setHistory([]); setFuture([]); }, [areas?.length, open]);
 
   const canvasRef = useRef(null);
 
@@ -801,20 +837,22 @@ export default function RichMenuDesignerDialog({
           <Button size="small" onClick={()=>{
             if (!history.length) return;
             try {
-              const prev = JSON.parse(history[history.length-1]);
-              setHistory(h=>h.slice(0,-1));
-              setFuture(f=>[JSON.stringify(configs), ...f]);
+              const prevSnap = history[history.length - 1];
+              const prev = restore(prevSnap);                 // กลับมาเป็น object พร้อม Image
+              setHistory(h => h.slice(0, -1));
+              setFuture(f => [snapshot(configs), ...f]);      // เก็บสถานะปัจจุบันไปฝั่ง future
               setConfigs(prev);
-              // normalize selection after undo
-              setSelLayerIdx(0);
+              setSelLayerIdx(0);                              // normalize selection
             } catch {}
           }}>UNDO</Button>
+
           <Button size="small" onClick={()=>{
             if (!future.length) return;
             try {
-              const next = JSON.parse(future[0]);
-              setFuture(f=>f.slice(1));
-              setHistory(h=>[...h, JSON.stringify(configs)]);
+              const nextSnap = future[0];
+              const next = restore(nextSnap);
+              setFuture(f => f.slice(1));
+              setHistory(h => [...h, snapshot(configs)]);
               setConfigs(next);
               setSelLayerIdx(0);
             } catch {}
