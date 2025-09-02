@@ -18,6 +18,15 @@ function roleColor(role) {
        : 'default';
 }
 
+
+// ใช้จัดลำดับอำนาจ
+function rankOf(role) {
+  return role === 'developer' ? 3
+       : role === 'headAdmin' ? 2
+       : role === 'admin' ? 1
+       : 0; // user
+}
+
 export default function AdminUsersPage() {
   const [rows, setRows] = useState([]);
   const [saving, setSaving] = useState(null);
@@ -26,6 +35,7 @@ export default function AdminUsersPage() {
 
   // ใช้ claims จาก hook เพื่อคุมสิทธิ์บน UI
   const { isDev, isHead, isAdmin: isAdminRole } = useAuthClaims();
+  const myRank = isDev ? 3 : isHead ? 2 : isAdminRole ? 1 : 0;
 
   async function load() {
     setErr('');
@@ -137,8 +147,11 @@ export default function AdminUsersPage() {
                 const isSelf = u.id === me;
                 const disableSelect =
                   saving?.startsWith(u.id + ':') || (isSelf && role === 'developer'); // dev แก้ตัวเองไม่ได้
-                const disableSetUser =
-                  saving?.startsWith(u.id + ':') || (isSelf && role === 'developer');
+                // แสดงปุ่ม SET USER เฉพาะกรณี: เรา “เหนือกว่า” เป้าหมายเท่านั้น+                
+                const showSetUser =
+                  !isSelf &&
+                  myRank > rankOf(role) &&
+                  saving?.startsWith(u.id + ':');
 
                 // สิทธิ์ลบของผู้ดูแลปัจจุบัน
                 const canDelete =
@@ -167,7 +180,7 @@ export default function AdminUsersPage() {
                           size="small"
                           value={role}
                           onChange={(e) => changeRole(u.id, e.target.value)}
-                          disabled={disableSelect}
+                          disabled={disableSelect || myRank <= rankOf(role)}
                         >
                           <MenuItem value="user">user</MenuItem>
                           <MenuItem value="admin">admin</MenuItem>
@@ -175,14 +188,15 @@ export default function AdminUsersPage() {
                           <MenuItem value="developer">developer</MenuItem>
                         </Select>
 
-                        <Button
-                          variant="outlined"
-                          size="small"
-                          onClick={() => changeRole(u.id, 'user')}
-                          disabled={disableSetUser}
-                        >
-                          SET USER
-                        </Button>
+                        {showSetUser && (
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            onClick={() => changeRole(u.id, 'user')}
+                          >
+                            SET USER
+                          </Button>
+                        )}
 
                         {canDelete && (
                           <IconButton
