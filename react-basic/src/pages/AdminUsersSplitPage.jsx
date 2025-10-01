@@ -16,16 +16,19 @@ import DialogActions from '@mui/material/DialogActions';
 import DownloadIcon from '@mui/icons-material/Download';
 import useMe from '../hooks/useMe';
 import { listUsers, setUserRole, setUserStatus, deleteUser, updateUserProfile } from '../api/client';
+import { getAuth, onIdTokenChanged, onAuthStateChanged } from 'firebase/auth';
 
 // ---------- helpers / constants ----------
 const ROLE_RANK = { user: 1, admin: 2, supervisor: 3, developer: 4 };
 const ORDERED_ROLES = ['developer', 'supervisor', 'admin', 'user'];
+
 // helper: normalize user_id ให้รูปแบบเดียวกัน
 const normalizeId = (id) => String(id || '').trim().replace(/^line:/, '');
+
 const colSx = {
   id:      { width:{ xs:130, sm:220 }, maxWidth:260, whiteSpace:'nowrap' },
   username:{ width:{ xs:120, md:160 }, whiteSpace:'nowrap' },
-  name:    { minWidth:{ xs:180, md:240 }, whiteSpace:'nowrap' }, // ปรับได้อีกถ้าต้องการ
+  name:    { minWidth:{ xs:180, md:240 }, whiteSpace:'nowrap' },
   role:    { width:{ xs:150, md:200 }, whiteSpace:'nowrap', pr:{ xs:2, md:5 } },
   status:  { width:{ xs:140, md:180 }, whiteSpace:'nowrap', pl:{ xs:1.5, md:3 } },
   action:  { width:{ xs:64,  md:90 },  textAlign:'center', whiteSpace:'nowrap' },
@@ -39,8 +42,7 @@ function roleColor(r) {
 }
 const cmp = (a,b,by) => (String(a?.[by] ?? '')).localeCompare(String(b?.[by] ?? ''), 'th');
 
-// ---------- presentational components (ยกออกมานอกคอมโพเนนต์หลัก) ----------
-
+// ---------- presentational components ----------
 const IdCell = memo(function IdCell({ id, copyId }) {
   return (
     <Box sx={{ display:'flex', alignItems:'center', gap:1, ...colSx.id }}>
@@ -63,7 +65,6 @@ const TableBlock = memo(function TableBlock(props) {
     saveEdit, cancelEdit, startEdit, copyId, busy, selfId
   } = props;
 
-  // IME guard (ไทย/ญี่ปุ่น ฯลฯ)
   const [isComposing, setIsComposing] = useState(false);
   const usernameRef = useRef(null);
   const nameRef     = useRef(null);
@@ -75,14 +76,7 @@ const TableBlock = memo(function TableBlock(props) {
       </Box>
       <Divider />
       <TableContainer sx={{ overflowX:'auto', maxHeight:{ xs:420, md:560 } }}>
-        <Table
-          size="small"
-          stickyHeader
-          sx={{
-            tableLayout: 'auto',
-            '& td, & th': { px: { xs: 1, sm: 2 }, fontSize: { xs: 13, sm: 14 } }
-          }}
-        >
+        <Table size="small" stickyHeader sx={{ tableLayout: 'auto', '& td, & th': { px: { xs: 1, sm: 2 }, fontSize: { xs: 13, sm: 14 } } }}>
           <TableHead>
             <TableRow>
               <TableCell sx={colSx.id}      onClick={()=>onSort('user_id')}    >user_id</TableCell>
@@ -155,7 +149,7 @@ const TableBlock = memo(function TableBlock(props) {
                     )}
                   </TableCell>
 
-                  {/* role (select + chip ข้างๆ) */}
+                  {/* role */}
                   <TableCell sx={{ ...colSx.role, overflow:'hidden' }}>
                     <Box sx={{ display:'flex', alignItems:'center', gap:1, flexWrap:'nowrap' }}>
                       <Select
@@ -167,12 +161,7 @@ const TableBlock = memo(function TableBlock(props) {
                       >
                         {getAllowedRoles(r).map(v => (<MenuItem key={v} value={v}>{v}</MenuItem>))}
                       </Select>
-                      <Chip
-                        size="small"
-                        label={r}
-                        color={roleColor(r)}
-                        sx={{ display:{ xs:'none', sm:'inline-flex' }, flexShrink:0 }}
-                      />
+                      <Chip size="small" label={r} color={roleColor(r)} sx={{ display:{ xs:'none', sm:'inline-flex' }, flexShrink:0 }} />
                     </Box>
                   </TableCell>
 
@@ -181,7 +170,7 @@ const TableBlock = memo(function TableBlock(props) {
                     <Select
                       size="small"
                       value={u.status || 'Active'}
-                      disabled={!editableProfile || busy}
+                      disabled={!editableRoleState || busy}
                       onChange={(e)=>doStatus(u, e.target.value)}
                       sx={{ minWidth:{ xs:110, sm:120 }, '& .MuiSelect-select': { py:0.5 } }}
                     >
@@ -242,10 +231,21 @@ export default function AdminUsersSplitPage() {
   const { data } = useMe();
   const myRole = (data?.user?.role || 'user').toLowerCase();
   const myRank = ROLE_RANK[myRole] || 0;
-  const myId   = normalizeId(
-     data?.session?.uid ||          // จากคุกกี้เซสชันฝั่งเซิร์ฟเวอร์
-    data?.user?.user_id || ''      // เผื่อ hook คืน user_id มาด้วย
+
+  // fallback uid จาก Firebase (กันเคสที่ useMe() ยังไม่มี session.uid)
+  const [authUid, setAuthUid] = useState('');
+  useEffect(() => {
+    const off = onAuthStateChanged(getAuth(), u => setAuthUid(normalizeId(u?.uid)));
+    return () => off();
+  }, []);
+
+  const myId = normalizeId(
+    data?.session?.uid ||
+    data?.user?.user_id ||
+    authUid ||
+    ''
   );
+
   const navigate = useNavigate();
 
   const [rows, setRows] = useState([]);
@@ -256,14 +256,14 @@ export default function AdminUsersSplitPage() {
   const [working, setWorking] = useState({ on:false, msg:'' });
 
   // ---- export CSV (all users in one file) ----
-  const toCsv = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`; // escape "
+  const toCsv = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const handleExportCsv = () => {
     try {
       const headers = ['user_id','username','real_name','role','status','updated_at'];
       const lines = [headers.join(',')].concat(
         sorted.map(u => headers.map(h => toCsv(u?.[h])).join(','))
       );
-      const csv = '\uFEFF' + lines.join('\r\n'); // BOM + CRLF
+      const csv = '\uFEFF' + lines.join('\r\n');
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
       const ts = new Date();
       const name = `users_${ts.toISOString().slice(0,19).replace(/[:T]/g,'')}.csv`;
@@ -277,17 +277,17 @@ export default function AdminUsersSplitPage() {
     }
   };
 
-  // sort state (ใช้ร่วมกันทั้ง 3 ตาราง)
+  // sort state
   const [orderBy, setOrderBy] = useState('updated_at');
   const [order, setOrder] = useState('desc');
 
-  // roles ที่อนุญาตให้เลือกได้ (<= ตัวเองถ้า developer, อื่นๆ < ตัวเอง)
+  // (ถ้าจะใช้ต่อ) roles ให้เลือกตามสิทธิ์
   const roleChoices = useMemo(() => {
     return ORDERED_ROLES.filter(r => {
       const rk = ROLE_RANK[r] || 0;
       return myRole === 'developer' ? rk <= myRank : rk < myRank;
     });
-  }, [myRole, myRank]);
+  }, [myRole, myRank]); // eslint-disable-line
 
   const load = async () => {
     setBusy(true);
@@ -320,12 +320,10 @@ export default function AdminUsersSplitPage() {
     return { devRows: dev, mgrRows: mgr, userRows: usr };
   }, [sorted]);
 
-  // โปรไฟล์ (username / real_name): อนุญาตเสมอถ้าเป็น "เจ้าของ record" หรือผู้มีสิทธิ์สูงกว่า
+  // โปรไฟล์ (username / real_name)
   const isSelfRow = (u) => {
     const uidFromRow = normalizeId(u?.user_id);
-    // ตรง user_id คือชัวร์สุด
     if (uidFromRow && uidFromRow === myId) return true;
-    // Fallback: บางชีตเก่ามี row แต่ user_id ยังไม่ตรง ให้ยอมเฉพาะกรณี username/name ตรงกับคนล็อกอิน
     const meName = String(data?.user?.real_name || '').trim();
     const meUser = String(data?.user?.username || '').trim();
     return (!!u && (
@@ -337,7 +335,7 @@ export default function AdminUsersSplitPage() {
     isSelfRow(u) ||
     ((ROLE_RANK[String(u?.role||'user')] || 0) < myRank);
 
-  // role/status: ยึดกฎเดิม — ต้อง “สูงกว่า” เท่านั้น (ห้ามแก้ของตัวเองถ้า rank เท่ากัน)
+  // role/status
   const canEditRoleStatus = (u) =>
     ((ROLE_RANK[String(u?.role||'user')] || 0) < myRank);
 
@@ -446,22 +444,14 @@ export default function AdminUsersSplitPage() {
       <Box sx={{ my:2, display:'flex', alignItems:'center', justifyContent:'space-between', gap:1, flexWrap:'wrap' }}>
         <Typography variant="h5" fontWeight={800}>Administrator management</Typography>
         <Stack direction="row" spacing={1} alignItems="center">
-          <Tooltip title="ส่งออกผู้ใช้ทั้งหมดเป็น CSV"> 
-            <span> 
-              <Button 
-                size="small" 
-                variant="outlined" 
-                startIcon={<DownloadIcon />} 
-                onClick={handleExportCsv} 
-                disabled={!rows.length || busy} 
-              > 
-                ส่งออก CSV 
-              </Button> 
-            </span> 
+          <Tooltip title="ส่งออกผู้ใช้ทั้งหมดเป็น CSV">
+            <span>
+              <Button size="small" variant="outlined" startIcon={<DownloadIcon />} onClick={handleExportCsv} disabled={!rows.length || busy}>
+                ส่งออก CSV
+              </Button>
+            </span>
           </Tooltip>
-          <Button size="small" variant="outlined" onClick={()=>navigate('/app/admin/users')}>
-            ดูงานที่ฉันสั่ง
-          </Button>
+          <Button size="small" variant="outlined" onClick={()=>navigate('/app/admin/users')}>ดูงานที่ฉันสั่ง</Button>
           {working.on && (
             <Stack direction="row" spacing={1} alignItems="center">
               <CircularProgress size={16} />
