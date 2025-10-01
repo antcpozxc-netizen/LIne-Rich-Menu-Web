@@ -4261,35 +4261,43 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
 
     // เปิดหน้า Admin/จัดการผู้ใช้งาน จาก OA
     if (text === 'จัดการผู้ใช้งาน') {
-        // (1) ก่อนเรียก GAS
-      console.log('[MANAGE/LINK/START]', {
-        tenant: tenantRef.id,
-        uid: userId,
-        text
-      });
-
       try {
-        // ดึงบทบาท/ชื่อจาก GAS ตาม userId เดิมของคุณ
-        // ดึงบทบาท/ชื่อจาก GAS ตาม userId เดิมของคุณ
-        const gu   = await callAppsScriptForTenant(tenantRef, 'get_user', { user_id: userId }).catch(()=>({}));
-        const role = String(gu?.user?.role || 'user').trim().toLowerCase(); // ← เพิ่ม trim()
-        const name = gu?.user?.username || gu?.user?.real_name || (await getDisplayName(tenantRef, userId)) || 'User';
+        console.log('[MANAGE/LINK/START]', {
+          tenant: tenantRef.id,
+          uid: userId,
+          text
+        });
 
-        // (2) หลังดึงได้
+        // 1) ดึงข้อมูลผู้ใช้จาก GAS
+        const gu = await callAppsScriptForTenant(tenantRef, 'get_user', { user_id: userId }).catch(() => ({}));
+        const hasRow = !!gu?.user;
+
+        // 2) normalize role/status/name
+        const role   = String(gu?.user?.role   || 'user').trim().toLowerCase();
+        const status = String(gu?.user?.status || 'Active').trim();     // <<<<< เพิ่มตัวแปรนี้
+        const name   = gu?.user?.username || gu?.user?.real_name || (await getDisplayName(tenantRef, userId)) || 'User';
+
         console.log('[MANAGE/LINK/USER]', {
           tenant: tenantRef.id,
           uid: userId,
-          role, status, hasRow: !!gu?.user
+          hasRow,
+          role,
+          status
         });
 
-        // ❗ บล็อกผู้ใช้ role=user ตั้งแต่จุดออกลิงก์
+        // 3) บล็อกสิทธิ์: เฉพาะ dev/admin/supervisor + ต้อง Active เท่านั้น
         const ALLOWED = ['developer','admin','supervisor'];
-        if (!ALLOWED.includes(role)) {
-          return reply(replyToken, 'คุณไม่มีสิทธิ์เข้าถึงเมนู "จัดการผู้ใช้งาน"\nโปรดติดต่อแอดมินเพื่อขอสิทธิ์', null, tenantRef);
+        if (!ALLOWED.includes(role) || status !== 'Active') {
+          console.warn('[MANAGE/LINK/DENY]', { tenant: tenantRef.id, uid: userId, role, status });
+          return reply(
+            replyToken,
+            'ขออภัย คุณไม่มีสิทธิ์เข้าหน้าจัดการผู้ใช้งาน\nกรุณาติดต่อผู้ดูแลระบบ',
+            null,
+            tenantRef
+          );
         }
 
-
-        // ดึงรูปโปรไฟล์จาก LINE เพื่อใส่ลงใน claims (ไม่จำเป็นต้องใช้ในการ์ดก็ได้)
+        // 4) (ไม่บังคับ) รูปโปรไฟล์
         let picture = '';
         try {
           const acc  = await getTenantSecretAccessToken(tenantRef);
@@ -4299,31 +4307,22 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
           picture = prof?.pictureUrl || '';
         } catch {}
 
-        // ออก magic token ใส่ข้อมูลสำคัญไปใน claims
+        // 5) สร้าง magic link ไปหน้า /app/admin/users-split
         const token = issueMagicToken(
           { uid: userId, name, role, tenant: tenantRef.id, picture },
           '2h'
         );
-
-        // สร้าง URL /auth/magic พร้อมพารามิเตอร์ตามเดิม
         const base = (process.env.PUBLIC_APP_URL || BASE_APP_URL).replace(/\/$/, '');
-        const next = '/app';
+        const next = '/app/admin/users-split';
         const u = new URL('/auth/magic', base);
         u.searchParams.set('t', token);
         u.searchParams.set('tenant', tenantRef.id);
         u.searchParams.set('next', next);
         u.searchParams.set('trace', '0');
+
+        console.log('[MANAGE/LINK/ISSUE]', { tenant: tenantRef.id, uid: userId, next });
         const url = u.toString();
 
-
-        // (3) ก่อนส่งการ์ด (ไม่ log token) — log เฉพาะฐาน + path + next
-        console.log('[MANAGE/LINK/ISSUE]', {
-          tenant: tenantRef.id,
-          uid: userId,
-          next
-        });
-
-        // === Flex Card: แสดง username + role และปุ่ม "เข้าสู่ระบบ" ===
         const bubble = {
           type: 'bubble',
           size: 'kilo',
@@ -4334,7 +4333,7 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
             contents: [
               { type: 'text', text: 'จัดการผู้ใช้งาน', weight: 'bold', size: 'lg' },
               { type: 'text', text: `@${name}`, size: 'md', wrap: true },
-              { type: 'text', text: role, size: 'sm', color: '#888888' }
+              { type: 'text', text: role, size: 'sm', color: '#888' }
             ]
           },
           footer: {
@@ -4346,21 +4345,20 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
                 type: 'button',
                 style: 'primary',
                 height: 'sm',
-                action: { type: 'uri', label: 'เข้าสู่ระบบ', uri: url }
+                action: { type: 'uri', label: 'เข้าสู่ระบบ (ผู้ดูแล)', uri: url }
               }
             ],
             flex: 0
           }
         };
 
-        // ส่งการ์ดด้วย replyFlex ที่มีอยู่แล้ว
         return replyFlex(replyToken, bubble, null, tenantRef);
-
       } catch (e) {
-        console.error('MANAGE_USERS_CARD_ERR', e);
+        console.error('[MANAGE/LINK/ERR]', { tenant: tenantRef?.id, uid: userId, msg: e?.message || e });
         return reply(replyToken, 'ไม่สามารถสร้างลิงก์เข้าสู่ระบบได้ในขณะนี้', null, tenantRef);
       }
     }
+
 
 
     if (/^(รีเซ็ตเมนู|ตั้งเมนูแรก|รีเซ็ตเมนูของฉัน)$/i.test(text)) {
