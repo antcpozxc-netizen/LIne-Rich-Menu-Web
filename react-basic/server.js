@@ -4313,7 +4313,7 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
           '2h'
         );
         const base = (process.env.PUBLIC_APP_URL || BASE_APP_URL).replace(/\/$/, '');
-        const next = '/app/admin/users-split';
+        const next = '/app';
         const u = new URL('/auth/magic', base);
         u.searchParams.set('t', token);
         u.searchParams.set('tenant', tenantRef.id);
