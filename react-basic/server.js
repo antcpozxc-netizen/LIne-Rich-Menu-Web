@@ -23,7 +23,7 @@ const cron = require('node-cron');
 
 
 const APP_JWT_SECRET = process.env.APP_JWT_SECRET || 'dev-only';
-console.log('[CONF] APP_JWT_SECRET loaded:', !!APP_JWT_SECRET);
+
 const isProd     = process.env.NODE_ENV === 'production';
 const TRUST_PROXY= String(process.env.TRUST_PROXY||'0') === '1';
 
@@ -144,20 +144,87 @@ function readSession(req) {
   try { return jwt.verify(token, APP_JWT_SECRET); } catch { return null; }
 }
 
+// ===== Middlewares: AuthN / AuthZ =====
 function requireAuth(req, res, next) {
-  const u = readSession(req);
-  if (!u) return res.status(401).json({ ok:false, error:'UNAUTHORIZED' });
-  req.user = u; next();
+  // อ่านเซสชันครั้งเดียว
+  const u = req.user || readSession(req) || null;
+
+  if (!u) {
+    console.warn('[GUARD/AUTH/NO_SESSION]', {
+      path: req.path,
+      ua: req.get('user-agent'),
+      cookies: Object.keys(req.cookies || {}),
+    });
+    return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
+  }
+
+  // normalize เก็บกลับลง req.user ให้ตัวต่อไปใช้ได้เสมอ
+  req.user = {
+    ...u,
+    role: String(u.role || 'user').trim().toLowerCase(),
+    status: String(u.status || 'Active').trim(),
+  };
+
+  // กันบัญชีไม่ Active ตั้งแต่ชั้น auth (ปิดได้ถ้าไม่ต้องการ)
+  if (req.user.status !== 'Active') {
+    console.warn('[GUARD/AUTH/INACTIVE]', {
+      path: req.path,
+      uid: req.user.uid,
+      tenant: req.user.tenant,
+      status: req.user.status,
+    });
+    return res.status(403).json({ ok: false, error: 'INACTIVE_USER' });
+  }
+
+  return next();
 }
-function requireRole(roles) {
-  const allows = Array.isArray(roles) ? roles.map(r=>String(r).toLowerCase()) : [String(roles).toLowerCase()];
-  return (req,res,next) => {
-    const u = readSession(req);
-    if (!u) return res.status(401).json({ ok:false, error:'UNAUTHORIZED' });
-    if (!allows.includes(String(u.role||'user').toLowerCase())) return res.status(403).json({ ok:false, error:'FORBIDDEN' });
-    req.user = u; next();
+
+function requireRole(roles = []) {
+  const allows = (Array.isArray(roles) ? roles : [roles])
+    .map(r => String(r).trim().toLowerCase());
+
+  return (req, res, next) => {
+    // ใช้ req.user ถ้ามี ไม่งั้นอ่านจากเซสชันแล้ว normalize
+    const u = req.user || readSession(req) || null;
+    if (!u) {
+      console.warn('[GUARD/ROLE/NO_SESSION]', { path: req.path, need: allows });
+      return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
+    }
+
+    req.user = {
+      ...u,
+      role: String(u.role || 'user').trim().toLowerCase(),
+      status: String(u.status || 'Active').trim(),
+    };
+
+    // เพิ่มกันสถานะไม่ Active ที่ชั้น role ด้วย (เผื่อมี route ข้าม requireAuth มา)
+    if (req.user.status !== 'Active') {
+      console.warn('[GUARD/ROLE/INACTIVE]', {
+        path: req.path, role: req.user.role, status: req.user.status, need: allows
+      });
+      return res.status(403).json({ ok: false, error: 'INACTIVE_USER' });
+    }
+
+    if (!allows.includes(req.user.role)) {
+      console.warn('[GUARD/ROLE/DENY]', {
+        path: req.path,
+        role: req.user.role,
+        need: allows,
+        tenant: req.user.tenant,
+        uid: req.user.uid,
+      });
+      return res.status(403).json({ ok: false, error: 'FORBIDDEN' });
+    }
+
+    return next();
   };
 }
+
+// ช่วยให้เรียกง่ายใน route แอดมิน
+const requireAdminLike = requireRole(['developer', 'admin', 'supervisor']);
+
+// ตัวอย่างใช้งาน:
+// app.use('/api/admin', requireAuth, requireAdminLike);
 
 
 function remapOldNext(n) {
@@ -177,8 +244,14 @@ app.get('/auth/magic', async (req, res) => {
     const base   = (process.env.PUBLIC_APP_URL || BASE_APP_URL || '').replace(/\/$/, '');
     const tRaw   = String(req.query.t || '');        // magic token จาก OA
     const tenant = String(req.query.tenant || '');   // tenant id (สำรอง)
-    const next   = String(req.query.next || '/app'); // ปลายทางหลัง login
+    const nextQ  = String(req.query.next || '/app'); // ปลายทางหลัง login (raw)
     const trace  = String(req.query.trace || '0') === '1';
+
+    console.log('[MAGIC/AUTH/BEGIN]', {
+      tenant_query: tenant,
+      nextQ,
+      ua: req.get('user-agent')
+    });
 
     if (!tRaw) return res.status(400).send('missing magic token');
 
@@ -187,48 +260,68 @@ app.get('/auth/magic', async (req, res) => {
     try {
       payload = jwt.verify(tRaw, APP_JWT_SECRET);
     } catch (e) {
-      console.error('[MAGIC] bad token:', e?.message || e);
+      console.error('[MAGIC/AUTH/BAD_TOKEN]', e?.message || e);
       return res.status(400).send('bad magic token');
     }
 
-    const uidRaw = payload.uid || '';
+    const uidRaw  = String(payload.uid || '');
     if (!uidRaw) return res.status(400).send('bad magic token');
 
-    // uid สำหรับ Firebase (ขึ้นด้วย line: ถ้ายังไม่มี)
-    const uidForFirebase = uidRaw.startsWith('line:') ? uidRaw : `line:${uidRaw}`;
-    const role   = String(payload.role || 'user').toLowerCase();
-    const name   = payload.name || payload.username || '';
-    const tid    = payload.tenant || tenant || '';
+    const role    = String(payload.role || 'user').trim().toLowerCase();
+    const name    = payload.name || payload.username || '';
+    const tokTid  = String(payload.tenant || '').trim();
+    const qTid    = tenant.trim();
+    const tid     = tokTid || qTid || '';
     const picture = payload.picture || '';
 
-    // 2) ตั้งคุกกี้ session สำหรับ REST API (/api/**) ให้เบราว์เซอร์ไว้เลย
-    // เดิมคุณมี setSessionCookie อยู่แล้ว ใช้ต่อได้
-    await setSessionCookie(res, { uid: uidRaw, role, name, tenant: tid }, 7);
-
-    // 3) ออก Firebase Custom Token (ให้ฝั่ง client signInWithCustomToken)
-    const customToken = await admin.auth().createCustomToken(uidForFirebase, {
-      role,
-      name,
-      tenant: tid,
-      ...(picture ? { picture } : {}),
+    console.log('[MAGIC/AUTH/PAYLOAD]', {
+      tenant_from_token: tokTid,
+      tenant_query: qTid,
+      tenant_final: tid,
+      uid: uidRaw,
+      role
     });
 
-    // 4) redirect ไปหน้า next พร้อม #token ให้ AuthGate จับไป login Firebase
-    const dest = next || '/app';
+    // 2) กัน tenant mismatch ชัดเจน
+    if (qTid && tokTid && qTid !== tokTid) {
+      console.warn('[MAGIC/AUTH/TENANT_MISMATCH]', { tenant_query: qTid, tenant_from_token: tokTid });
+      return res.status(401).send('tenant mismatch');
+    }
+
+    // 3) ตั้งคุกกี้ session สำหรับ REST API (/api/**)
+    //    หมายเหตุ: ให้ setSessionCookie ภายในตั้งค่า { secure:true, sameSite:'None', path:'/' } ใน prod
+    await setSessionCookie(res, { uid: uidRaw, role, name, tenant: tid }, 7);
+
+    // 4) ออก Firebase Custom Token สำหรับ client
+    const uidForFirebase = uidRaw.startsWith('line:') ? uidRaw : `line:${uidRaw}`;
+    const customToken = await admin.auth().createCustomToken(uidForFirebase, {
+      role, name, tenant: tid, ...(picture ? { picture } : {}),
+    });
+
+    // 5) sanitize next + ลดสิทธิ์เส้นทางถ้า role ไม่ถึง
+    const isInternalPath = /^\/[a-zA-Z0-9/_-]*/.test(nextQ);
+    const safeNext       = isInternalPath ? nextQ : '/app';
+    const isAdminLike    = ['developer','admin','supervisor'].includes(role);
+    const dest           = (!isAdminLike && safeNext.startsWith('/app/admin'))
+      ? '/app'
+      : safeNext;
+
+    // 6) redirect ไปหน้า dest พร้อม #token ให้ AuthGate จับไป login Firebase
     const u = new URL(dest, base);
-    u.hash = `token=${encodeURIComponent(customToken)}&next=${encodeURIComponent(dest)}`;
+    u.hash  = `token=${encodeURIComponent(customToken)}&next=${encodeURIComponent(dest)}`;
 
     if (trace) {
-      console.log('[MAGIC] payload =>', payload);
-      console.log('[MAGIC] redirect =>', u.toString());
+      console.log('[MAGIC/AUTH/REDIRECT]', { dest, isAdminLike, role, tid });
+      console.log('[MAGIC/AUTH/URL]', u.toString());
     }
 
     return res.redirect(u.toString());
   } catch (e) {
-    console.error('[MAGIC] error', e?.message || e);
+    console.error('[MAGIC/AUTH/ERR]', e?.message || e);
     return res.status(500).send('magic failed');
   }
 });
+
 
 
 
@@ -4168,11 +4261,33 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
 
     // เปิดหน้า Admin/จัดการผู้ใช้งาน จาก OA
     if (text === 'จัดการผู้ใช้งาน') {
+        // (1) ก่อนเรียก GAS
+      console.log('[MANAGE/LINK/START]', {
+        tenant: tenantRef.id,
+        uid: userId,
+        text
+      });
+
       try {
         // ดึงบทบาท/ชื่อจาก GAS ตาม userId เดิมของคุณ
+        // ดึงบทบาท/ชื่อจาก GAS ตาม userId เดิมของคุณ
         const gu   = await callAppsScriptForTenant(tenantRef, 'get_user', { user_id: userId }).catch(()=>({}));
-        const role = String(gu?.user?.role || 'user').toLowerCase();
+        const role = String(gu?.user?.role || 'user').trim().toLowerCase(); // ← เพิ่ม trim()
         const name = gu?.user?.username || gu?.user?.real_name || (await getDisplayName(tenantRef, userId)) || 'User';
+
+        // (2) หลังดึงได้
+        console.log('[MANAGE/LINK/USER]', {
+          tenant: tenantRef.id,
+          uid: userId,
+          role, status, hasRow: !!gu?.user
+        });
+
+        // ❗ บล็อกผู้ใช้ role=user ตั้งแต่จุดออกลิงก์
+        const ALLOWED = ['developer','admin','supervisor'];
+        if (!ALLOWED.includes(role)) {
+          return reply(replyToken, 'คุณไม่มีสิทธิ์เข้าถึงเมนู "จัดการผู้ใช้งาน"\nโปรดติดต่อแอดมินเพื่อขอสิทธิ์', null, tenantRef);
+        }
+
 
         // ดึงรูปโปรไฟล์จาก LINE เพื่อใส่ลงใน claims (ไม่จำเป็นต้องใช้ในการ์ดก็ได้)
         let picture = '';
@@ -4199,6 +4314,14 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
         u.searchParams.set('next', next);
         u.searchParams.set('trace', '0');
         const url = u.toString();
+
+
+        // (3) ก่อนส่งการ์ด (ไม่ log token) — log เฉพาะฐาน + path + next
+        console.log('[MANAGE/LINK/ISSUE]', {
+          tenant: tenantRef.id,
+          uid: userId,
+          next
+        });
 
         // === Flex Card: แสดง username + role และปุ่ม "เข้าสู่ระบบ" ===
         const bubble = {
@@ -5945,6 +6068,14 @@ app.get('/', (_req, res) => {
 // ---- SPA fallback: ยกเว้นกลุ่ม API/Auth/Webhook/Static/Manifest ----
 app.get(/^\/(?!api\/|auth\/|webhook\/|static\/|manifest\.json$).*/, (_req, res) => {
   res.sendFile(getIndexHtmlPath());
+});
+
+app.get('/api/debug/whoami', (req, res) => {
+  res.json({
+    ok: true,
+    user: req.user || null,
+    cookies: Object.keys(req.cookies || {}),
+  });
 });
 
 
