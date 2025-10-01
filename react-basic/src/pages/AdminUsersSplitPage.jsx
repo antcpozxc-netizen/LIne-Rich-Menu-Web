@@ -180,7 +180,7 @@ const TableBlock = memo(function TableBlock(props) {
                     <Select
                       size="small"
                       value={u.status || 'Active'}
-                      disabled={!editableRoleState || busy}
+                      disabled={!editableProfile || busy}
                       onChange={(e)=>doStatus(u, e.target.value)}
                       sx={{ minWidth:{ xs:110, sm:120 }, '& .MuiSelect-select': { py:0.5 } }}
                     >
@@ -214,7 +214,7 @@ const TableBlock = memo(function TableBlock(props) {
                       </Stack>
                     )}
                     {!editableProfile && (
-                      <Tooltip title="ห้ามแก้ไขผู้ใช้ระดับเท่ากัน/สูงกว่า">
+                      <Tooltip title={`ห้ามแก้ไขผู้ใช้ระดับเท่ากัน/สูงกว่า • myId=${myId || '-'} • rowId=${normalizeId(u?.user_id) || '-'}`}>
                         <span><Button size="small" disabled>แก้ไข</Button></span>
                       </Tooltip>
                     )}
@@ -241,7 +241,11 @@ export default function AdminUsersSplitPage() {
   const { data } = useMe();
   const myRole = (data?.user?.role || 'user').toLowerCase();
   const myRank = ROLE_RANK[myRole] || 0;
-  const myId   = (data?.session?.uid || '').replace(/^line:/,'') || null;
+  const normalizeId = (id) => String(id || '').trim().replace(/^line:/,'');  // helper ใช้ซ้ำ
+  const myId   = normalizeId(
+     data?.session?.uid ||          // จากคุกกี้เซสชันฝั่งเซิร์ฟเวอร์
+    data?.user?.user_id || ''      // เผื่อ hook คืน user_id มาด้วย
+  );
   const navigate = useNavigate();
 
   const [rows, setRows] = useState([]);
@@ -317,10 +321,21 @@ export default function AdminUsersSplitPage() {
   }, [sorted]);
 
   // โปรไฟล์ (username / real_name): อนุญาตเสมอถ้าเป็น "เจ้าของ record" หรือผู้มีสิทธิ์สูงกว่า
-  const normalizeId = (id) => String(id || '').replace(/^line:/,'');
+  const isSelfRow = (u) => {
+    const uidFromRow = normalizeId(u?.user_id);
+    // ตรง user_id คือชัวร์สุด
+    if (uidFromRow && uidFromRow === myId) return true;
+    // Fallback: บางชีตเก่ามี row แต่ user_id ยังไม่ตรง ให้ยอมเฉพาะกรณี username/name ตรงกับคนล็อกอิน
+    const meName = String(data?.user?.real_name || '').trim();
+    const meUser = String(data?.user?.username || '').trim();
+    return (!!u && (
+      (meUser && String(u.username || '').trim() === meUser) ||
+      (meName && String(u.real_name || '').trim() === meName)
+    ));
+  };
   const canEditProfile = (u) =>
-    normalizeId(u?.user_id) === myId ||                         // เจ้าของแก้ได้เสมอ
-    ((ROLE_RANK[String(u?.role||'user')] || 0) < myRank);       // หรือสิทธิ์สูงกว่า
+    isSelfRow(u) ||
+    ((ROLE_RANK[String(u?.role||'user')] || 0) < myRank);
 
   // role/status: ยึดกฎเดิม — ต้อง “สูงกว่า” เท่านั้น (ห้ามแก้ของตัวเองถ้า rank เท่ากัน)
   const canEditRoleStatus = (u) =>
