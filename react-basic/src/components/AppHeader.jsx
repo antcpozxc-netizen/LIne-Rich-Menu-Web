@@ -1,7 +1,7 @@
 // src/components/AppHeader.jsx
 import React, { useMemo, useEffect, useState } from 'react';
 import { AppBar, Toolbar, Typography, Avatar, Chip, Button, Stack } from '@mui/material';
-import { getAuth } from 'firebase/auth';
+import { getAuth, onIdTokenChanged } from 'firebase/auth';
 
 export default function AppHeader() {
   const auth = getAuth();
@@ -13,17 +13,36 @@ export default function AppHeader() {
   const [picFromClaims, setPicFromClaims] = useState('');
 
   useEffect(() => {
-    let cancelled = false;
-    user?.getIdTokenResult()
-      .then(tr => {
-        if (cancelled) return;
-        setRoleLabel(String(tr?.claims?.role || 'user'));
-        setNameFromClaims(tr?.claims?.name || tr?.claims?.username || '');
-        setPicFromClaims(tr?.claims?.picture || '');
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [user]);
+    // ฟังก์ชันช่วย map ทั้งแบบ role=string และแบบ boolean claims เดิม
+    const resolveRole = (claims = {}) =>
+      String(
+        claims.role ||
+        (claims.dev && 'developer') ||
+        (claims.head && 'headAdmin') ||
+        (claims.admin && 'admin') ||
+        'user'
+      );
+
+    // อัปเดตทุกครั้งที่ ID token เปลี่ยน และบังคับรีเฟรชครั้งแรก
+    const off = onIdTokenChanged(auth, async (u) => {
+      if (!u) { setRoleLabel('user'); return; }
+      const tr = await u.getIdTokenResult(true).catch(() => null); // ← force refresh
+      setRoleLabel(resolveRole(tr?.claims || {}));
+      setNameFromClaims(tr?.claims?.name || tr?.claims?.username || '');
+      setPicFromClaims(tr?.claims?.picture || '');
+
+      // fallback เพิ่มความชัวร์จาก session cookie ของเซิร์ฟเวอร์
+      try {
+        const r = await fetch('/api/session/me');
+        if (r.ok) {
+          const j = await r.json();
+          if (j?.user?.role) setRoleLabel(String(j.user.role));
+        }
+      } catch {}
+    });
+    return () => off();
+  }, [auth]);
+
 
   const displayName = useMemo(
     () => nameFromClaims || user?.displayName || user?.providerData?.[0]?.displayName || 'Guest',
