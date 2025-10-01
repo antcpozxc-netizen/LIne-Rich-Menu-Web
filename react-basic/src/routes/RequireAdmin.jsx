@@ -1,47 +1,79 @@
 // src/routes/RequireAdmin.jsx
 import React, { useEffect, useState } from 'react';
-import { Navigate, Outlet, useLocation } from 'react-router-dom';
+import { Outlet } from 'react-router-dom';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import { doc, getDoc } from 'firebase/firestore';
 
+const ALLOW = new Set(['developer', 'admin', 'supervisor', 'headadmin']);
+
 export default function RequireAdmin() {
-  const [state, setState] = useState({ loading: true, ok: false });
-  const location = useLocation();
+  const [state, setState] = useState({ loading: true, ok: false, reason: '' });
 
   useEffect(() => {
     const off = onAuthStateChanged(auth, async (u) => {
       if (!u) {
-        setState({ loading: false, ok: false });
+        setState({ loading: false, ok: false, reason: 'no_user' });
         return;
       }
       try {
-        // อ่านข้อมูลผู้ใช้จาก Firestore (role / isAdmin flag)
-        const snap = await getDoc(doc(db, 'users', u.uid));
-        const role = snap.get('role');            // 'developer' | 'headAdmin' | 'admin' | 'user'
-        const isAdminFlag = !!snap.get('isAdmin'); // เพื่อรองรับของเดิม
+        // 1) อ่าน custom claims จาก Firebase ID token
+        const tokenRes = await u.getIdTokenResult(true).catch(() => null);
+        const claims = tokenRes?.claims || {};
+        const claimRole = String(claims.role || '').trim().toLowerCase(); // ← role ที่เราส่งมาจาก /auth/magic
+        const claimAdmin = !!claims.admin;             // เผื่อของเดิม
+        const claimHead  = !!claims.head || !!claims.headadmin;
+        const claimDev   = !!claims.dev;
 
-        // อ่าน custom claims จาก token (admin/head/dev)
-        const token = await u.getIdTokenResult(true).catch(() => null);
-        const claimAdmin = !!token?.claims?.admin;
-        const claimHead  = !!token?.claims?.head;
-        const claimDev   = !!token?.claims?.dev;
+        // 2) (เสริม) อ่าน doc users/{uid} ถ้ามี เพื่อเช็กสถานะ/role สำรอง
+        let docRole = '';
+        let docStatus = 'Active';
+        try {
+          const snap = await getDoc(doc(db, 'users', u.uid));
+          if (snap.exists()) {
+            docRole   = String(snap.get('role') || '').trim().toLowerCase();
+            docStatus = String(snap.get('status') || 'Active').trim();
+          }
+        } catch {
+          // อ่านไม่ได้ก็ข้าม (ไม่ให้ล้ม)
+        }
 
-        // ✅ ให้ dev/head/admin ผ่าน (ทั้งจาก claims และจาก doc.role)
-        const ok =
-          claimDev || claimHead || claimAdmin ||
-          role === 'developer' || role === 'headAdmin' || role === 'admin' ||
-          isAdminFlag;
+        // 3) ตัดสินใจสิทธิ์
+        const role = (claimRole || docRole || 'user').toLowerCase();
+        const allowed =
+          ALLOW.has(role) ||
+          claimDev || claimHead || claimAdmin;
 
-        setState({ loading: false, ok });
+        // ถ้ามีเอกสาร users/{uid} และสถานะไม่ Active ให้บล็อก
+        const active = (docRole ? docStatus === 'Active' : true);
+
+        setState({
+          loading: false,
+          ok: allowed && active,
+          reason: allowed ? (active ? '' : 'inactive') : 'forbidden'
+        });
       } catch {
-        setState({ loading: false, ok: false });
+        setState({ loading: false, ok: false, reason: 'error' });
       }
     });
     return () => off();
   }, []);
 
-  if (state.loading) return <div style={{ padding: 16 }}>Loading...</div>;
-  if (!state.ok) return <Navigate to="/" replace state={{ from: location }} />;
+  // ระหว่างรอ auth/claims → ห้ามรีไดเรกต์
+  if (state.loading) return <div style={{ padding: 16 }}>กำลังตรวจสอบสิทธิ์…</div>;
+
+  // ไม่โอเค → แสดงข้อความแทนการเด้งออก (กัน loop และไม่กระทบหน้าอื่น)
+  if (!state.ok) {
+    return (
+      <div style={{ padding: 24 }}>
+        <h3>ไม่มีสิทธิ์เข้าถึง</h3>
+        {state.reason === 'inactive'
+          ? <p>บัญชีของคุณไม่ได้อยู่ในสถานะ Active โปรดติดต่อผู้ดูแลระบบ</p>
+          : <p>โปรดติดต่อผู้ดูแลระบบเพื่อขอสิทธิ์</p>}
+      </div>
+    );
+  }
+
+  // ผ่าน → แสดงหน้าลูก (เช่น AdminUsersSplitPage)
   return <Outlet />;
 }
