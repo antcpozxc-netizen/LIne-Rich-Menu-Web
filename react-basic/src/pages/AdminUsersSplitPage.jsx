@@ -160,7 +160,7 @@ const TableBlock = memo(function TableBlock(props) {
                       <Select
                         size="small"
                         value={r}
-                        disabled={!editableProfile || busy}
+                        disabled={!editableRoleState || busy}
                         sx={{ minWidth:{ xs:118, sm:132 }, '& .MuiSelect-select':{ py:0.5 } }}
                         onChange={(e)=>doRole(u, e.target.value)}
                       >
@@ -180,7 +180,7 @@ const TableBlock = memo(function TableBlock(props) {
                     <Select
                       size="small"
                       value={u.status || 'Active'}
-                      disabled={!editableProfile || busy}
+                      disabled={!editableRoleState || busy}
                       onChange={(e)=>doStatus(u, e.target.value)}
                       sx={{ minWidth:{ xs:110, sm:120 }, '& .MuiSelect-select': { py:0.5 } }}
                     >
@@ -241,7 +241,7 @@ export default function AdminUsersSplitPage() {
   const { data } = useMe();
   const myRole = (data?.user?.role || 'user').toLowerCase();
   const myRank = ROLE_RANK[myRole] || 0;
-  const myId   = data?.session?.uid || null;
+  const myId   = (data?.session?.uid || '').replace(/^line:/,'') || null;
   const navigate = useNavigate();
 
   const [rows, setRows] = useState([]);
@@ -317,9 +317,10 @@ export default function AdminUsersSplitPage() {
   }, [sorted]);
 
   // โปรไฟล์ (username / real_name): อนุญาตเสมอถ้าเป็น "เจ้าของ record" หรือผู้มีสิทธิ์สูงกว่า
+  const normalizeId = (id) => String(id || '').replace(/^line:/,'');
   const canEditProfile = (u) =>
-    (u?.user_id === myId) ||
-    ((ROLE_RANK[String(u?.role||'user')] || 0) < myRank);
+    normalizeId(u?.user_id) === myId ||                         // เจ้าของแก้ได้เสมอ
+    ((ROLE_RANK[String(u?.role||'user')] || 0) < myRank);       // หรือสิทธิ์สูงกว่า
 
   // role/status: ยึดกฎเดิม — ต้อง “สูงกว่า” เท่านั้น (ห้ามแก้ของตัวเองถ้า rank เท่ากัน)
   const canEditRoleStatus = (u) =>
