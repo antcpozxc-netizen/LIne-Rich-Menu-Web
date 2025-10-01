@@ -1,4 +1,4 @@
-// src/pages/HomePage.js
+// src/pages/HomePageMain.js
 import React, { useEffect, useState } from 'react';
 import {
   AppBar, Toolbar, Typography, Box, Avatar, Drawer, List, ListItem,
@@ -12,8 +12,8 @@ import {
   Logout as LogoutIcon, Login as LoginIcon, Menu as MenuIcon, SwapHoriz as SwapIcon,
   AdminPanelSettings as AdminIcon, HelpOutline as HelpIcon
 } from '@mui/icons-material';
-
-import { useNavigate, useLocation, useSearchParams, Outlet } from 'react-router-dom';
+import AssignmentTurnedInOutlinedIcon from '@mui/icons-material/AssignmentTurnedInOutlined';
+import { useNavigate, useLocation, useSearchParams, Outlet, Link as RouterLink  } from 'react-router-dom';
 import { db, auth } from '../firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
@@ -24,7 +24,7 @@ import useAuthClaims  from '../lib/useAuthClaims';
 const drawerWidthExpanded = 240;
 const drawerWidthCollapsed = 60;
 
-export default function HomePage() {
+export default function HomePageMain() {
   
   const navigate = useNavigate();
   const location = useLocation();
@@ -386,6 +386,14 @@ export default function HomePage() {
                 </ListItemButton>
               </List>
             </Collapse>
+
+            {/* Task Assignment (single menu) */}
+            <ListItem disablePadding>
+              <ListItemButton onClick={() => navigate(`/homepage/settings/taskbot${tenantQuery}`)}>
+                <ListItemIcon><AssignmentTurnedInOutlinedIcon /></ListItemIcon>
+                {sidebarOpen && <ListItemText primary="Task Assignment" secondary="ตั้งค่า & Apps Script" />}
+              </ListItemButton>
+            </ListItem>
 
             {/* Admin (collapsible) */}
             {allowAdminMenu && (

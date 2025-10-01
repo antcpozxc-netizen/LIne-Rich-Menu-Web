@@ -17,6 +17,7 @@
     "firebase": "^12.1.0",
     "firebase-admin": "^13.4.0",
     "jsonwebtoken": "^9.0.2",
+    "node-cron": "^4.2.1",
     "node-fetch": "^3.3.2",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",

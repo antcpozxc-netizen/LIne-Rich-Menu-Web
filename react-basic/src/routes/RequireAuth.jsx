@@ -7,20 +7,16 @@ import { auth } from '../firebase';
 const REDIRECT_GUARD_KEY = 'auth_redirect_guard_ts';
 const THROTTLE_MS = 5000;
 
-/** อนุญาตเฉพาะเส้นทางภายในเว็บ (กัน open redirect) */
 function sanitizeInternalPath(raw) {
   if (!raw) return '/homepage';
   try {
     const u = new URL(raw, window.location.origin);
     if (u.origin !== window.location.origin) return '/homepage';
-    const pathq = u.pathname + u.search;
-    // ถ้าเป็นหน้าแรก ให้เปลี่ยนเป็น /homepage เพื่อไม่ย้อนกลับไปแลนดิ้ง
-    return pathq === '/' ? '/homepage' : pathq;
-  } catch {
-    // raw เป็น path ตรง ๆ
-    const p = String(raw);
-    if (!p.startsWith('/')) return '/homepage';
+    const p = u.pathname + u.search;
     return p === '/' ? '/homepage' : p;
+  } catch {
+    const p = String(raw || '/');
+    return p === '/' ? '/homepage' : (p.startsWith('/') ? p : '/homepage');
   }
 }
 
@@ -30,25 +26,36 @@ export default function RequireAuth() {
   const [ready, setReady] = useState(false);
   const redirectingRef = useRef(false);
 
-  // เส้นทางปัจจุบัน (รวม query) สำหรับส่งกลับหลังล็อกอิน
   const currentPathQ = useMemo(() => {
     const p = location.pathname + location.search;
     return sanitizeInternalPath(p || '/homepage');
   }, [location.pathname, location.search]);
 
+  const hasMagicToken =
+    typeof window !== 'undefined' &&
+    /(^|[&#?])token=/.test(String(window.location.hash || ''));
+
   useEffect(() => {
     const off = onAuthStateChanged(auth, (u) => {
       setUser(u || null);
       setReady(true);
-      // console.log('[RequireAuth] state:', !!u, 'next=', currentPathQ);
+      // ดีบักถ้าจำเป็น:
+      // console.log('[RequireAuth]', { path: location.pathname, hasToken: hasMagicToken, hasUser: !!u });
     });
     return () => off();
-  }, [currentPathQ]);
+  }, [location.pathname, hasMagicToken]);
 
-  if (!ready) return null;
+  if (!ready) {
+    return <div style={{ padding: 16 }}>กำลังตรวจสอบการเข้าสู่ระบบ…</div>;
+  }
 
   if (!user) {
-    // กัน redirect รัวๆ: throttle ด้วย sessionStorage + ref
+    // ระหว่าง AuthGate กิน #token → แสดง Loader กันหน้าขาว
+    if (hasMagicToken) {
+      return <div style={{ padding: 16 }}>กำลังเข้าสู่ระบบ…</div>;
+    }
+
+    // กัน redirect รัว (คง logic เดิม)
     if (redirectingRef.current) return null;
     const last = Number(sessionStorage.getItem(REDIRECT_GUARD_KEY) || 0);
     const now = Date.now();
@@ -57,15 +64,15 @@ export default function RequireAuth() {
     redirectingRef.current = true;
     sessionStorage.setItem(REDIRECT_GUARD_KEY, String(now));
 
-    // ส่งไป LINE Login: ให้ AuthGate พาเข้า /accounts เสมอ แล้วค่อยเด้งกลับ next
     const url = new URL('/auth/line/start', window.location.origin);
-    url.searchParams.set('next', currentPathQ); // กลับมาหน้าก่อนล็อกอิน (ยกเว้น / -> /homepage)
+    url.searchParams.set('next', currentPathQ);
     url.searchParams.set('to', 'accounts');
-
-    // ใช้ replace เพื่อลดประวัติใน back stack
     window.location.replace(url.toString());
-    return null;
+
+    // แสดงข้อความคั่นระหว่าง redirect (กันหน้าขาว)
+    return <div style={{ padding: 16 }}>กำลังพาไปล็อกอิน LINE…</div>;
   }
+
 
   return <Outlet />;
 }
