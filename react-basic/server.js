@@ -23,6 +23,7 @@ const cron = require('node-cron');
 
 
 const APP_JWT_SECRET = process.env.APP_JWT_SECRET || 'dev-only';
+console.log('[CONF] APP_JWT_SECRET loaded:', !!APP_JWT_SECRET);
 const isProd     = process.env.NODE_ENV === 'production';
 const TRUST_PROXY= String(process.env.TRUST_PROXY||'0') === '1';
 
@@ -4112,7 +4113,10 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
 
     function issueMagicToken(payload, ttl) {
       const exp = process.env.MAGIC_TTL || ttl || '2h';
-      const token = jwt.sign(payload, process.env.APP_JWT_SECRET, { expiresIn: exp });
+      if (!APP_JWT_SECRET) {
+        throw new Error('APP_JWT_SECRET is missing');
+      }
+      const token = jwt.sign(payload, APP_JWT_SECRET, { expiresIn: exp });
       return token;
     }
 
