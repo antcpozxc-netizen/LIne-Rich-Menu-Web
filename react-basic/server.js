@@ -4325,7 +4325,7 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
 
         const bubble = {
           type: 'bubble',
-          size: 'kilo',
+          // size: 'kilo', // จะใส่หรือเอาออกก็ได้ (ถ้าไม่ชัวร์ ให้ลบออก)
           body: {
             type: 'box',
             layout: 'vertical',
@@ -4333,7 +4333,7 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
             contents: [
               { type: 'text', text: 'จัดการผู้ใช้งาน', weight: 'bold', size: 'lg' },
               { type: 'text', text: `@${name}`, size: 'md', wrap: true },
-              { type: 'text', text: role, size: 'sm', color: '#888' }
+              { type: 'text', text: role, size: 'sm', color: '#888888' } // ← เปลี่ยนเป็น 6 หลัก
             ]
           },
           footer: {
@@ -4351,6 +4351,7 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
             flex: 0
           }
         };
+
 
         return replyFlex(replyToken, bubble, null, tenantRef);
       } catch (e) {
