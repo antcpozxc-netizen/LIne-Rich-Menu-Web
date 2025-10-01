@@ -30,8 +30,6 @@ import manageUsersImg4   from '../assets/examples/manage-users-card4.jpg';
 import manageUsersImg5   from '../assets/examples/manage-users-card5.jpg';
 
 
-
-
 // ---------- utils ----------
 function getActiveTenantId() {
   return localStorage.getItem('activeTenantId') || '';
@@ -369,6 +367,28 @@ export default function TaskAssignmentSettingsPage() {
 
       {msg && <Alert severity={msg.type}>{msg.text}</Alert>}
 
+      {/* 🔔 คำแนะนำการตั้งค่า LINE Webhook (อยู่เหนือ Enable) */}
+      <Paper variant="outlined" sx={{ p:2 }}>
+        <Stack spacing={1}>
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <InfoOutlinedIcon fontSize="small" />
+            <Typography variant="subtitle1" fontWeight={600}>ตั้งค่า LINE Webhook</Typography>
+          </Stack>
+          <Typography variant="body2">
+            ตั้งค่า Webhook URL ใน <b>LINE Official Account</b> ของคุณเป็น:
+          </Typography>
+          <Box sx={{ p:1, bgcolor:'#f8f9fa', border:'1px dashed #cfd8dc', borderRadius:1 }}>
+            <code>https://line-rich-menu-web.onrender.com/webhook/line</code>
+          </Box>
+          <Typography variant="body2" color="text.secondary">
+            ไปที่ <i>Messaging API → Webhook settings</i> แล้ว <b>เปิด (Enable)</b> และกด <b>Verify</b> ให้ขึ้น 200
+          </Typography>
+          <Typography variant="caption" color="text.secondary" display="block">
+            * เซิร์ฟเวอร์นี้รองรับ URL เดียวสำหรับทุก OA: <code>/webhook/line</code>
+          </Typography>
+        </Stack>
+      </Paper>
+
       {/* Enable */}
       <Paper variant="outlined" sx={{ p:2 }}>
         <Stack spacing={1}>
@@ -606,6 +626,38 @@ export default function TaskAssignmentSettingsPage() {
         </Stack>
       </Paper>
 
+      {/* 🎯 บทบาท & สิทธิ์การใช้งาน (อยู่เหนือ วิธีใช้งาน & คำสั่งหลัก) */}
+      <Paper variant="outlined" sx={{ p:2 }}>
+        <Stack spacing={1}>
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <InfoOutlinedIcon fontSize="small" />
+            <Typography variant="subtitle1" fontWeight={600}>บทบาทที่รองรับ & สิทธิ์การใช้งาน</Typography>
+          </Stack>
+
+          {/* รายชื่อบทบาท */}
+          <Stack direction="row" spacing={1} flexWrap="wrap">
+            <Chip label="developer — นักพัฒนา" size="small" />
+            <Chip label="admin — ผู้ดูแล" size="small" />
+            <Chip label="supervisor — หัวหน้างาน" size="small" />
+            <Chip label="user — ผู้ใช้งาน" size="small" />
+          </Stack>
+
+          {/* สรุปสิทธิ์สำคัญ */}
+          <Box sx={{ mt:1 }}>
+            <Typography variant="body2" sx={{ fontWeight: 600, mb: .5 }}>สรุปสิทธิ์:</Typography>
+            <Typography variant="body2" sx={{ ml: 1 }}>
+              • <b>สั่งงาน</b> (สร้างงานใหม่): ทุกบทบาททำได้ (พิมพ์ในแชท → พรีวิว → ยืนยัน)
+            </Typography>
+            <Typography variant="body2" sx={{ ml: 1 }}>
+              • <b>แก้งาน</b> (สถานะ/เดดไลน์/รายละเอียด/โน้ต/เตือน): เจ้าของงาน (คนที่สั่ง) หรือบทบาท <code>admin/supervisor/developer</code>
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display:'block', ml:1, mt:.5 }}>
+              * ลำดับสิทธิ์: developer &gt; admin &gt; supervisor &gt; user
+            </Typography>
+          </Box>
+        </Stack>
+      </Paper>
+
       {/* คำแนะนำ/คำสั่งของ Task Assignment Bot */}
       <Paper variant="outlined" sx={{ p:2 }}>
         <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
@@ -701,72 +753,72 @@ export default function TaskAssignmentSettingsPage() {
         </Stack>
       </Paper>
 
-      {/* 📌 สรุปคำสั่งทั้งหมด */}
+      {/* 📌 สรุปคำสั่งทั้งหมด (Cheat-Sheet) */}
       <Paper variant="outlined" sx={{ p:2 }}>
-        <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>สรุปคำสั่งทั้งหมด</Typography>
+        <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>
+          สรุปคำสั่งทั้งหมด (Cheat-Sheet)
+        </Typography>
         <Divider sx={{ mb:2 }} />
-        <Grid container spacing={2}>
-          <Grid item xs={12} md={6}>
-            <Card variant="outlined">
-              <CardContent>
-                <Typography variant="subtitle2" fontWeight="bold">ลงทะเบียน / จัดการบัญชี</Typography>
-                <Box sx={{ fontFamily:'monospace', whiteSpace:'pre-line', mt: 1 }}>
-{`ลงทะเบียน
-ลงทะเบียน <username> <ชื่อจริง> <role>
-จัดการผู้ใช้งาน
-ติดต่อแอดมิน`}
-                </Box>
-                <Typography variant="caption" color="text.secondary" sx={{ display:'block', mt:1 }}>
-                  * ถ้าเคยลงทะเบียนแล้ว พิมพ์ “ลงทะเบียน” อีกครั้ง ระบบจะแจ้งชื่อและบทบาทที่บันทึกไว้
-                </Typography>
-              </CardContent>
-            </Card>
-          </Grid>
 
-          <Grid item xs={12} md={6}>
-            <Card variant="outlined">
-              <CardContent>
-                <Typography variant="subtitle2" fontWeight="bold">สั่งงาน (แบบพรีวิวก่อนยืนยัน)</Typography>
-                <Box sx={{ fontFamily:'monospace', whiteSpace:'pre-line', mt: 1 }}>
-{`@<username> รายละเอียดงาน [เส้นตาย/โน้ตแบบภาษาคน]
-ยืนยันมอบหมาย [TMP_xxx]
-ยกเลิกมอบหมาย [TMP_xxx]`}
-                </Box>
-                <Typography variant="caption" color="text.secondary" sx={{ display:'block', mt:1 }}>
-                  ตัวอย่าง: <code>@po ทำรายงาน พรุ่งนี้ 09:00</code> • <code>@test ทำป้ายหน้าร้าน ก่อนบ่าย 3</code>
-                </Typography>
-              </CardContent>
-            </Card>
-          </Grid>
+        <Box
+          sx={{
+            fontFamily: 'monospace',
+            whiteSpace: 'pre-wrap',
+            lineHeight: 1.8,
+            fontSize: 14
+          }}
+        >
+      {`[ลงทะเบียน / โปรไฟล์]
+      • ลงทะเบียน
+      • ลงทะเบียน <username> <ชื่อจริง> <role>
+        - ถ้าเคยลงทะเบียนแล้ว พิมพ์ "ลงทะเบียน" อีกครั้งเพื่อดูข้อมูลปัจจุบัน
+      • จัดการผู้ใช้งาน          ← เปิดการ์ดเพื่อเข้าสู่ระบบเว็บ (magic link)
+      • ติดต่อแอดมิน             ← ตัวอย่าง:  dm @po ขอสิทธิ์แก้ชีท
 
-          <Grid item xs={12} md={6}>
-            <Card variant="outlined">
-              <CardContent>
-                <Typography variant="subtitle2" fontWeight="bold">ดูงานของฉัน</Typography>
-                <Box sx={{ fontFamily:'monospace', whiteSpace:'pre-line', mt: 1 }}>
-{`ดูงานค้างทั้งหมด
-งานของฉันวันนี้
-ดูงานที่ฉันสั่ง`}
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
+      [สั่งงาน (มีพรีวิวก่อนยืนยัน)]
+      • @<username> รายละเอียดงาน [เส้นตาย/โน้ตแบบภาษาคน]
+        ↳ บอทจะส่งพรีวิวงานชั่วคราวเป็นรหัส  TMP_xxx
+      • ยืนยันมอบหมาย TMP_xxx
+      • ยกเลิกมอบหมาย TMP_xxx
+      ตัวอย่าง:
+        - @po ทำรายงาน พรุ่งนี้ 09:00
+        - @test ทำป้ายหน้าร้าน ก่อนบ่าย 3
+        - @po ทำ rich menu วันนี้ ด่วน
 
-          <Grid item xs={12} md={6}>
-            <Card variant="outlined">
-              <CardContent>
-                <Typography variant="subtitle2" fontWeight="bold">อัปเดตงาน</Typography>
-                <Box sx={{ fontFamily:'monospace', whiteSpace:'pre-line', mt: 1 }}>
-{`done <TASK_ID>
-กำลังดำเนินการ <TASK_ID>
-แก้กำหนดส่ง <TASK_ID> <เวลา/ภาษาคน>
-เพิ่มโน้ต <TASK_ID> <ข้อความ>`}
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-        </Grid>
+      [ตัวอย่างภาษาคน (เวลาที่ระบบเข้าใจ)]
+      • "วันนี้ 17:30" (ถ้าไม่ใส่เวลา ระบบตั้งค่าเริ่มต้น 17:30)
+      • "พรุ่งนี้ 09:00"
+      • "ก่อนบ่าย 3"    → 15:00 ของวันนี้
+      • "วันจันทร์ 10:00" (ชื่อวันไทย)
+      • คำว่า "ด่วน" / "urgent" จะติดแท็ก [URGENT] ให้อัตโนมัติ
+
+      [ดูงาน / ค้นหารายการของฉัน]
+      • ดูงานค้างทั้งหมด        ← งานสถานะ pending/doing
+      • งานของฉันวันนี้          ← งานที่กำหนดส่ง "วันนี้"
+      • ดูงานที่ฉันสั่ง           ← งานที่เราเป็นผู้สั่ง (assigner)
+
+      [อัปเดตงาน]
+      • done <TASK_ID>                     ← ปิดงาน
+      • กำลังดำเนินการ <TASK_ID>         ← ตั้งสถานะ doing
+      • แก้กำหนดส่ง <TASK_ID> <เวลา/ภาษาคน>
+      • เพิ่มโน้ต <TASK_ID> <ข้อความ>
+
+      [สิทธิ์โดยสรุป]
+      • ทุกบทบาทสามารถ "สั่งงาน" ได้
+      • การแก้งาน (สถานะ/เดดไลน์/รายละเอียด/โน้ต): ทำได้โดย
+        - เจ้าของงาน (คนที่สั่ง) หรือ
+        - บทบาท admin / supervisor / developer
+      • ลำดับสิทธิ์: developer > admin > supervisor > user
+      `}
+        </Box>
+
+        <Divider sx={{ my:2 }} />
+
+        <Typography variant="caption" color="text.secondary" display="block">
+          เคล็ดลับ: ถ้าพิมพ์สั่งงานแล้วไม่ระบุเวลา ระบบจะตั้งค่าเวลาเริ่มต้นเป็น 17:30 ของวันนั้นให้โดยอัตโนมัติ
+        </Typography>
       </Paper>
+
 
       {/* Lightbox แสดงภาพใหญ่ */}
       <Dialog open={viewer.open} onClose={closeViewer} maxWidth="md" fullWidth>
