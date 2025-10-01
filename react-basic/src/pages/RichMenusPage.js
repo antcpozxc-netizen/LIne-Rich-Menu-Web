@@ -277,8 +277,20 @@ export default function RichMenusPage() {
   const { tenantId } = useOutletContext() || {};
   const navigate = useNavigate();
   const [sp] = useSearchParams();
-  const draftId = sp.get('draft') || '';
-  const isEditing = !!draftId;
+  const draftId    = sp.get('draft') || '';        // เอกสารจริงเท่านั้น
+  const guestDraft = sp.get('guestDraft') || '';   // โหมด token ชั่วคราว (ยังไม่สร้างเอกสาร)
+  const isEditing  = !!draftId;
+  const isGuestDraftMode = !draftId && !!guestDraft;
+  // NEW: support redirect (decodeURIComponent เผื่อส่งมาจาก settings)
+  const redirect = (() => {
+    const r = sp.get('redirect');
+    try { return r ? decodeURIComponent(r) : ''; } catch { return r || ''; }
+  })();
+  // NEW: support prefill=prereg|main (จาก Task settings)
+  const prefillKind = sp.get('prefill') || '';
+
+
+
 
   const { isAuthed, ensureLogin } = useAuthx();
 
@@ -389,6 +401,47 @@ export default function RichMenusPage() {
     if (d?.periodFrom) setPeriodFrom(d.periodFrom);
     if (d?.periodTo) setPeriodTo(d.periodTo);
   }, [draftId, prefill, template.size]);
+
+  // Prefill ผ่าน query: /rich-menus/new?prefill=prereg|main
+  useEffect(() => {
+    if (draftId || !prefillKind) return; // ถ้าแก้ไขของเดิมอยู่ หรือไม่มีพรีฟิล -> ข้าม
+
+    const map = { prereg: '/static/prereg.json', main: '/static/main.json' };
+    const url = map[prefillKind];
+    if (!url) return;
+
+    (async () => {
+      try {
+        const res = await fetch(url);
+        const data = await res.json();
+
+        setTitle(data.title || '');
+
+        // ปรับ template ให้ตรง size ในไฟล์
+        if (data.size && template.size !== data.size) {
+          const found = TEMPLATES.find(t => t.size === data.size) || template;
+          setTemplate(found);
+        }
+
+        if (data.imageUrl) setImage(data.imageUrl);
+        if (data.chatBarText) setMenuBarLabel(data.chatBarText);
+
+        if (Array.isArray(data.areas) && data.areas.length) {
+          const toPct = (v) => Math.round(((Number(v) || 0) * 100) * 100) / 100;
+          const aPct = data.areas.map((a, i) => ({
+            id: `A${i + 1}`,
+            x: toPct(a.xPct), y: toPct(a.yPct),
+            w: toPct(a.wPct), h: toPct(a.hPct),
+          }));
+          setAreas(aPct);
+          setActions(data.areas.map(a => a.action || { type: 'Select' }));
+        }
+      } catch {
+        // ถ้าไฟล์หาย/พัง ก็ปล่อยให้ผู้ใช้แก้เอง
+      }
+    })();
+  }, [draftId, prefillKind, template.size]);
+
 
   useEffect(() => {
     // เลื่อนให้เห็น Action ของบล็อคที่เลือก
@@ -546,17 +599,12 @@ const buildPayload = (includeSchedule = false) => ({
 
 // --- draft: guest => local, authed => API ---
 async function onSaveDraft() {
+  // ต้อง login ถึงจะยิง API ได้ (ถ้าไม่ login เก็บ local ไว้ก่อน)
   if (!isAuthed) {
     const payload = {
       templateId: template.id,
-      title,
-      image,
-      menuBarLabel,
-      behavior,
-      areas,
-      actions,
-      periodFrom,
-      periodTo,
+      title, image, menuBarLabel, behavior,
+      areas, actions, periodFrom, periodTo,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     setSnack('Saved draft locally (Guest)');
@@ -565,9 +613,9 @@ async function onSaveDraft() {
 
   try {
     if (!tenantId) return alert('กรุณาเลือก OA ก่อน');
-    if (!image) return alert('กรุณาอัปโหลดรูปเมนู');
+    if (!image)   return alert('กรุณาอัปโหลดรูปเมนู');
 
-    // ถ้าเป็น dataURL ให้ย้ายขึ้น Storage ก่อน
+    // อัป dataURL -> Storage ถ้าจำเป็น
     let imageUrl = image;
     if (isDataUrl(image)) {
       const blob = await (await fetch(image)).blob();
@@ -583,33 +631,57 @@ async function onSaveDraft() {
     };
     const payload = { ...buildPayload(false), imageUrl };
 
+    // 🔑 ตัดสินใจจากโหมด guestDraft โดยตรง
+    const inGuestMode = !!guestDraft && !draftId;
     let res;
-    if (isEditing) {
+
+    if (!inGuestMode && !!draftId) {
+      // มีเอกสารจริงแล้ว -> แก้ไขร่าง
       res = await fetch(`/api/tenants/${tenantId}/richmenus/${draftId}`, {
         method: 'PUT',
         headers,
         body: JSON.stringify({ ...payload, action: 'draft' }),
       });
+
+      // กันกรณีเอกสารหาย/404 -> auto fallback ไปสร้างใหม่ (ใช้ guestDraft ถ้ามี)
+      if (res.status === 404) {
+        res = await fetch(`/api/tenants/${tenantId}/richmenus`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ ...payload, action: 'draft', guestDraft }),
+        });
+      }
     } else {
+      // โหมด guest -> สร้างใหม่
       res = await fetch(`/api/tenants/${tenantId}/richmenus`, {
         method: 'POST',
         headers,
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ ...payload, action: 'draft', guestDraft }),
       });
     }
 
-    const text = await res.text();
-    if (!res.ok) throw new Error(text || 'save failed');
+    const txt = await res.text();
+    let j = {}; try { j = JSON.parse(txt); } catch {}
+    if (!res.ok || j?.ok === false) throw new Error(j?.error || txt || 'save failed');
 
-    setSnack('Saved as Ready');
-    navigate(`/homepage/rich-menus?tenant=${tenantId || ''}`);
+    setSnack('Saved draft');
+
+    // ถ้าเพิ่งสร้างใหม่ -> เปลี่ยน URL เป็นโหมดแก้ไข (แทนที่จะรีเฟรช/เด้ง)
+    const newId = j?.id || j?.docId || j?.data?.id || j?.data?.docId;
+    if ((!draftId || inGuestMode) && newId) {
+      const params = new URLSearchParams(location.search);
+      params.delete('guestDraft');
+      params.set('draft', newId);
+      navigate(`${location.pathname}?${params.toString()}`, { replace: true });
+    }
   } catch (e) {
     alert('บันทึกไม่สำเร็จ: ' + (e?.message || e));
   }
 }
 
+
+
 async function onSaveReady() {
-  // ต้อง login เสมอ
   if (!isAuthed) {
     await ensureLogin(window.location.pathname + window.location.search);
     return;
@@ -619,7 +691,6 @@ async function onSaveReady() {
     if (!image) return alert('กรุณาอัปโหลดรูปเมนู');
     if (!periodFrom) return alert('กรุณาเลือก Display from ก่อน');
 
-    // อัปโหลด dataURL ถ้ามี
     let imageUrl = image;
     if (isDataUrl(image)) {
       const blob = await (await fetch(image)).blob();
@@ -635,18 +706,29 @@ async function onSaveReady() {
     };
     const payload = { ...buildPayload(true), imageUrl };
 
+    const inGuestMode = !!guestDraft && !draftId;
     let res;
-    if (isEditing) {
+
+    if (!inGuestMode && !!draftId) {
       res = await fetch(`/api/tenants/${tenantId}/richmenus/${draftId}`, {
         method: 'PUT',
         headers,
-        body: JSON.stringify({ ...payload, action: 'save' }),
+        body: JSON.stringify({ ...payload, action: 'ready' }),
       });
+
+      // กัน 404 -> สร้างใหม่ แล้วค่อยกลับหน้ารายการ
+      if (res.status === 404) {
+        res = await fetch(`/api/tenants/${tenantId}/richmenus`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ ...payload, action: 'ready', guestDraft }),
+        });
+      }
     } else {
       res = await fetch(`/api/tenants/${tenantId}/richmenus`, {
         method: 'POST',
         headers,
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ ...payload, action: 'ready', guestDraft }),
       });
     }
 
@@ -654,18 +736,24 @@ async function onSaveReady() {
     if (!res.ok) throw new Error(text || 'save failed');
 
     setSnack('Saved as Scheduled');
-    navigate(`/homepage/rich-menus?tenant=${tenantId || ''}`);
+    navigate(redirect || `/homepage/rich-menus?tenant=${tenantId || ''}`);
   } catch (e) {
     alert('บันทึกไม่สำเร็จ: ' + (e?.message || e));
   }
 }
 
 
+
   return (
     <Container sx={{ py: 3 }}>
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
         <Stack direction="row" spacing={1} alignItems="center">
-          <Button variant="outlined" onClick={() => navigate(`/homepage/rich-menus?tenant=${tenantId || ''}`)}>Back to list</Button>
+          <Button
+            variant="outlined"
+            onClick={() => navigate(redirect || `/homepage/rich-menus?tenant=${tenantId || ''}`)}
+          >
+            Back to list
+          </Button>
           <Typography variant="h4" fontWeight="bold">Rich menu</Typography>
         </Stack>
         <Stack direction="row" spacing={1}>

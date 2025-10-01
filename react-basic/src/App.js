@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "./firebase";
 
+
 const App = () => {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
