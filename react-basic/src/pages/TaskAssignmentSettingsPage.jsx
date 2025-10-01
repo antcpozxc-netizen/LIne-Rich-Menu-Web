@@ -74,6 +74,7 @@ export default function TaskAssignmentSettingsPage() {
   // ค่า config หลัก
   const [enabled, setEnabled] = useState(false);
   const [appsSheetId, setAppsSheetId] = useState('');
+  const [appsSheetIdSaved, setAppsSheetIdSaved] = useState(''); 
   const [verifiedAt, setVerifiedAt] = useState(null);
   const dirtySheet = useMemo(
     () => (appsSheetId || '').trim() !== (appsSheetIdSaved || '').trim(),
