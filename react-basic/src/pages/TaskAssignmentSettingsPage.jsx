@@ -75,7 +75,10 @@ export default function TaskAssignmentSettingsPage() {
   const [enabled, setEnabled] = useState(false);
   const [appsSheetId, setAppsSheetId] = useState('');
   const [verifiedAt, setVerifiedAt] = useState(null);
-
+  const dirtySheet = useMemo(
+    () => (appsSheetId || '').trim() !== (appsSheetIdSaved || '').trim(),
+    [appsSheetId, appsSheetIdSaved]
+  );
   // รายการ Rich menus และตัวเลือกก่อน/หลังลงทะเบียน
   const [richMenus, setRichMenus] = useState([]);
   const [preRichMenuId, setPreRichMenuId] = useState('');
@@ -173,6 +176,7 @@ export default function TaskAssignmentSettingsPage() {
           const d = j1.data || {};
           setEnabled(!!d.enabled);
           setAppsSheetId(d.appsSheetId || '');
+          setAppsSheetIdSaved(d.appsSheetId || '');
           // รองรับ timestamp
           const ts = d.verifiedAt && (d.verifiedAt._seconds ? new Date(d.verifiedAt._seconds * 1000) : null);
           setVerifiedAt(ts ? 'ล่าสุด: ' + ts.toLocaleString() : null);
@@ -260,13 +264,19 @@ export default function TaskAssignmentSettingsPage() {
   // Verify: ให้ server ใช้ .env ติดต่อ Apps Script
   const onVerify = async () => {
     try {
+      if (!String(appsSheetId || '').trim()) {
+        setMsg({ type:'warning', text:'กรุณากรอก และ Save Google Sheet ID ก่อน Verify' });
+        return;
+      }
+      if (dirtySheet) {
+        setMsg({ type:'warning', text:'คุณแก้ไข Google Sheet ID แล้ว ยังไม่ได้กด Save' });
+        return;
+      }
       setVerifying(true);
       setMsg(null);
       const h = await authHeader();
       const r = await fetch(`/api/tenants/${tid}/integrations/taskbot/verify`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...h },
-        body: JSON.stringify({}),
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...h }, body: JSON.stringify({})
       });
       const j = await safeJson(r);
       if (r.ok && j.ok) {
@@ -381,7 +391,13 @@ export default function TaskAssignmentSettingsPage() {
             <code>https://line-rich-menu-web.onrender.com/webhook/line</code>
           </Box>
           <Typography variant="body2" color="text.secondary">
-            ไปที่ <i>Messaging API → Webhook settings</i> แล้ว <b>เปิด (Enable)</b> และกด <b>Verify</b> ให้ขึ้น 200
+            ไปที่ <i>Messaging API → กรอก Webhook URL</i> แล้ว <b>กดปุ่ม seve </b>
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            ไปที่ <i>Response settings → Webhook settings</i> แล้ว <b>เปิด (Enable) WebHook and Chat</b>
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            กดปุ่ม Verifly Conection เพื่อตรวจการเชื่อมต่อ 
           </Typography>
           <Typography variant="caption" color="text.secondary" display="block">
             * เซิร์ฟเวอร์นี้รองรับ URL เดียวสำหรับทุก OA: <code>/webhook/line</code>
@@ -406,22 +422,23 @@ export default function TaskAssignmentSettingsPage() {
                   const next = e.target.checked;
                   const prev = enabled;
 
-                  // ✅ กันพลาด: ต้องล็อกอินและต้องกรอก Google Sheet ID ก่อนเปิดใช้
+                  // ✅ เงื่อนไขก่อนเปิดใช้งาน
                   if (next) {
                     if (!authed) {
                       setMsg({ type: 'warning', text: 'กรุณาเข้าสู่ระบบก่อนเปิดใช้งาน' });
-                      setEnabled(prev);
-                      return;
+                      setEnabled(prev); return;
                     }
                     if (!String(appsSheetId || '').trim()) {
-                      setMsg({ type: 'warning', text: 'กรุณากรอก Google Sheet ID ก่อนเปิดใช้งาน' });
-                      setEnabled(prev);
-                      return;
+                      setMsg({ type: 'warning', text: 'กรุณาเพิ่ม Google Sheet ID แล้วกด Save ก่อนเปิดใช้งาน' });
+                      setEnabled(prev); return;
+                    }
+                    if (dirtySheet) {
+                      setMsg({ type: 'warning', text: 'คุณแก้ไข Google Sheet ID แล้ว ยังไม่ได้กด Save' });
+                      setEnabled(prev); return;
                     }
                     if (!verifiedAt) {
-                      setMsg({type:'warning', text:'กรุณา Verify กับ Google Apps Script ก่อนเปิดใช้งาน'});
-                      setEnabled(prev);
-                      return;
+                      setMsg({ type: 'warning', text: 'กรุณา Verify กับ Google Apps Script ให้สำเร็จก่อนเปิดใช้งาน' });
+                      setEnabled(prev); return;
                     }
                   }
 
@@ -453,7 +470,7 @@ export default function TaskAssignmentSettingsPage() {
                           ensurePreset: true,
                         }),
                       });
-                      const j2 = await r2.json();
+                      const j2 = await safeJson(r2);
                       if (!j2?.ok) throw new Error(j2?.error || 'apply_failed');
 
                       setEnabled(true);
@@ -465,7 +482,7 @@ export default function TaskAssignmentSettingsPage() {
                         headers: { 'Content-Type': 'application/json', ...h },
                         body: JSON.stringify({}),
                       });
-                      const j = await r.json();
+                      const j = await safeJson(r);
                       if (!j?.ok) throw new Error(j?.error || 'disable_failed');
 
                       setEnabled(false);
@@ -477,16 +494,39 @@ export default function TaskAssignmentSettingsPage() {
                     console.error('[taskbot] toggle error:', err);
                   }
                 }}
-                disabled={loading || !authed || !String(appsSheetId || '').trim()}
+                // 🔒 ปิดสวิตช์ถ้ายังไม่เข้าเงื่อนไขครบ (รวม Dirty Sheet และยังไม่ Verify)
+                disabled={
+                  loading ||
+                  !authed ||
+                  !String(appsSheetId || '').trim() ||
+                  dirtySheet ||
+                  !verifiedAt
+                }
               />
             }
             label={enabled ? 'Enabled' : 'Disabled'}
           />
 
-          {/* เงื่อนไขเปิดใช้งาน */}
+          {/* ข้อความช่วยเตือนใต้สวิตช์ */}
+          {!String(appsSheetId || '').trim() && (
+            <Typography variant="caption" color="error" display="block">
+              กรุณาเพิ่ม Google Sheet ID เข้าไปด้วยนะ แล้วกด Save
+            </Typography>
+          )}
+          {dirtySheet && (
+            <Typography variant="caption" color="error" display="block">
+              คุณแก้ไข Google Sheet ID แล้ว ยังไม่ได้กด Save
+            </Typography>
+          )}
+          {!dirtySheet && !!String(appsSheetId || '').trim() && !verifiedAt && (
+            <Typography variant="caption" color="warning.main" display="block">
+              ใส่ Google Sheet ID แล้ว โปรดกด Verify Connection ให้สำเร็จก่อนเปิดใช้งาน
+            </Typography>
+          )}
           <Typography variant="caption" color="text.secondary">
-            เงื่อนไขการเปิดใช้งาน: ต้อง <b>เข้าสู่ระบบ</b> และกรอก <b>Google Sheet ID</b> ให้เรียบร้อย
+            เงื่อนไขการเปิดใช้งาน: ต้อง <b>เข้าสู่ระบบ</b>, ใส่และ<b>กด Save</b> Google Sheet ID แล้ว และ<b>Verify Connection</b> สำเร็จ
           </Typography>
+
         </Stack>
       </Paper>
 
