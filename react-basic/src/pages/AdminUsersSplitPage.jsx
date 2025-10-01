@@ -20,7 +20,8 @@ import { listUsers, setUserRole, setUserStatus, deleteUser, updateUserProfile } 
 // ---------- helpers / constants ----------
 const ROLE_RANK = { user: 1, admin: 2, supervisor: 3, developer: 4 };
 const ORDERED_ROLES = ['developer', 'supervisor', 'admin', 'user'];
-
+// helper: normalize user_id ให้รูปแบบเดียวกัน
+const normalizeId = (id) => String(id || '').trim().replace(/^line:/, '');
 const colSx = {
   id:      { width:{ xs:130, sm:220 }, maxWidth:260, whiteSpace:'nowrap' },
   username:{ width:{ xs:120, md:160 }, whiteSpace:'nowrap' },
@@ -59,7 +60,7 @@ const TableBlock = memo(function TableBlock(props) {
   const {
     title, items, onSort, canEditProfile, canEditRoleStatus, getAllowedRoles, doRole, doStatus,
     editingId, draftUsername, draftName, setDraftUsername, setDraftName,
-    saveEdit, cancelEdit, startEdit, copyId, busy
+    saveEdit, cancelEdit, startEdit, copyId, busy, selfId
   } = props;
 
   // IME guard (ไทย/ญี่ปุ่น ฯลฯ)
@@ -214,7 +215,7 @@ const TableBlock = memo(function TableBlock(props) {
                       </Stack>
                     )}
                     {!editableProfile && (
-                      <Tooltip title={`ห้ามแก้ไขผู้ใช้ระดับเท่ากัน/สูงกว่า • myId=${myId || '-'} • rowId=${normalizeId(u?.user_id) || '-'}`}>
+                      <Tooltip title={`ห้ามแก้ไขผู้ใช้ระดับเท่ากัน/สูงกว่า • myId=${selfId || '-'} • rowId=${normalizeId(u?.user_id) || '-'}`}>
                         <span><Button size="small" disabled>แก้ไข</Button></span>
                       </Tooltip>
                     )}
@@ -241,7 +242,6 @@ export default function AdminUsersSplitPage() {
   const { data } = useMe();
   const myRole = (data?.user?.role || 'user').toLowerCase();
   const myRank = ROLE_RANK[myRole] || 0;
-  const normalizeId = (id) => String(id || '').trim().replace(/^line:/,'');  // helper ใช้ซ้ำ
   const myId   = normalizeId(
      data?.session?.uid ||          // จากคุกกี้เซสชันฝั่งเซิร์ฟเวอร์
     data?.user?.user_id || ''      // เผื่อ hook คืน user_id มาด้วย
@@ -504,6 +504,7 @@ export default function AdminUsersSplitPage() {
         copyId={copyId}
         busy={busy}
         setConfirm={setConfirm}
+        selfId={myId}
       />
 
       <TableBlock
@@ -531,6 +532,7 @@ export default function AdminUsersSplitPage() {
         copyId={copyId}
         busy={busy}
         setConfirm={setConfirm}
+        selfId={myId}
       />
 
       <TableBlock
@@ -558,6 +560,7 @@ export default function AdminUsersSplitPage() {
         copyId={copyId}
         busy={busy}
         setConfirm={setConfirm}
+        selfId={myId}
       />
 
       <Dialog open={!!confirm} onClose={()=>setConfirm(null)}>
