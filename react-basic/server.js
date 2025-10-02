@@ -5125,15 +5125,14 @@ app.post('/api/admin/backfill-bot-user-id', requireFirebaseAuth, requireAdmin, a
 });
 
 // ======= Roles Management (Admin/Developer Console) =======
+// ---------- helpers ----------
 function hasRoleFromDoc(snap, role) {
+  if (!snap?.exists) return false;
   const r = snap.get('role');
-  const isAdminFlag = !!snap.get('isAdmin');
-  if (role === 'developer') return r === 'developer';
-  if (role === 'headAdmin') return r === 'headAdmin';
-  if (role === 'admin')     return r === 'admin' || isAdminFlag;
-  return r === 'user' || (!r && !isAdminFlag);
+  if (r) return r === role;
+  if (role === 'admin') return !!snap.get('isAdmin');
+  return false;
 }
-
 function actorRoleFromReqUser(decoded) {
   if (decoded?.dev)  return 'developer';
   if (decoded?.head) return 'headAdmin';
@@ -5141,11 +5140,84 @@ function actorRoleFromReqUser(decoded) {
   return null;
 }
 
+// ดึง tenant จาก query/header (ถ้าไม่ส่งมา = global)
+function getTenantFromReq(req) {
+  return String(req.query.tenant || req.get('X-Tenant-Id') || '').trim() || null;
+}
+// อ้างอิง collection users ตามโหมด
+function usersColRef(db, tenantId) {
+  return tenantId
+    ? db.collection('tenants').doc(tenantId).collection('users')
+    : db.collection('users');
+}
+// toMillis รองรับหลายรูปแบบ timestamp
+function toMillis(v) {
+  if (!v) return 0;
+  if (typeof v === 'number') return v;
+  if (typeof v === 'string') {
+    const t = Date.parse(v);
+    return Number.isNaN(t) ? 0 : t;
+  }
+  if (v.toMillis) return v.toMillis();
+  if (v._seconds) return v._seconds * 1000 + (v._nanoseconds ? Math.floor(v._nanoseconds / 1e6) : 0);
+  return 0;
+}
+// แปลงเอกสารผู้ใช้ให้เข้ากับ UI
+function shapeUser(id, x = {}) {
+  const roleTop =
+    x.role ||
+    (x.line && x.line.role) ||
+    (x.isAdmin ? 'admin' : 'user');
+
+  const displayName =
+    x.displayName ||
+    (x.line && x.line.displayName) ||
+    x.name || x.username || '';
+
+  const photoURL =
+    x.photoURL ||
+    (x.line && (x.line.pictureUrl || x.line.pictureURL)) ||
+    '';
+
+  const isAdmin = typeof x.isAdmin === 'boolean'
+    ? x.isAdmin
+    : ['admin','headAdmin','developer'].includes(String(roleTop));
+
+  const updatedAt = x.updatedAt || (x.line && x.line.updatedAt) || null;
+
+  return {
+    id,
+    displayName,
+    photoURL,
+    role: roleTop || 'user',
+    isAdmin: !!isAdmin,
+    updatedAt,
+    _updatedAtMs: toMillis(updatedAt),
+  };
+}
+
+// โหลดบทบาทของผู้เรียก (claims -> tenant doc -> root doc)
 async function loadActorRole(req) {
   const viaClaims = actorRoleFromReqUser(req.user) || null;
   if (viaClaims) return viaClaims;
+
+  const db = admin.firestore();
+  const uid = req.user.uid;
+  const tenantId = getTenantFromReq(req);
+
+  // ถ้ามี tenant ให้ลองดูใต้ tenant ก่อน
+  if (tenantId) {
+    const tSnap = await db.collection('tenants').doc(tenantId).collection('users').doc(uid).get().catch(()=>null);
+    if (tSnap && tSnap.exists) {
+      if (hasRoleFromDoc(tSnap, 'developer')) return 'developer';
+      if (hasRoleFromDoc(tSnap, 'headAdmin')) return 'headAdmin';
+      if (hasRoleFromDoc(tSnap, 'admin'))     return 'admin';
+      return 'user';
+    }
+  }
+  // fallback มาที่ root
   try {
-    const snap = await admin.firestore().doc(`users/${req.user.uid}`).get();
+    const snap = await db.doc(`users/${uid}`).get();
     if (hasRoleFromDoc(snap, 'developer')) return 'developer';
     if (hasRoleFromDoc(snap, 'headAdmin')) return 'headAdmin';
     if (hasRoleFromDoc(snap, 'admin'))     return 'admin';
@@ -5153,18 +5225,65 @@ async function loadActorRole(req) {
   } catch { return 'user'; }
 }
 
-// ✅ list users (developer/headAdmin/admin เท่านั้น)
+// ---- helper: รวม users จาก 2 ที่ (global + per-tenant) แล้ว dedupe ----
+async function listAllUsers({ tenantId } = {}) {
+  const db = admin.firestore();
+
+  // 1) global users
+  let globalItems = [];
+  try {
+    const gSnap = await db.collection('users').orderBy('updatedAt', 'desc').limit(500).get();
+    globalItems = gSnap.docs.map(d => ({ id: d.id, ...d.data(), _src: 'global' }));
+  } catch {
+    const gSnap = await db.collection('users').limit(500).get();
+    globalItems = gSnap.docs.map(d => ({ id: d.id, ...d.data(), _src: 'global' }));
+  }
+
+  // 2) tenant users (ถ้ามี tenantId)
+  let tenantItems = [];
+  if (tenantId) {
+    try {
+      const tSnap = await db.collection('tenants').doc(tenantId).collection('users')
+        .orderBy('updatedAt', 'desc').limit(500).get();
+      tenantItems = tSnap.docs.map(d => ({ id: d.id, ...d.data(), _src: 'tenant' }));
+    } catch {
+      const tSnap = await db.collection('tenants').doc(tenantId).collection('users').limit(500).get().catch(()=>null);
+      if (tSnap?.docs?.length) {
+        tenantItems = tSnap.docs.map(d => ({ id: d.id, ...d.data(), _src: 'tenant' }));
+      }
+    }
+  }
+
+  // รวม + ตัดซ้ำ (ให้ tenant ทับ global หากซ้ำ uid)
+  const byId = new Map();
+  for (const u of [...globalItems, ...tenantItems]) byId.set(u.id, u);
+
+  // map ให้ตรง UI
+  const rows = [...byId.values()].map(u => shapeUser(u.id, u));
+
+  // sort ล่าสุดก่อน
+  rows.sort((a, b) => b._updatedAtMs - a._updatedAtMs);
+
+  return rows;
+}
+
+// ================== ROUTES ==================
+
+// ✅ ใช้ Firebase ID token (Authorization: Bearer …)
 app.get('/api/admin/users', requireFirebaseAuth, async (req, res) => {
   try {
-    const role = await loadActorRole(req);
-    if (!['developer', 'headAdmin', 'admin'].includes(role)) {
+    const actor = await loadActorRole(req);
+    if (!['developer', 'headAdmin', 'admin'].includes(actor)) {
       return res.status(403).json({ error: 'forbidden' });
     }
-    const q = await admin.firestore().collection('users').orderBy('updatedAt', 'desc').limit(500).get();
-    const items = q.docs.map(d => ({ id: d.id, ...d.data() }));
-    res.json({ ok: true, items });
+
+    // รองรับทั้งโหมด tenant และ global
+    const tenantId = getTenantFromReq(req);
+    const items = await listAllUsers({ tenantId });
+    return res.json({ ok: true, items });
   } catch (e) {
-    res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
+    console.error('/api/admin/users error', e);
+    return res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
   }
 });
 
@@ -5183,107 +5302,106 @@ app.post('/api/admin/users/:uid/role', requireFirebaseAuth, async (req, res) => 
       return res.status(400).json({ error: 'invalid_role' });
     }
 
-    const targetRef = admin.firestore().doc(`users/${uid}`);
-    const targetSnap = await targetRef.get();
-    const targetRole = targetSnap.exists ? (
-      hasRoleFromDoc(targetSnap, 'developer') ? 'developer' :
-      hasRoleFromDoc(targetSnap, 'headAdmin') ? 'headAdmin' :
-      hasRoleFromDoc(targetSnap, 'admin')     ? 'admin'     : 'user'
-    ) : 'user';
+    const db = admin.firestore();
+    const tenantId = getTenantFromReq(req);
+    const primaryRef = usersColRef(db, tenantId).doc(uid);
+
+    // อ่าน role ปัจจุบัน (เพื่อบังคับกติกาเดิม)
+    const currentSnap = await primaryRef.get().catch(()=>null);
+    const currentRole = currentSnap && currentSnap.exists
+      ? (currentSnap.get('role') || (currentSnap.get('isAdmin') ? 'admin' : 'user'))
+      : 'user';
 
     // ---- permission rules (developer > headAdmin > admin) ----
     if (actor === 'admin') {
-      // admin: ห้ามแตะ headAdmin/developer
-      if (['developer','headAdmin'].includes(targetRole)) {
+      if (['developer','headAdmin'].includes(currentRole)) {
         return res.status(403).json({ error: 'admin_cannot_touch_higher' });
       }
-      // admin: ห้าม downgrade admin
-      if (targetRole === 'admin' && role !== 'admin') {
+      if (currentRole === 'admin' && role !== 'admin') {
         return res.status(403).json({ error: 'admin_cannot_downgrade_admin' });
       }
-      // admin: ห้ามแต่งตั้ง headAdmin/developer
       if (['headAdmin','developer'].includes(role)) {
         return res.status(403).json({ error: 'admin_cannot_assign_higher' });
       }
     }
-
     if (actor === 'headAdmin') {
-      // headAdmin: ห้ามแตะ developer
-      if (targetRole === 'developer' || role === 'developer') {
+      if (currentRole === 'developer' || role === 'developer') {
         return res.status(403).json({ error: 'head_cannot_touch_developer' });
       }
-      // นอกนั้นทำได้ (ตั้ง/ปลด headAdmin? อนุญาตเฉพาะตัวเองหรือนโยบายคุณ)
-      // ถ้าอยาก "ห้าม head ปรับ head อื่น" เพิ่ม guard นี้:
-      // if (targetRole === 'headAdmin' && role !== 'headAdmin') {
+      // ถ้าจะห้าม head ปรับ head อื่น เปิด guard ด้านล่าง:
+      // if (currentRole === 'headAdmin' && role !== 'headAdmin') {
       //   return res.status(403).json({ error: 'head_cannot_downgrade_head' });
       // }
     }
 
-    // developer: ทำได้ทั้งหมด
     const now = admin.firestore.FieldValue.serverTimestamp();
-    await targetRef.set({
-      role,
-      isAdmin: (role === 'admin' || role === 'headAdmin' || role === 'developer') ? true : false,
-      updatedAt: now
-    }, { merge: true });
+    const isAdmin = ['admin','headAdmin','developer'].includes(role);
+
+    // เขียนหลัก
+    await primaryRef.set({ role, isAdmin, updatedAt: now }, { merge: true });
+
+    // (ตัวเลือก) mirror ไป root เมื่อทำงานในโหมด tenant — ปิด/เปิดได้
+    const MIRROR_TO_ROOT = true;
+    if (tenantId && MIRROR_TO_ROOT) {
+      await db.collection('users').doc(uid).set({ role, isAdmin, updatedAt: now }, { merge: true });
+    }
 
     // sync custom claims
     const claims = {
       dev:  role === 'developer',
       head: role === 'headAdmin',
-      admin: (role === 'admin' || role === 'headAdmin' || role === 'developer'),
+      admin: isAdmin,
     };
     await admin.auth().setCustomUserClaims(uid, claims).catch(()=>{});
 
     res.json({ ok: true });
   } catch (e) {
-    res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
+    return res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
   }
 });
 
 // ======= Delete user (dev/head/admin ตามสิทธิ์) =======
 app.delete('/api/admin/users/:uid', requireFirebaseAuth, async (req, res) => {
   try {
-    const actorRole = await loadActorRole(req);         // 'developer' | 'headAdmin' | 'admin' | 'user'
+    const actorRole = await loadActorRole(req);
     const targetUid = req.params.uid;
 
     if (!targetUid) return res.status(400).json({ error: 'missing_target' });
     if (targetUid === req.user.uid) {
       return res.status(400).json({ error: 'cannot_delete_self' });
     }
-
-    // อนุญาตเฉพาะ dev/head/admin เข้าถึง endpoint นี้
     if (!['developer', 'headAdmin', 'admin'].includes(actorRole)) {
       return res.status(403).json({ error: 'forbidden' });
     }
 
-    // อ่าน role ของ target จาก Firestore (ถ้าไม่มี doc → user)
-    const tRef = admin.firestore().doc(`users/${targetUid}`);
-    const tSnap = await tRef.get();
-    const targetRole = tSnap.exists
-      ? (tSnap.get('role') || (tSnap.get('isAdmin') ? 'admin' : 'user'))
+    const db = admin.firestore();
+    const tenantId = getTenantFromReq(req);
+    const ref = usersColRef(db, tenantId).doc(targetUid);
+    const snap = await ref.get().catch(()=>null);
+
+    const targetRole = snap && snap.exists
+      ? (snap.get('role') || (snap.get('isAdmin') ? 'admin' : 'user'))
       : 'user';
 
-    // ตรวจสิทธิ์ตามบทบาทผู้กระทำ
     let canDelete = false;
-    if (actorRole === 'developer') {
-      canDelete = true; // dev ลบได้ทุกคน
-    } else if (actorRole === 'headAdmin') {
-      // head admin: ลบ admin / user ได้
-      canDelete = (targetRole === 'admin' || targetRole === 'user');
-    } else if (actorRole === 'admin') {
-      // admin: ลบได้เฉพาะ user
-      canDelete = (targetRole === 'user');
-    }
+    if (actorRole === 'developer') canDelete = true;
+    else if (actorRole === 'headAdmin') canDelete = (targetRole === 'admin' || targetRole === 'user');
+    else if (actorRole === 'admin') canDelete = (targetRole === 'user');
 
     if (!canDelete) {
       return res.status(403).json({ error: 'not_allowed_to_delete_target' });
     }
 
-    // ลบ Firestore doc
-    await tRef.delete().catch(() => {});
+    // ลบหลัก
+    await ref.delete().catch(() => {});
 
-    // ลบบัญชีใน Firebase Auth (ถ้า uid นี้เป็น user จริงใน Auth)
+    // (ตัวเลือก) mirror ลบที่ root เมื่อโหมด tenant — ปรับตามต้องการ
+    const MIRROR_DELETE_ON_ROOT = true;
+    if (tenantId && MIRROR_DELETE_ON_ROOT) {
+      await db.collection('users').doc(targetUid).delete().catch(()=>{});
+    }
+
+    // ลบใน Firebase Auth (optional)
     await admin.auth().deleteUser(targetUid).catch(() => {});
 
     return res.json({ ok: true });
@@ -5292,6 +5410,7 @@ app.delete('/api/admin/users/:uid', requireFirebaseAuth, async (req, res) => {
     return res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
   }
 });
+
 
 
 

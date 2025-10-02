@@ -181,9 +181,19 @@ export default function TaskAssignmentSettingsPage() {
           setEnabled(!!d.enabled);
           setAppsSheetId(d.appsSheetId || '');
           setAppsSheetIdSaved(d.appsSheetId || '');
-          // รองรับ timestamp
-          const ts = d.verifiedAt && (d.verifiedAt._seconds ? new Date(d.verifiedAt._seconds * 1000) : null);
-          setVerifiedAt(ts ? 'ล่าสุด: ' + ts.toLocaleString() : null);
+          // รองรับหลายรูปแบบ: Firestore Timestamp / millis / ISO string
+          let vAt = null;
+          if (d.verifiedAt) {
+            if (d.verifiedAt._seconds) {
+              vAt = new Date(d.verifiedAt._seconds * 1000);
+            } else if (typeof d.verifiedAt === 'number') {
+              vAt = new Date(d.verifiedAt);
+            } else if (typeof d.verifiedAt === 'string') {
+              const maybe = new Date(d.verifiedAt);
+              if (!isNaN(maybe.getTime())) vAt = maybe;
+            }
+          }
+          setVerifiedAt(vAt ? ('ล่าสุด: ' + vAt.toLocaleString()) : null);
 
           // อ่านค่า rich menu ที่บันทึกไว้ (ถ้ามี)
           setPreRichMenuId(d.preRichMenuId || '');
@@ -237,6 +247,8 @@ export default function TaskAssignmentSettingsPage() {
         return;
       }
       setMsg({ type: 'success', text: 'บันทึกแล้ว ✅' });
+      // ✅ สำคัญ: sync state ที่ “บันทึกแล้ว” เพื่อตัด dirty flag
+      setAppsSheetIdSaved((appsSheetId || '').trim());
 
       // ถ้าเปิดใช้งาน → apply (ให้สร้าง preset อัตโนมัติได้)
       if (enabled) {
