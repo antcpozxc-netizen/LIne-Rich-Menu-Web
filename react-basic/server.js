@@ -437,10 +437,10 @@ app.get('/api/session/me', requireAuth, (req,res) => {
 });
 
 // 4) (ตัวอย่าง) API ที่ต้องการ role สูง
-app.get('/api/admin/users', requireRole(['developer','admin','supervisor']), async (req,res)=>{
-  // TODO: ดึงข้อมูลจริงตาม req.user.tenant
-  res.json({ ok:true, items:[], tenant: req.user.tenant });
-});
+// app.get('/api/admin/users', requireRole(['developer','admin','supervisor']), async (req,res)=>{
+//   // TODO: ดึงข้อมูลจริงตาม req.user.tenant
+//   res.json({ ok:true, items:[], tenant: req.user.tenant });
+// });
 
 
 
