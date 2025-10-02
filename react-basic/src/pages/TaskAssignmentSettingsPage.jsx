@@ -72,7 +72,7 @@ export default function TaskAssignmentSettingsPage() {
     const unsub = onAuthStateChanged(getAuth(), (u) => setAuthed(!!u));
     return unsub;
   }, []);
-  const canEnable = authed && !!(getAuth().currentUser) && !!(String(localStorage.getItem('activeTenantId') || '').trim());
+  // const canEnable = authed && !!(getAuth().currentUser) && !!(String(localStorage.getItem('activeTenantId') || '').trim());
 
   // ค่า config หลัก
   const [enabled, setEnabled] = useState(false);
@@ -412,13 +412,13 @@ export default function TaskAssignmentSettingsPage() {
             <code>https://line-rich-menu-web.onrender.com/webhook/line</code>
           </Box>
           <Typography variant="body2" color="text.secondary">
-            ไปที่ <i>Messaging API → กรอก Webhook URL</i> แล้ว <b>กดปุ่ม seve </b>
+            ไปที่ <i>Messaging API → กรอก Webhook URL</i> แล้ว <b>กดปุ่ม save </b>
           </Typography>
           <Typography variant="body2" color="text.secondary">
             ไปที่ <i>Response settings → Webhook settings</i> แล้ว <b>เปิด (Enable) WebHook and Chat</b>
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            กดปุ่ม Verifly Conection เพื่อตรวจการเชื่อมต่อ 
+            กดปุ่ม Verifly Connection เพื่อตรวจการเชื่อมต่อ 
           </Typography>
           <Typography variant="caption" color="text.secondary" display="block">
             * เซิร์ฟเวอร์นี้รองรับ URL เดียวสำหรับทุก OA: <code>/webhook/line</code>
