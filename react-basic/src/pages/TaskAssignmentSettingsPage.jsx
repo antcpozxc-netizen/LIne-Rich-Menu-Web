@@ -29,6 +29,9 @@ import manageUsersImg3   from '../assets/examples/manage-users-card3.jpg';
 import manageUsersImg4   from '../assets/examples/manage-users-card4.jpg';
 import manageUsersImg5   from '../assets/examples/manage-users-card5.jpg';
 
+// ตัวอย่างรูป (คงที่)
+import sheetIdHelp from '../assets/examples/google-sheet-id-help.png'; // ← ADD
+
 
 // ---------- utils ----------
 function getActiveTenantId() {
@@ -371,6 +374,23 @@ export default function TaskAssignmentSettingsPage() {
         <SettingsIcon fontSize="small" />
         <Typography variant="h5">Task Assignment</Typography>
       </Stack>
+      {/* === NEW: ภาพรวมการทำงาน & ประโยชน์การใช้งาน (วางเหนือข้อความ "หน้านี้ตั้งค่า…") === */}
+      <Paper variant="outlined" sx={{ p:2 }}> {/* NEW */}
+        <Stack spacing={0.75}>
+          <Typography variant="subtitle1" fontWeight={700}>ภาพรวมการทำงาน</Typography>
+          <Typography variant="body2" color="text.secondary">
+            บอทช่วย “สั่งงาน-ติดตามงาน” ผ่าน LINE โดยบันทึกงานลง Google Sheets ของ OA นี้โดยตรง
+            ผู้ใช้พิมพ์คำสั่งภาษาคน (เช่น “@po ทำรายงาน พรุ่งนี้ 17:30”) ระบบจะสร้างงาน กำหนดผู้รับผิดชอบ
+            เดดไลน์ และแจ้งเตือนอัตโนมัติ พร้อมลิงก์ไปหน้าเว็บเพื่อแก้ไข/ตรวจสอบได้ทันที
+          </Typography>
+          <Typography variant="subtitle1" fontWeight={700} sx={{ mt:0.5 }}>ประโยชน์การใช้งาน</Typography>
+          <Typography variant="body2" color="text.secondary">
+            • ลดความวุ่นวายในการตามงาน (มีสถานะ/กำหนดส่งชัดเจน) • ใช้งานง่ายผ่านแชท •
+            ข้อมูลเป็นของ OA นี้ 1:1 ในชีท • รองรับบทบาท/สิทธิ์ • เปิด/ปิดและปรับค่า Rich menu ได้จากหน้านี้
+          </Typography>
+        </Stack>
+      </Paper>
+      {/* === /NEW === */}
       <Typography variant="body2" color="text.secondary">
         หน้านี้ตั้งค่าเฉพาะ Google Sheet และ Rich menu ของ OA นี้เท่านั้น
         (Apps Script URL / Shared Key ตั้งที่ฝั่งเซิร์ฟเวอร์ผ่านไฟล์ <code>.env</code>)
@@ -554,6 +574,30 @@ export default function TaskAssignmentSettingsPage() {
           <Divider />
           <Stack spacing={0.5}>
             <Typography variant="body2"><strong>วิธีหาค่า Google Sheet ID</strong></Typography>
+            {/* ตัวอย่างภาพตำแหน่งของ Google Sheet ID (คงที่) */}
+            <Box sx={{ mt: 1.5 }}>
+              <Typography variant="body2" fontWeight={700} sx={{ mb: 1 }}>
+                ตัวอย่างภาพตำแหน่งของ Google Sheet ID
+              </Typography>
+              <Box
+                component="img"
+                src={sheetIdHelp}
+                alt="ตัวอย่างตำแหน่ง Google Sheet ID"
+                sx={{
+                  width: '100%',
+                  maxHeight: 360,
+                  objectFit: 'contain',
+                  borderRadius: 2,
+                  border: '1px solid #e0e0e0',
+                  cursor: 'zoom-in',
+                  backgroundColor: '#fafafa'
+                }}
+                onClick={() => openViewer(sheetIdHelp, 'ตัวอย่างตำแหน่ง Google Sheet ID')}
+              />
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                คลิกที่รูปเพื่อขยายดู
+              </Typography>
+            </Box>
             <Typography variant="body2">
               1) เปิดสเปรดชีตใน Google Sheets แล้วดูที่ URL เช่น&nbsp;
               <em>https://docs.google.com/spreadsheets/d/<b>1AbCDef…XYZ</b>/edit#gid=0</em>
