@@ -1510,12 +1510,16 @@ async function getTaskById(tenantRef, task_id) {
 async function updateTaskFields(tenantRef, taskId, patch) {
   const cur = await getTaskById(tenantRef, taskId);
   if (!cur) throw new Error('task not found: ' + taskId);
+
+  const assignerId = cur.assigner_id || cur.assignerId || '';
+  const assigneeId = cur.assignee_id || cur.assigneeId || '';
+
   const merged = {
-    task_id: cur.task_id,
+    task_id:       cur.task_id,
     assigner_name: cur.assigner_name || '',
-    assigner_id:   cur.assigner_id || '',
+    assigner_id:   assignerId,
     assignee_name: cur.assignee_name || '',
-    assignee_id:   cur.assignee_id || '',
+    assignee_id:   assigneeId,
     task_detail:   cur.task_detail || '',
     status:        cur.status || 'pending',
     created_date:  cur.created_date || new Date().toISOString(),
@@ -1524,9 +1528,11 @@ async function updateTaskFields(tenantRef, taskId, patch) {
     note:          cur.note || '',
     ...patch
   };
+
   await callAppsScriptForTenant(tenantRef, 'upsert_task', merged);
   return merged;
 }
+
 
 async function resolveAssignee(tenantRef, mention) {
   const key = String(mention || '').trim().toLowerCase();
@@ -1693,12 +1699,21 @@ async function getUserRole(user_id){
     return String(r?.user?.role || 'user').toLowerCase();
   }catch(_){ return 'user'; }
 }
-async function canModifyTask(actorId, task){
+// ใส่ tenantRef ด้วย เพราะ getUserRole ต้องใช้
+async function canModifyTask(tenantRef, actorId, task) {
   if (!task) return false;
-  if (actorId === task.assigner_id) return true; // เจ้าของงาน
-  const role = await getUserRole(actorId);
-  return ['admin','supervisor','developer'].includes(role);
+
+  const assignerId = String(task.assigner_id || task.assignerId || '');
+  const assigneeId = String(task.assignee_id || task.assigneeId || '');
+
+  // อนุญาตทั้งผู้สั่งและผู้รับ
+  if (String(actorId) === assignerId || String(actorId) === assigneeId) return true;
+
+  // สิทธิ์ตามบทบาท
+  const role = (await getUserRole(tenantRef, actorId)) || '';
+  return ['developer','admin','supervisor'].includes(role.toLowerCase());
 }
+
 
 // ── Pager (ตาราง Flex + ปุ่มเลื่อนหน้า)
 const pagerStore = new Map(); // key: userId → { key, rows, page, title, pageSize }
@@ -4862,12 +4877,10 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
         return reply(replyToken, 'ไม่พบบันทึกงานนั้นครับ', null, tenantRef);
       }
 
-      // ✅ allow ผู้สั่งงานด้วย
-      const allowed =
-        userId === (t.assigner_id || '') || (await canModifyTask(tenantRef, userId, t));
-
+      // 2) เช็กสิทธิ์
+      const allowed = await canModifyTask(tenantRef, userId, t);
       if (!allowed) {
-        return reply(replyToken, 'สิทธิ์ไม่พอในการส่งเตือนงานนี้', null, tenantRef);
+        return reply(replyToken, 'สิทธิ์ไม่พอในการแก้สถานะงานนี้', null, tenantRef);
       }
 
       // 3) อัปเดตสถานะ
@@ -4878,15 +4891,16 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
 
       await reply(replyToken, `อัปเดตสถานะ ${st.taskId} → ${st.status.toUpperCase()}`, null, tenantRef);
 
-      // 4) (ไม่บังคับ) แจ้งอีกฝั่งให้รู้ความคืบหน้า
+      // 4) แจ้งอีกฝั่ง
       const otherId =
-        userId === t.assignee_id ? t.assigner_id :
-        userId === t.assigner_id ? t.assignee_id : '';
+        userId === (t.assignee_id || t.assigneeId) ? (t.assigner_id || t.assignerId) :
+        userId === (t.assigner_id || t.assignerId) ? (t.assignee_id || t.assigneeId) : '';
       if (otherId) {
         await pushText(otherId, `งาน ${t.task_id} ถูกอัปเดตเป็น "${st.status}"`, tenantRef);
       }
       return;
     }
+
 
 
     // --- ตั้ง/แก้เดดไลน์ ---
@@ -5020,25 +5034,47 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
       if (!t) {
         return reply(replyToken, 'ไม่พบบันทึกงานนั้นครับ', null, tenantRef);
       }
-      // ✅ allow ผู้สั่งงานด้วย
-      const allowed =
-        userId === (t.assigner_id || '') || (await canModifyTask(tenantRef, userId, t));
 
+      const allowed = await canModifyTask(tenantRef, userId, t);
       if (!allowed) {
         return reply(replyToken, 'สิทธิ์ไม่พอในการส่งเตือนงานนี้', null, tenantRef);
       }
-      if (!t.assignee_id) {
+
+      const toId = t.assignee_id || t.assigneeId;
+      if (!toId) {
         return reply(replyToken, 'รายการนี้ไม่มี LINE ID ของผู้รับ จึงส่งเตือนไม่ได้', null, tenantRef);
       }
 
-      await pushText(
-        t.assignee_id,
-        `🔔 เตือนงาน: ${t.task_detail || '-'} (ID: ${rm.taskId})` +
-        (t.deadline ? `\nกำหนดส่ง: ${String(t.deadline).replace('T',' ')}` : ''),
-        tenantRef
-      );
+      // การ์ดให้ผู้รับ (กดอัปเดตสถานะได้)
+      const bubble = renderTaskCard({
+        id:        t.task_id,
+        title:     String(t.task_detail || '-').slice(0, 80),
+        date:      new Date().toISOString(),
+        due:       t.deadline || '-',
+        status:    t.status,
+        assignee:  t.assignee_name || '',
+        assigner:  t.assigner_name || ''
+      }, {
+        showStatusButtons: true,
+        showRemind: false
+      });
+
+      await callLineAPITenant(tenantRef, '/v2/bot/message/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: toId,
+          messages: [{
+            type: 'flex',
+            altText: `🔔 เตือนงาน ${t.task_id}`,
+            contents: bubble
+          }]
+        })
+      });
+
       return reply(replyToken, 'ส่งเตือนงานให้ผู้รับแล้ว', null, tenantRef);
     }
+
 
 
     // ---- ข้อความทั่วไป นอกทุกโหมด ----
