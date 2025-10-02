@@ -4614,7 +4614,8 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
           'ตัวอย่าง:',
           '• ลงทะเบียน po ปอ admin',
           '',
-          'หรือพิมพ์: จัดการผู้ใช้งาน เพื่อเข้าสู่ระบบแล้วลงทะเบียนผ่านเว็บ'
+          'role ในระบบมีดังนี้',
+          'Developer | Admin | Supervisor | user'
         ].join('\n');
         return reply(replyToken, help, null, tenantRef);
       } catch (e) {
@@ -5130,7 +5131,7 @@ function hasRoleFromDoc(snap, role) {
   if (!snap?.exists) return false;
   const r = snap.get('role');
   if (r) return r === role;
-  if (role === 'admin') return !!snap.get('isAdmin');
+  if (role === 'admin') return !!snap.get('isAdmin'); // fallback รุ่นเก่า
   return false;
 }
 function actorRoleFromReqUser(decoded) {
@@ -5198,87 +5199,83 @@ function shapeUser(id, x = {}) {
 
 // โหลดบทบาทของผู้เรียก (claims -> tenant doc -> root doc)
 async function loadActorRole(req) {
-  const viaClaims = actorRoleFromReqUser(req.user) || null;
-  if (viaClaims) return viaClaims;
+  // 1) custom claims มาก่อน
+  const via = actorRoleFromReqUser(req.user);
+  if (via) return via;
 
+  // 2) หา doc ได้หลายแบบ: users/{uid} และ users/line:{uid}
   const db = admin.firestore();
-  const uid = req.user.uid;
-  const tenantId = getTenantFromReq(req);
-
-  // ถ้ามี tenant ให้ลองดูใต้ tenant ก่อน
-  if (tenantId) {
-    const tSnap = await db.collection('tenants').doc(tenantId).collection('users').doc(uid).get().catch(()=>null);
-    if (tSnap && tSnap.exists) {
-      if (hasRoleFromDoc(tSnap, 'developer')) return 'developer';
-      if (hasRoleFromDoc(tSnap, 'headAdmin')) return 'headAdmin';
-      if (hasRoleFromDoc(tSnap, 'admin'))     return 'admin';
-      return 'user';
-    }
+  const uid = req.user?.uid || '';
+  const paths = [`users/${uid}`, `users/line:${uid}`];
+  for (const p of paths) {
+    try {
+      const snap = await db.doc(p).get();
+      if (hasRoleFromDoc(snap, 'developer')) return 'developer';
+      if (hasRoleFromDoc(snap, 'headAdmin')) return 'headAdmin';
+      if (hasRoleFromDoc(snap, 'admin'))     return 'admin';
+    } catch {/* ignore */}
   }
-  // fallback มาที่ root
-  try {
-    const snap = await db.doc(`users/${uid}`).get();
-    if (hasRoleFromDoc(snap, 'developer')) return 'developer';
-    if (hasRoleFromDoc(snap, 'headAdmin')) return 'headAdmin';
-    if (hasRoleFromDoc(snap, 'admin'))     return 'admin';
-    return 'user';
-  } catch { return 'user'; }
+  return 'user';
 }
 
-// ---- helper: รวม users จาก 2 ที่ (global + per-tenant) แล้ว dedupe ----
+// ===== list users ทั้ง global และต่อ tenant (หากมี) =====
 async function listAllUsers({ tenantId } = {}) {
   const db = admin.firestore();
 
-  // 1) global users
-  let globalItems = [];
-  try {
-    const gSnap = await db.collection('users').orderBy('updatedAt', 'desc').limit(500).get();
-    globalItems = gSnap.docs.map(d => ({ id: d.id, ...d.data(), _src: 'global' }));
-  } catch {
-    const gSnap = await db.collection('users').limit(500).get();
-    globalItems = gSnap.docs.map(d => ({ id: d.id, ...d.data(), _src: 'global' }));
-  }
+  // 1) global users (ไม่ lock orderBy เพื่อกันฟิลด์เวลาเพี้ยน)
+  const gSnap = await db.collection('users').limit(500).get();
+  const globalItems = gSnap.docs.map(d => ({ id: d.id, ...d.data(), _src: 'global' }));
 
-  // 2) tenant users (ถ้ามี tenantId)
+  // 2) tenant users (ถ้ามี)
   let tenantItems = [];
   if (tenantId) {
-    try {
-      const tSnap = await db.collection('tenants').doc(tenantId).collection('users')
-        .orderBy('updatedAt', 'desc').limit(500).get();
+    const tSnap = await db.collection(`tenants/${tenantId}/users`).limit(500).get().catch(()=>null);
+    if (tSnap?.docs?.length) {
       tenantItems = tSnap.docs.map(d => ({ id: d.id, ...d.data(), _src: 'tenant' }));
-    } catch {
-      const tSnap = await db.collection('tenants').doc(tenantId).collection('users').limit(500).get().catch(()=>null);
-      if (tSnap?.docs?.length) {
-        tenantItems = tSnap.docs.map(d => ({ id: d.id, ...d.data(), _src: 'tenant' }));
-      }
     }
   }
 
-  // รวม + ตัดซ้ำ (ให้ tenant ทับ global หากซ้ำ uid)
+  // รวม และให้ tenant ทับ global ถ้า id ซ้ำ
   const byId = new Map();
   for (const u of [...globalItems, ...tenantItems]) byId.set(u.id, u);
 
-  // map ให้ตรง UI
-  const rows = [...byId.values()].map(u => shapeUser(u.id, u));
+  // map ฟิลด์ให้หน้าเว็บใช้ได้แน่นอน
+  const rows = [...byId.values()].map(u => {
+    const role = u.role || (u.isAdmin ? 'admin' : 'user');
+    const updatedAt =
+      u.updatedAt ||
+      u.updated_at ||
+      (u.line && u.line.updatedAt) ||
+      null;
+    return {
+      id: u.id,
+      displayName: u.displayName || u.line?.displayName || '',
+      photoURL: u.photoURL || u.line?.pictureUrl || '',
+      role,
+      isAdmin: ['developer','headAdmin','admin'].includes(role),
+      updatedAt
+    };
+  });
 
-  // sort ล่าสุดก่อน
-  rows.sort((a, b) => b._updatedAtMs - a._updatedAtMs);
-
+  // sort ล่าสุดก่อน (รองรับ Timestamp / {_seconds})
+  const toMs = (t) =>
+    t?.toMillis?.() ?? (t?._seconds ? t._seconds * 1000 : 0);
+  rows.sort((a,b) => (toMs(b.updatedAt) - toMs(a.updatedAt)));
   return rows;
 }
 
 // ================== ROUTES ==================
 
-// ✅ ใช้ Firebase ID token (Authorization: Bearer …)
+// ===== GET /api/admin/users =====
 app.get('/api/admin/users', requireFirebaseAuth, async (req, res) => {
   try {
     const actor = await loadActorRole(req);
-    if (!['developer', 'headAdmin', 'admin'].includes(actor)) {
+    if (!['developer','headAdmin','admin'].includes(actor)) {
       return res.status(403).json({ error: 'forbidden' });
     }
+    // ถ้ามีระบบเลือก tenant ตอนนี้ ดึงเพิ่มได้จาก req.user.tenant หรือ query
+    const tenantId = req.user?.tenant || req.query.tenant || null;
 
-    // รองรับทั้งโหมด tenant และ global
-    const tenantId = getTenantFromReq(req);
     const items = await listAllUsers({ tenantId });
     return res.json({ ok: true, items });
   } catch (e) {
