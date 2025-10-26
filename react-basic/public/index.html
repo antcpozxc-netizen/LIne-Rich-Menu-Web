@@ -1,16 +1,18 @@
 <!DOCTYPE html>
 <html lang="th">
   <head>
+    <script>
+    window.addEventListener('error', e => console.log('[onerror]', e.error?.stack || e.message));
+    window.addEventListener('unhandledrejection', e => console.log('[unhandled]', (e.reason && e.reason.stack) || e.reason));
+    </script>
+
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#2e7d32" />
     <meta name="description" content="Line Rich Menus Web" />
-
-    <!-- ใช้ path ตรงๆ ไม่ใช้ %PUBLIC_URL% -->
     <link rel="icon" href="/favicon.ico" />
     <link rel="apple-touch-icon" href="/logo192.png" />
     <link rel="manifest" href="/manifest.json" />
-
     <title>Line Rich Menus Web</title>
   </head>
   <body>

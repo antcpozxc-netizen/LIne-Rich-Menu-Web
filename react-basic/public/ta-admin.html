@@ -1,0 +1,1572 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<title>ตั้งค่า (ผู้ดูแล)</title>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script src="/__boot/liff-id.js"></script>
+<style>
+  :root{
+    --pri:#3b82f6; --pri-600:#2563eb; --pri-700:#1d4ed8;
+    --ink:#0f172a; --muted:#64748b; --bg:#f6f7fb; --card:#ffffff; --ring:#c7d2fe;
+    --ok:#16a34a; --err:#dc2626;
+  }
+  *{box-sizing:border-box}
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,'Noto Sans Thai',sans-serif;background:var(--bg);margin:0;color:var(--ink)}
+  .hero{background:linear-gradient(135deg,var(--pri) 0%, var(--pri-700) 70%);color:#fff;padding:22px 20px 64px}
+  .wrap{max-width:1120px;margin:-42px auto 32px;padding:0 16px}
+  .card{background:var(--card);border-radius:20px;box-shadow:0 12px 30px rgba(2,6,23,.08);padding:18px;margin-bottom:16px;border:1px solid #eef2ff}
+  h1,h2,h3{margin:0 0 10px}
+  .muted{color:var(--muted);font-size:13px}
+  .err{color:var(--err)} .ok{color:var(--ok)}
+  .btn{appearance:none;border:0;border-radius:12px;padding:12px 16px;background:var(--pri);color:#fff;cursor:pointer;box-shadow:0 6px 16px rgba(37,99,235,.25)}
+  .btn:hover{background:var(--pri-600)}
+  .btn-ghost{background:#fff;color:var(--pri);border:1px solid var(--ring)}
+  .btn:disabled{opacity:.6;cursor:not-allowed}
+  input,select,textarea{width:100%;padding:12px;border:1px solid #e5e7eb;border-radius:12px;background:#fff}
+  label{font-size:12px;color:#334155;display:block;margin-bottom:6px}
+  .row{display:flex;gap:12px;flex-wrap:wrap}
+  .col{flex:1 1 260px}
+  .grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
+  .tile{display:flex;flex-direction:column;gap:8px;align-items:flex-start;padding:16px;border:1px dashed #e2e8f0;border-radius:16px;background:#fbfdff;text-decoration:none;color:inherit}
+  .tile:hover{box-shadow:0 6px 20px rgba(2,6,23,.06)}
+  .toolbar{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+  .back{color:#e2e8f0;text-decoration:none}
+  .hidden{display:none!important}
+
+  /* --- Employee list (horizontal) --- */
+  .cards-h{display:flex; gap:12px; overflow-x:auto; padding-bottom:6px; scroll-snap-type:x proximity}
+  .cards-h::-webkit-scrollbar{height:8px}
+  .cards-h::-webkit-scrollbar-thumb{background:#c7d2fe;border-radius:999px}
+  .emp{min-width:260px; scroll-snap-align:start; border:1px solid #edf2ff;border-radius:18px;padding:14px;background:#fff;box-shadow:0 6px 18px rgba(2,6,23,.05)}
+  .emp:hover{box-shadow:0 10px 24px rgba(2,6,23,.08)}
+  .emp .top{display:flex;gap:10px;align-items:center}
+  .avatar{width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,#eff6ff,#dbeafe);display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--pri-700)}
+  .chip{display:inline-block;font-size:12px;border-radius:999px;padding:4px 10px;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe}
+  .kv{display:grid;grid-template-columns:112px 1fr;gap:4px;font-size:13px;color:#334155;margin-top:8px}
+  .kv b{color:#64748b;font-weight:500}
+
+  /* ----- Tables ----- */
+  .table-wrap{overflow:auto;border:1px solid #e9eefc;border-radius:12px;background:#fff}
+  table.log{border-collapse:separate;border-spacing:0;width:100%}
+  table.log th, table.log td{padding:10px 12px;font-size:13px;border-bottom:1px solid #eef2ff;white-space:nowrap}
+  table.log th{position:sticky;top:0;background:#f8fafc;font-weight:700;color:#334155;z-index:1}
+  table.log tr:last-child td{border-bottom:none}
+  .sum{background:#f8fafc;border:1px dashed #e2e8f0;border-radius:12px;padding:12px;margin-top:8px}
+  .seg{display:flex;gap:6px;flex-wrap:wrap}
+  .seg button{padding:8px 12px;border-radius:999px;border:1px solid var(--ring);background:#fff;color:#1e293b;cursor:pointer}
+  .seg button.on{background:var(--pri);color:#fff;border-color:transparent}
+
+  /* payroll table */
+  #pr-table th, #pr-table td { white-space:nowrap; }
+  #pr-table tfoot td{font-weight:700;background:#f8fafc}
+  .status-col{min-width:180px}
+  .status-col .pr-status{min-width:140px;width:100%}
+
+  /* reports KPI */
+  .kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:10px}
+  .kpi .box{background:#fbfdff;border:1px dashed #e2e8f0;border-radius:12px;padding:12px}
+  .kpi .box .lbl{font-size:12px;color:#64748b}
+  .kpi .box .val{font-size:20px;font-weight:700}
+
+  /* === Run Detail Modal === */
+  .modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:16px;z-index:50}
+  .modal.hidden{display:none!important}
+  .modal .backdrop{position:absolute;inset:0;background:rgba(15,23,42,.45)}
+  .modal .panel{position:relative;max-width:980px;width:100%;max-height:90vh;overflow:auto;background:#fff;border-radius:18px;box-shadow:0 20px 60px rgba(2,6,23,.25);border:1px solid #eef2ff}
+  .modal .hd{padding:14px 16px;border-bottom:1px solid #eef2ff;display:flex;justify-content:space-between;align-items:center}
+  .modal .bd{padding:14px 16px}
+  .modal .close{appearance:none;border:0;background:#fff;border:1px solid var(--ring);border-radius:10px;padding:6px 10px;cursor:pointer}
+  .run-kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin:10px 0}
+  .run-kpi .box{background:#fbfdff;border:1px dashed #e2e8f0;border-radius:12px;padding:12px}
+  .run-kpi .box .lbl{font-size:12px;color:#64748b}
+  .run-kpi .box .val{font-size:18px;font-weight:700}
+</style>
+</head>
+<body>
+  <header class="hero">
+    <div class="toolbar" style="max-width:1120px;margin:0 auto">
+      <div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <img alt="" src="data:image/svg+xml,%3Csvg width='28' height='28' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='14' cy='14' r='12' fill='%23ffffff'/%3E%3C/svg%3E" />
+          <h2 style="margin:0">HR MANAGEMENT</h2>
+        </div>
+        <div class="muted" style="color:#e0e7ff">จัดการบุคลากร & ข้อมูลเวลา</div>
+      </div>
+      <a id="btnHome" class="back hidden" href="#">← กลับหน้าเมนู</a>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <div class="card">
+      <div class="toolbar">
+        <h3 id="title">ตั้งค่า (ผู้ดูแล)</h3>
+        <span id="status" class="muted">กำลังเริ่มต้น…</span>
+      </div>
+    </div>
+
+    <!-- ====== MENU ====== -->
+    <section id="view-menu" class="card hidden">
+      <h3>เมนู</h3>
+      <div class="grid">
+        <a class="tile" href="#users">
+          <h3>1) ตั้งค่าผู้ใช้งาน</h3>
+          <div class="muted">แก้ข้อมูลพนักงาน + บทบาท + ค่าจ้างพื้นฐาน</div>
+        </a>
+        <a class="tile" href="#logs">
+          <h3>2) บันทึกการทำงาน</h3>
+          <div class="muted">ดูเข้า-ออกงาน + ลา + สรุปเดือน (ไม่มี badge)</div>
+        </a>
+        <a class="tile" href="#payroll">
+          <h3>3) ทำเงินเดือน</h3>
+          <div class="muted">คำนวณค่าจ้างทั้งเดือน หักสายแบบ HR เลือกจ่ายเป็นรายคน</div>
+        </a>
+        <a class="tile" href="#reports">
+          <h3>4) รายงาน</h3>
+          <div class="muted">สรุปผลการจ่าย/ยอดรวมต่อเดือน และแชร์ไฟล์ CSV เข้า LINE</div>
+        </a>
+      </div>
+    </section>
+
+    <!-- ====== USERS (list + editor) ====== -->
+    <section id="view-users" class="hidden">
+      <div class="card">
+        <div class="toolbar">
+          <h3>ตั้งค่าผู้ใช้งาน</h3>
+          <div class="row" style="align-items:end">
+            <div class="col"><label>ค้นหา</label><input id="q" placeholder="ชื่อ/ตำแหน่ง"/></div>
+            <div><button id="reload" class="btn">รีโหลดรายชื่อ</button></div>
+          </div>
+        </div>
+        <div id="lazyNote" class="muted" style="margin:8px 0">รอสักครู่ กำลังโหลดข้อมูล…</div>
+        <div id="cards" class="cards-h" style="margin-top:4px"></div>
+      </div>
+
+      <!-- Editor -->
+      <div class="card hidden" id="editor">
+        <h3 id="empTitle">แก้ไขพนักงาน</h3>
+
+        <div class="row">
+          <div class="col"><label>LINE User ID</label><input id="lineUserId" readonly></div>
+          <div class="col"><label>ชื่อ-สกุล</label><input id="fullName"></div>
+          <div class="col"><label>เลขบัตรประชาชน</label><input id="nationalId"></div>
+        </div>
+
+        <div class="row">
+          <div class="col"><label>เบอร์โทร</label><input id="phone"></div>
+          <div class="col"><label>วันเกิด</label><input id="birthDate" type="date"></div>
+          <div class="col"><label>เพศ</label><input id="gender" placeholder="male/female/other"></div>
+        </div>
+
+        <div class="row">
+          <div class="col"><label>ที่อยู่ตามบัตร</label><input id="idAddress"></div>
+          <div class="col"><label>ที่อยู่ปัจจุบัน</label><input id="currentAddress"></div>
+        </div>
+
+        <div class="row">
+          <div class="col"><label>ตำแหน่ง (jobTitle)</label><input id="jobTitle"></div>
+          <div class="col"><label>บทบาท (role)</label>
+            <select id="role"><option>user</option><option>admin</option><option>owner</option></select>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="col"><label>วันที่ลงทะเบียน</label><input id="registerDate" type="date"></div>
+          <div class="col"><label>ประเภทการจ้างงาน</label>
+            <select id="employmentType">
+              <option value="">—</option>
+              <option value="intern">intern</option>
+              <option value="รายวัน">รายวัน</option>
+              <option value="รายเดือน">รายเดือน</option>
+              <option value="รายชั่วโมง">รายชั่วโมง</option>
+              <option value="เหมา">เหมา</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="col"><label>ธนาคาร</label><input id="bankName" placeholder="กสิกรไทย"></div>
+          <div class="col"><label>เลขบัญชี</label><input id="bankAccount" placeholder="2222222222"></div>
+          <div class="col"><label>ช่องทางจ่าย</label>
+            <select id="payoutChannel">
+              <option value="bank">bank</option>
+              <option value="cash">cash</option>
+              <option value="promptpay">promptpay</option>
+            </select>
+          </div>
+        </div>
+
+        <h4 style="margin:14px 0 6px">ค่าจ้าง / ชั่วโมงการจ้าง</h4>
+        <div class="seg" id="payTypeSeg" style="margin-bottom:8px">
+          <button data-v="daily">รายวัน</button>
+          <button data-v="hourly">รายชั่วโมง</button>
+          <button data-v="monthly">รายเดือน</button>
+          <button data-v="every_n_days">ทุก N วัน</button>
+          <button data-v="every_n_hours">ทุก N ชั่วโมง</button>
+        </div>
+        <div class="row">
+          <div class="col"><label>รูปแบบจ่าย</label>
+            <select id="payType">
+              <option value="daily">รายวัน</option>
+              <option value="hourly">รายชั่วโมง</option>
+              <option value="monthly">รายเดือน</option>
+              <option value="every_n_days">ทุก N วัน</option>
+              <option value="every_n_hours">ทุก N ชั่วโมง</option>
+            </select>
+          </div>
+          <div class="col"><label>อัตรา (ค่าจ้างพื้นฐาน)</label><input id="payRate" type="number" step="0.01" placeholder="เช่น 400 / 60 / 15000"></div>
+          <div class="col"><label>ชั่วโมง/วัน (ใช้อ้างอิงคำนวณสาย)</label><input id="dailyHours" type="number" step="0.5" value="8"></div>
+          <div class="col"><label>หักสายตามสัดส่วน</label>
+            <select id="prorateLate"><option value="true">หักตามชั่วโมงที่ขาด</option><option value="false">ไม่หัก</option></select>
+          </div>
+          <div class="col"><label>Pay every N</label><input id="payEveryN" type="number" step="1" placeholder="ใช้กับโหมด every_n_* เท่านั้น"></div>
+        </div>
+
+        <!-- Shift & grace -->
+        <div class="row">
+          <div class="col"><label>เข้า (HH:MM)</label><input id="shiftIn" placeholder="09:00"></div>
+          <div class="col"><label>ออก (HH:MM)</label><input id="shiftOut" placeholder="18:00"></div>
+          <div class="col"><label>ผ่อนผันสาย (นาที)</label><input id="lateGraceMin" type="number" step="1" value="0"></div>
+        </div>
+
+        <div class="muted" style="margin-top:4px">
+          <b>อธิบาย:</b> <b>อัตรา</b> คือค่าจ้างต่อ “หน่วย” ของรูปแบบที่เลือก (วัน/ชั่วโมง/เดือน) •
+          <b>หักตามสัดส่วน</b> จะลดตามชั่วโมงที่ขาดเมื่อมาสาย/ออกก่อน •
+          <b>Pay every N</b> ใช้เมื่อจ่ายเป็นรอบ (เช่น ทุก 5 วัน / ทุก 3 ชม.)
+        </div>
+
+        <div class="row" style="margin-top:12px">
+          <button id="save" class="btn">บันทึก</button>
+          <span class="muted" id="saveMsg" style="margin-left:10px"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====== LOGS ====== -->
+    <section id="view-logs" class="hidden">
+      <div class="card">
+        <div class="toolbar">
+          <h3>ข้อมูลเข้า-ออกงาน & สรุปเดือน</h3>
+          <div class="row" style="align-items:flex-end">
+            <div class="col"><label>เดือน</label><input id="month" type="month"></div>
+            <div class="col"><label>ค้นหาชื่อ/ตำแหน่ง</label><input id="q2" placeholder="พิมพ์เพื่อกรองรายชื่อ"></div>
+          </div>
+        </div>
+        <div id="lazyNote2" class="muted" style="margin:8px 0">รอสักครู่ กำลังโหลดรายชื่อ…</div>
+        <div id="cards2" class="cards-h" style="margin-top:4px"></div>
+      </div>
+
+      <div class="card hidden" id="panelLogs">
+        <div class="toolbar">
+          <h3 id="logTitle">รายการลงเวลา</h3>
+          <span id="logStatus" class="muted"></span>
+        </div>
+
+        <div class="sum" id="summaryBox" style="margin:8px 0 12px">เลือกพนักงานเพื่อดูสรุปประจำเดือน</div>
+        <div class="table-wrap"><table class="log">
+          <thead>
+            <tr>
+              <th>วันที่</th>
+              <th>เข้า</th>
+              <th>ออก</th>
+              <th>ชั่วโมงทำงาน</th>
+              <th>สาย (นาที)</th>
+              <th>สถานที่</th>
+              <th>ลา</th>
+            </tr>
+          </thead>
+          <tbody id="logTbody"></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- ====== PAYROLL ====== -->
+    <section id="view-payroll" class="hidden">
+      <div class="card">
+        <div class="toolbar">
+          <h3>ทำเงินเดือน</h3>
+          <div class="row" style="align-items:flex-end">
+            <div class="col"><label>เดือน</label><input id="pr-month" type="month"></div>
+            <div class="col"><label>ค้นหาชื่อ/ตำแหน่ง</label><input id="pr-q" placeholder="กรองรายชื่อ"></div>
+            <div class="col"><label>สถานะ</label>
+              <select id="pr-filter-status">
+                <option value="">ทั้งหมด</option>
+                <option value="Pending">Pending</option>
+                <option value="Approved">Approved</option>
+                <option value="Transferred">Transferred</option>
+              </select>
+            </div>
+            <div class="col" style="flex:0 0 auto">
+              <button id="pr-run" class="btn">คำนวณเงินเดือน</button>
+            </div>
+          </div>
+        </div>
+        <div class="sum" id="pr-status">เลือกเดือน แล้วกด “คำนวณเงินเดือน”</div>
+
+        <div class="table-wrap" style="margin-top:10px">
+          <table class="log" id="pr-table">
+            <thead>
+              <tr>
+                <th><input type="checkbox" id="pr-checkall"></th>
+                <th>พนักงาน</th>
+                <th>ตำแหน่ง</th>
+                <th>รูปแบบจ่าย</th>
+                <th>อัตรา</th>
+                <th>วันทำงาน</th>
+                <th>ชม.ทำงาน</th>
+                <th>ชม.สาย</th>
+                <th>ฐานจ่าย</th>
+                <th>หักสาย</th>
+                <th>รวมสุทธิ</th>
+                <th>ช่องทาง</th>
+                <th>ธนาคาร/บัญชี</th>
+                <th>สถานะ</th>
+                <th>ดำเนินการ</th>
+              </tr>
+            </thead>
+            <tbody id="pr-body"></tbody>
+            <tfoot>
+              <tr>
+                <td colspan="10" style="text-align:right">รวมสุทธิทั้งหมดที่เลือก</td>
+                <td id="pr-total" style="font-weight:700">0.00</td>
+                <td colspan="2"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        <div class="row" style="margin-top:12px">
+          <button id="pr-dl-csv" class="btn">ส่ง CSV เข้า LINE</button>
+          <button id="pr-slip-selected" class="btn-ghost">ออกสลิปทั้งหมดที่เลือก</button>
+          <button id="pr-refresh" class="btn-ghost">คำนวณใหม่</button>
+          <span class="muted" id="pr-msg"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====== REPORTS ====== -->
+    <section id="view-reports" class="hidden">
+      <div class="card">
+        <div class="toolbar">
+          <h3>รายงาน</h3>
+          <div class="row" style="align-items:flex-end">
+            <div class="col"><label>เดือน</label><input id="rp-month" type="month"></div>
+            <div class="col" style="flex:0 0 auto">
+              <button id="rp-runpay" class="btn">รันงวดเดือนนี้</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="sum" id="rp-status">กด “รันงวดเดือนนี้” เพื่อสร้างงวดและรีเฟรชรายงาน</div>
+
+        <!-- KPI -->
+        <div class="kpi">
+          <div class="box"><div class="lbl">รวมสุทธิทั้งองค์กร</div><div class="val" id="rp-k1">-</div></div>
+          <div class="box"><div class="lbl">จำนวนพนักงาน</div><div class="val" id="rp-k2">-</div></div>
+          <div class="box"><div class="lbl">เฉลี่ยต่อคน</div><div class="val" id="rp-k3">-</div></div>
+        </div>
+
+        <div class="table-wrap" style="margin-top:10px">
+          <table class="log" id="rp-table">
+            <thead>
+              <tr>
+                <th>พนักงาน</th>
+                <th>ตำแหน่ง</th>
+                <th>รูปแบบจ่าย</th>
+                <th>อัตรา</th>
+                <th>วันทำงาน</th>
+                <th>ชม.ทำงาน</th>
+                <th>ชม.สาย</th>
+                <th>ฐานจ่าย</th>
+                <th>หักสาย</th>
+                <th>รวมสุทธิ</th>
+              </tr>
+            </thead>
+            <tbody id="rp-body"></tbody>
+            <tfoot>
+              <tr>
+                <td colspan="9" style="text-align:right">รวมสุทธิทั้งองค์กร</td>
+                <td id="rp-total" style="font-weight:700">0.00</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        <div class="sum" style="margin-top:10px">
+          <b>ประวัติการทำเงินเดือน</b>
+          <div class="row" style="margin-top:8px;align-items:flex-end">
+            <div class="col">
+              <label>รอบจ่าย (run)</label>
+              <select id="hist-run"></select>
+            </div>
+            <div class="col">
+              <label>เดือน</label>
+              <input id="hist-month" type="month">
+            </div>
+            <div class="col">
+              <label>ค้นหา</label>
+              <input id="hist-q" placeholder="ชื่อ/LINE UserId">
+            </div>
+            <div class="col">
+              <label>ช่วงสุทธิ (min–max)</label>
+              <div class="row" style="gap:6px">
+                <input id="hist-min" type="number" placeholder="เช่น 0">
+                <input id="hist-max" type="number" placeholder="เช่น 50000">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="table-wrap" style="margin-top:10px">
+          <table class="log" id="hist-table">
+            <thead>
+              <tr>
+                <th>runId</th>
+                <th>พนักงาน</th>
+                <th>วันทำงาน</th>
+                <th>ชม.</th>
+                <th>ฐานจ่าย</th>
+                <th>หัก</th>
+                <th>สุทธิ</th>
+                <th>รายละเอียด</th>
+                <th>บันทึก</th>
+              </tr>
+            </thead>
+            <tbody id="hist-body"></tbody>
+          </table>
+        </div>
+
+        <div class="row" style="margin-top:12px">
+          <button id="rp-dl-csv" class="btn">ส่ง CSV รายงานเข้า LINE</button>
+          <span class="muted" id="rp-msg"></span>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Modal: Run Detail -->
+  <div id="run-modal" class="modal hidden" aria-hidden="true">
+    <div class="backdrop"></div>
+    <div class="panel">
+      <div class="hd">
+        <div>
+          <div style="font-weight:700" id="run-title">รายละเอียดงวด</div>
+          <div class="muted" id="run-subtitle"></div>
+        </div>
+        <button class="close" id="run-close">ปิด</button>
+      </div>
+      <div class="bd">
+        <div class="run-kpi">
+          <div class="box"><div class="lbl">ยอดสุทธิรวม</div><div class="val" id="run-k1">-</div></div>
+          <div class="box"><div class="lbl">จำนวนพนักงาน</div><div class="val" id="run-k2">-</div></div>
+          <div class="box"><div class="lbl">เฉลี่ยต่อคน</div><div class="val" id="run-k3">-</div></div>
+        </div>
+        <div class="table-wrap" style="margin-top:8px">
+          <table class="log" id="run-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>พนักงาน</th>
+                <th>รูปแบบ/อัตรา</th>
+                <th>วันทำงาน</th>
+                <th>ชม.ทำงาน</th>
+                <th>ชม.สาย/ลา</th>
+                <th>ฐานจ่าย</th>
+                <th>หักสาย</th>
+                <th>สุทธิ</th>
+              </tr>
+            </thead>
+            <tbody id="run-body"></tbody>
+          </table>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button class="btn" id="run-export">ส่ง CSV งวดนี้เข้า LINE</button>
+          <span class="muted" id="run-msg"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+/* ---------- router ---------- */
+function readParams(){
+  const outer = new URLSearchParams(location.search);
+  const merged = new URLSearchParams(outer);
+  const st = outer.get('liff.state');
+  if (st) { const inner = new URLSearchParams(st.startsWith('?')? st.slice(1) : st); for (const [k,v] of inner) merged.set(k,v); }
+  return merged;
+}
+const qs = readParams();
+const LIFF_ID = qs.get('liffId') || (window.DEFAULT_LIFF_ID || '');
+const TENANT  = qs.get('tenant') || '';
+const DEFAULT_VIEW = (qs.get('view') || '').toLowerCase();
+
+// --- โหมดพิเศษจาก Rich Menu ---
+const MODE_REPORT  = /^(1|true)$/i.test(qs.get('report') || '');
+const MODE_PAYROLL = /^(1|true)$/i.test(qs.get('payroll') || '');
+const FORCED_MONTH = qs.get('month') || '';
+
+const $status  = document.getElementById('status');
+const setMsg = (t,cls='muted') => { $status.className=cls; $status.textContent=t; };
+
+const $btnHome = document.getElementById('btnHome');
+const sections = {
+  menu:document.getElementById('view-menu'),
+  users:document.getElementById('view-users'),
+  logs:document.getElementById('view-logs'),
+  payroll:document.getElementById('view-payroll'),
+  reports:document.getElementById('view-reports')
+};
+function show(id){
+  Object.entries(sections).forEach(([k,el])=> el.classList.toggle('hidden', k!==id));
+  const mapTitle = {menu:'ตั้งค่า (ผู้ดูแล)', users:'ตั้งค่าผู้ใช้งาน', logs:'บันทึกการทำงาน', payroll:'ทำเงินเดือน', reports:'รายงาน'};
+  document.getElementById('title').textContent = mapTitle[id] || 'ตั้งค่า (ผู้ดูแล)';
+  $btnHome.classList.toggle('hidden', id==='menu');
+}
+function go(id){ location.hash = id; }
+
+// ---- เลือกหน้าแรกให้ “ถูก” ตั้งแต่เฟรมแรก ----
+const INITIAL_VIEW = ((location.hash||'').slice(1) || DEFAULT_VIEW || 'menu').toLowerCase();
+show(INITIAL_VIEW);
+if (!location.hash && DEFAULT_VIEW) {
+  location.replace('#' + DEFAULT_VIEW.toLowerCase());
+}
+
+/* ---------- LIFF + actor ---------- */
+let ACTOR = null;
+async function ensureLiff(){
+  if (!LIFF_ID) throw new Error('ไม่พบ LIFF ID');
+  await liff.init({ liffId: LIFF_ID });
+  if (!liff.isLoggedIn()){
+    liff.login({ redirectUri: location.href });
+    return false;
+  }
+  const FORCE_CONSENT = false;
+  const SCOPE_FLAG = 'liff_scope_v1';
+  if (FORCE_CONSENT && !localStorage.getItem(SCOPE_FLAG)) {
+    localStorage.setItem(SCOPE_FLAG, '1');
+    liff.login({ redirectUri: location.href, prompt: 'consent' });
+    return false;
+  }
+  return true;
+}
+
+async function getActor(){
+  if (ACTOR) return ACTOR;
+  let uid=null; try { uid = liff.getDecodedIDToken()?.sub || null; } catch {}
+  if (uid) uid = uid.replace('line:',''); if (!uid){ try { uid = (await liff.getProfile()).userId || null; } catch {} }
+  if (!uid) throw new Error('อ่าน LINE UserId ไม่ได้'); ACTOR = { lineUserId: uid }; return ACTOR;
+}
+
+/* ---------- UTIL ---------- */
+const initials = (name='')=>{ const t=String(name).trim().split(/\s+/).filter(Boolean); if(!t.length) return '??'; if(t.length===1) return t[0].slice(0,2).toUpperCase(); return (t[0][0]+t[t.length-1][0]).toUpperCase(); };
+const money = v => (v==null||v==='') ? '-' : Number(v).toLocaleString();
+
+const pad2 = n => String(n).padStart(2, '0');
+const ymdLocal = (d) => { const dt = (d instanceof Date) ? d : new Date(d); if (isNaN(dt.getTime())) return ''; return `${dt.getFullYear()}-${pad2(dt.getMonth()+1)}-${pad2(dt.getDate())}`; };
+const onlyDate = (s) => {
+  if (!s) return '';
+  const str = String(s);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  if (str.includes('T')) return ymdLocal(str);
+  const m = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (m) { const d = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1])); return ymdLocal(d); }
+  const d2 = new Date(str); return isNaN(d2.getTime()) ? '' : ymdLocal(d2);
+};
+function monthStr(d){ const dt = d ? new Date(d) : new Date(); return dt.toISOString().slice(0,7); }
+function monthRangeStr(yyyyMM){
+  const [Y,M] = String(yyyyMM || monthStr()).split('-').map(Number);
+  const first = new Date(Y, (M||1)-1, 1);
+  const last  = new Date(Y,  M||1, 0);
+  const pad = n => String(n).padStart(2,'0');
+  const toYMD = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  return { first: toYMD(first), last: toYMD(last) };
+}
+
+/* ---------- API ---------- */
+async function listEmployees(actor){
+  const res = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/employees`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ actor }) });
+  const j = await res.json().catch(()=> ({}));
+  if (!res.ok || !j.ok) throw new Error(j?.error || ('โหลดรายชื่อไม่สำเร็จ ('+res.status+')')); return j.data || [];
+}
+async function fetchLogs(lineUserId, monthStr, range) {
+  const params = new URLSearchParams({ lineUserId });
+  if (range?.periodStart && range?.periodEnd){ params.set('periodStart', range.periodStart); params.set('periodEnd', range.periodEnd); }
+  else if (monthStr){ params.set('month', monthStr); }
+  const url = `/api/tenants/${encodeURIComponent(TENANT)}/attendance/logs?${params}`;
+  const r = await fetch(url).catch(() => null);
+  const j = await (r ? r.json().catch(() => ({})) : {});
+  if (!r || !r.ok || !j || j.ok === false) return { days: [], leave: [], summary: { workHours:0, workDays:0, leaveHours:0, leaveDays:0 } };
+  const data = j.data || j;
+  const leave = data.leave || data.leaveLogs || [];
+  const summary = Object.assign({ workHours:0, workDays:0, leaveHours:0, leaveDays:0 }, data.summary || {});
+  if (summary.leaveHours == null) summary.leaveHours = leave.reduce((s,l)=> s + Number(l.hours||0), 0);
+  if (summary.leaveDays  == null) summary.leaveDays  = (new Set(leave.map(l=> l.date))).size;
+  return { days: data.days || [], leave, summary };
+}
+
+/* ---------- CSV upload & share ---------- */
+async function uploadCsvAndGetUrl(fileName, csvText){
+  const payload = {
+    actor: await getActor(),
+    fileName,
+    csvBase64: btoa(unescape(encodeURIComponent(csvText)))
+  };
+  const res = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/payroll/export`, {
+    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
+  }).catch(()=>null);
+  if (!res || !res.ok) throw new Error('อัปโหลดไฟล์ไม่สำเร็จ');
+  const j = await res.json().catch(()=>({}));
+  if (!j.ok || !j.url) throw new Error(j.error || 'ไม่ได้รับ URL ไฟล์');
+  return { url: j.url, path: j.path, name: j.fileName || fileName };
+}
+
+/* ---------- Payroll status & Payslip API ---------- */
+
+async function runPayrollRun({ periodStart, periodEnd }){
+  const res = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/payroll/run`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      actor: await getActor(),
+      periodStart, periodEnd
+    })
+  }).catch(()=>null);
+  const j = await (res ? res.json().catch(()=>({})) : {});
+  if (!res || !res.ok || !j.ok) throw new Error(j.error || 'run_failed');
+  return j; // { ok:true, runId, ... }
+}
+
+// บันทึกสถานะการจ่าย
+async function savePayrollStatus({ month, lineUserId, status, note='' }){
+  const actor = await getActor();
+  const res = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/payroll/status`, {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      tenantId: TENANT,
+      actorLineUserId: actor.lineUserId,
+      actor,
+      month, lineUserId, status, note
+    })
+  }).catch(()=>null);
+  const j = await (res ? res.json().catch(()=>({})) : {});
+  if (!res || !res.ok || !j.ok) throw new Error(j.error || 'save_status_failed');
+  return true;
+}
+
+// ขอให้ระบบสร้าง PDF สลิป และคืน URL
+async function generatePayslipPdf({ month, record }){
+  const res = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/payroll/slip`, {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      actor: await getActor(),
+      month,
+      employee: {
+        lineUserId: record.lineUserId,
+        fullName: record.fullName,
+        jobTitle: record.jobTitle,
+        bankName: record.bankName || '',
+        bankAccount: record.bankAccount || '',
+        payoutChannel: record.payoutChannel || 'bank'
+      },
+      pay: {
+        payType: record.payType,
+        payRate: Number(record.payRate||0),
+        workDays: Number(record.workDays||0),
+        workHours: Number(record.workHours||0),
+        lateHours: Number(record.lateHours||0),
+        basePay: Number(record.basePay||0),
+        lateDeduct: Number(record.lateDeduct||0),
+        netPay: Number(record.netPay||0)
+      }
+    })
+  }).catch(()=>null);
+  const j = await (res ? res.json().catch(()=>({})) : {});
+  if (!res || !res.ok || !j.ok || !j.url) throw new Error(j.error || 'gen_slip_failed');
+  return j.url;
+}
+
+async function shareTextToLine(text){
+  if (liff.isApiAvailable('shareTargetPicker')) {
+    await liff.shareTargetPicker([{ type:'text', text }]);
+    return;
+  }
+  await liff.sendMessages([{ type:'text', text }]);
+}
+
+/* ---------- USERS page ---------- */
+const $cards=document.getElementById('cards'); const $reload=document.getElementById('reload'); const $q=document.getElementById('q'); const $editor=document.getElementById('editor'); const $empTitle=document.getElementById('empTitle'); const $lazyNote=document.getElementById('lazyNote');
+
+function notOwner(x){ const r=String(x.role||'').toLowerCase(); const jt=String(x.jobTitle||'').toLowerCase(); return r!=='owner' && jt!=='owner'; }
+
+function renderCards(rows){
+  $cards.innerHTML=''; const q = ($q?.value||'').toLowerCase(); let count=0;
+  rows.filter(notOwner).filter(x=> !q || `${x.fullName||''} ${x.jobTitle||''}`.toLowerCase().includes(q)).forEach(x=>{
+    const el=document.createElement('div'); el.className='emp';
+    el.innerHTML=`
+      <div class="top">
+        <div class="avatar">${initials(x.fullName||'User')}</div>
+        <div style="flex:1">
+          <div style="font-weight:700">${x.fullName||'-'}</div>
+          <div class="muted">${x.jobTitle||'-'}</div>
+        </div>
+        <span class="chip">${(x.role||'user')}</span>
+      </div>
+      <div class="kv"><b>วันที่ลงทะเบียน</b><div>${onlyDate(x.registerDate)||'-'}</div></div>
+      <div class="kv"><b>ประเภทการจ้างงาน</b><div>${x.employmentType||'-'}</div></div>
+      <div class="kv"><b>จ่าย</b><div>${(x.payType||'-')} / ${money(x.payRate)}</div></div>
+      <div style="margin-top:10px;display:flex;gap:8px">
+        <button class="btn" data-act="edit">แก้ไข</button>
+      </div>`;
+    el.querySelector('[data-act="edit"]').addEventListener('click',()=>openEditor(x));
+    $cards.appendChild(el); count++;
+  });
+  $lazyNote.textContent = count ? 'เลื่อนการ์ดในแนวนอนได้เพื่อดูคนถัดไป' : 'ไม่พบข้อมูลตามเงื่อนไขค้นหา';
+}
+const val = id => document.getElementById(id).value;
+const setv = (id, v) => document.getElementById(id).value = (v ?? '');
+
+function bindPayTypeSeg(segId, selectId){
+  const seg=document.getElementById(segId); const sel=document.getElementById(selectId);
+  const syncOn=()=>{ [...seg.querySelectorAll('button')].forEach(b=> b.classList.toggle('on', b.dataset.v===sel.value)); };
+  seg.addEventListener('click',e=>{ const v=e.target?.dataset?.v; if(!v) return; sel.value=v; syncOn(); });
+  sel.addEventListener('change', syncOn); syncOn();
+}
+bindPayTypeSeg('payTypeSeg','payType');
+
+function openEditor(emp){
+  $editor.classList.remove('hidden');
+  $empTitle.textContent = `แก้ไข: ${emp.fullName || emp.lineUserId}`;
+
+  setv('lineUserId',     emp.lineUserId || '');
+  setv('fullName',       emp.fullName || '');
+  setv('nationalId',     emp.nationalId || '');
+  setv('phone',          emp.phone || '');
+  setv('birthDate',      onlyDate(emp.birthDate) || '');
+  setv('gender',         emp.gender || '');
+  setv('idAddress',      emp.idAddress || '');
+  setv('currentAddress', emp.currentAddress || '');
+  setv('jobTitle',       emp.jobTitle || '');
+  setv('role',           (emp.role || 'user'));
+
+  setv('registerDate',   onlyDate(emp.registerDate) || '');
+  setv('employmentType', emp.employmentType || '');
+
+  setv('bankName',       emp.bankName || '');
+  setv('bankAccount',    emp.bankAccount || '');
+  setv('payoutChannel',  emp.payoutChannel || 'bank');
+
+  setv('payType',        emp.payType || 'daily');
+  setv('payRate',        emp.payRate || 0);
+  setv('dailyHours',     emp.dailyHours || 8);
+  setv('prorateLate',    (String(emp.prorateLate).toLowerCase()==='true' ? 'true' : 'false'));
+  setv('payEveryN',      emp.payEveryN || '');
+
+  setv('shiftIn',        emp.shiftIn || '');
+  setv('shiftOut',       emp.shiftOut || '');
+  setv('lateGraceMin',   emp.lateGraceMin || 0);
+
+  [...document.querySelectorAll('#payTypeSeg button')].forEach(b=> b.classList.toggle('on', b.dataset.v===val('payType')));
+
+  document.getElementById('save').onclick = async ()=>{
+    try{
+      setMsg('กำลังบันทึก…');
+      const actor = await getActor();
+      const payload = {
+        actor,
+        profile: {
+          lineUserId: val('lineUserId'),
+          nationalId: val('nationalId'),
+          fullName:   val('fullName'),
+          idAddress:  val('idAddress'),
+          currentAddress: val('currentAddress'),
+          phone:      val('phone'),
+          birthDate:  val('birthDate'),
+          gender:     val('gender'),
+          jobTitle:   val('jobTitle'),
+          bankName:   val('bankName'),
+          bankAccount:val('bankAccount'),
+          registerDate:   val('registerDate'),
+          employmentType: val('employmentType')
+        },
+        settings: {
+          payType:       val('payType'),
+          payRate:       Number(val('payRate') || 0),
+          dailyHours:    Number(val('dailyHours') || 8),
+          prorateLate:   (val('prorateLate') === 'true'),
+          payEveryN:     Number(val('payEveryN') || '') || '',
+          shiftIn:       val('shiftIn'),
+          shiftOut:      val('shiftOut'),
+          lateGraceMin:  Number(val('lateGraceMin') || 0),
+          payoutChannel: val('payoutChannel') || 'bank',
+          allowances:    [],
+          deductions:    [],
+        },
+        role: val('role')
+      };
+
+      const r = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/employee/save`, {
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
+      });
+      const j = await r.json().catch(()=> ({}));
+      if (!r.ok || !j.ok) throw new Error(j?.error || 'save_failed');
+      document.getElementById('saveMsg').textContent = 'บันทึกสำเร็จ ✓';
+      setMsg('พร้อมใช้งาน','ok');
+    }catch(e){
+      document.getElementById('saveMsg').textContent = 'บันทึกไม่สำเร็จ: ' + (e.message || e);
+      setMsg('ผิดพลาด: ' + (e.message || e), 'err');
+    }
+  };
+}
+
+/* ---------- LOGS page ---------- */
+const $cards2=document.getElementById('cards2'); const $q2=document.getElementById('q2'); const $lazy2=document.getElementById('lazyNote2');
+const $panelLogs=document.getElementById('panelLogs'); const $logTitle=document.getElementById('logTitle'); const $logStatus=document.getElementById('logStatus');
+const $summary=document.getElementById('summaryBox'); const $month=document.getElementById('month'); const $tbody=document.getElementById('logTbody');
+
+$month.value = FORCED_MONTH || monthStr();
+
+let __users = [];
+
+let __usersPromise = null;
+async function getUsersOnce() {
+  if (__users.length) return __users;
+  if (!__usersPromise) {
+    __usersPromise = (async () => {
+      try {
+        const rows = await listEmployees(await getActor());
+        __users = rows || [];
+      } catch {
+        __users = [];
+      }
+      return __users;
+    })();
+  }
+  return __usersPromise;
+}
+
+async function renderUserStripLogs(){
+  $cards2.innerHTML=''; $lazy2.textContent = 'รอสักครู่ กำลังโหลดรายชื่อ…';
+  const rows = __users; const q = ($q2?.value || '').toLowerCase(); let count=0;
+  rows.filter(notOwner).filter(x => !q || `${x.fullName||''} ${x.jobTitle||''}`.toLowerCase().includes(q)).forEach(x=>{
+    const el=document.createElement('div'); el.className='emp';
+    el.innerHTML=`
+      <div class="top">
+        <div class="avatar">${initials(x.fullName||'User')}</div>
+        <div style="flex:1">
+          <div style="font-weight:700">${x.fullName||'-'}</div>
+          <div class="muted">${x.jobTitle||'-'}</div>
+        </div>
+        <span class="chip">${(x.role||'user')}</span>
+      </div>
+      <div class="kv"><b>จ้าง</b><div>${x.employmentType||'-'}</div></div>
+      <div class="kv"><b>รูปแบบจ่าย</b><div>${x.payType||'-'} / ${money(x.payRate)}</div></div>
+      <div style="margin-top:10px;display:flex;gap:8px"><button class="btn" data-act="view">ดูรายการเดือนนี้</button></div>`;
+    el.querySelector('[data-act="view"]').addEventListener('click',()=> openLogs(x));
+    $cards2.appendChild(el); count++;
+  });
+  $lazy2.textContent = count ? 'เลื่อนการ์ดในแนวนอนได้เพื่อเลือกพนักงาน' : 'ไม่พบรายชื่อ';
+}
+$q2.oninput = renderUserStripLogs;
+$month.onchange = ()=>{ if (CURRENT_USER) openLogs(CURRENT_USER); };
+
+function parseHm(hm){ const m=String(hm||'').match(/^(\d{1,2}):(\d{2})$/); if(!m) return null; const h=+m[1], mi=+m[2]; if(h<0||h>23||mi<0||mi>59) return null; return {h, m:mi}; }
+function lateMinutesForDay(d, shiftIn, graceMin){
+  if (!d?.inTime || !shiftIn) return 0; const s=parseHm(shiftIn); if(!s) return 0;
+  const inAt=new Date(d.inTime); const sch=new Date(inAt); sch.setHours(s.h, s.m, 0, 0);
+  const diffMin=Math.round((inAt-sch)/60000); return Math.max(0, diffMin - (Number(graceMin||0)));
+}
+
+let CURRENT_USER=null;
+async function openLogs(emp){
+  CURRENT_USER = emp;
+  $panelLogs.classList.remove('hidden');
+  $logTitle.textContent = `รายการลงเวลา: ${emp.fullName || emp.lineUserId}`;
+  $logStatus.textContent = 'กำลังโหลดข้อมูล…';
+  $tbody.innerHTML = ''; $summary.textContent = 'กำลังคำนวณสรุป…';
+
+  const m = $month.value || monthStr();
+  const { days, leave, summary } = await fetchLogs(emp.lineUserId, m);
+
+  const leaveByDate={}; (leave||[]).forEach(l=>{ (leaveByDate[l.date]||(leaveByDate[l.date]=[])).push(l); });
+
+  const shiftIn = emp.shiftIn || ''; const grace = Number(emp.lateGraceMin||0);
+  let totalLateMin = 0;
+
+  (days||[]).forEach(d=>{
+    const inTxt  = d.inTime  ? new Date(d.inTime).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}) : '-';
+    const outTxt = d.outTime ? new Date(d.outTime).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}) : '-';
+    const lateMin = lateMinutesForDay(d, shiftIn, grace); totalLateMin += lateMin;
+    const loc = `${d.inAddr||'-'}${d.outAddr?(' → '+d.outAddr):''}`;
+    const leaveTxt = (leaveByDate[d.date]||[]).map(l=> (l.reason||'ลา') + (l.hours?` ${l.hours}ชม.`:'')).join(', ');
+    const tr=document.createElement('tr');
+    tr.innerHTML = `
+      <td>${d.date}</td>
+      <td>${inTxt}</td>
+      <td>${outTxt}</td>
+      <td style="text-align:right">${Number(d.hours||0).toFixed(2)}</td>
+      <td style="text-align:right">${lateMin}</td>
+      <td style="min-width:260px">${loc}</td>
+      <td style="color:#0ea5e9">${leaveTxt||''}</td>`;
+    $tbody.appendChild(tr);
+  });
+
+  const modeBadge = MODE_PAYROLL ? ' · โหมดทำเงินเดือน' : (MODE_REPORT ? ' · โหมดรายงาน' : '');
+  $logStatus.textContent = (days?.length || leave?.length) ? ('พร้อมใช้งาน' + modeBadge) : ('ไม่พบข้อมูลในเดือนนี้' + modeBadge);
+
+  const workHours = Number(summary?.workHours || 0);
+  const workDays  = Number(summary?.workDays  || 0);
+  const leaveHours= Number(summary?.leaveHours|| 0);
+  const leaveDays = Number(summary?.leaveDays || 0);
+  const lateHours = totalLateMin/60;
+  const lateDays  = (days||[]).filter(d=> lateMinutesForDay(d, shiftIn, grace)>0).length;
+
+  const payType     = String(emp.payType || 'daily');
+  const payRate     = Number(emp.payRate || 0);
+  const dailyHours  = Number(emp.dailyHours || 8);
+  const prorateLate = String(emp.prorateLate||'false').toLowerCase()==='true';
+  const payEveryN   = Number(emp.payEveryN || 0);
+
+  let basePay=0;
+  if (payType==='hourly') basePay = workHours * payRate;
+  else if (payType==='daily') basePay = workDays * payRate;
+  else if (payType==='monthly'){ const effDays = dailyHours>0 ? (workHours/dailyHours) : 0; basePay = (payRate/30) * effDays; }
+  else if (payType==='every_n_days' && payEveryN>0){ basePay = (workDays/payEveryN) * payRate; }
+  else if (payType==='every_n_hours' && payEveryN>0){ basePay = (workHours/payEveryN) * payRate; }
+
+  let lateDeduct=0;
+  if (prorateLate && dailyHours>0 && payType!=='hourly'){
+    const perHour = (payType==='daily') ? (payRate/dailyHours)
+                    : (payType==='monthly') ? ((payRate/30)/dailyHours)
+                    : (payRate/dailyHours);
+    lateDeduct = perHour * lateHours;
+  }
+  const netPay = Math.max(0, basePay - lateDeduct);
+
+  $summary.innerHTML = `
+    <div style="font-weight:700;margin-bottom:6px">สรุปการทำงาน เดือน ${m}</div>
+    <div>วันทำงานรวม <b>${workDays}</b> วัน • วันลา <b>${leaveDays}</b> วัน • วันสาย <b>${lateDays}</b> วัน</div>
+    <div>ชั่วโมงทำงานรวม <b>${workHours.toFixed(2)}</b> ชม. • สาย <b>${lateHours.toFixed(2)}</b> ชม.</div>
+    <hr style="border:none;border-top:1px dashed #e2e8f0;margin:8px 0">
+    <div>รูปแบบจ่าย: <b>${payType}</b> — อัตรา: <b>${payRate.toLocaleString()}</b></div>
+    <div>ค่าจ้างพื้นฐาน (ก่อนหัก): <b>${basePay.toLocaleString(undefined,{maximumFractionDigits:2})}</b></div>
+    <div>หักสาย: <b>${lateDeduct.toLocaleString(undefined,{maximumFractionDigits:2})}</b></div>
+    <div style="font-size:16px;margin-top:4px">รวมสุทธิ: <b>${netPay.toLocaleString(undefined,{maximumFractionDigits:2})}</b></div>
+  `;
+
+  $summary.insertAdjacentHTML('beforeend',
+    `<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+       <button class="btn" id="btnCsv">ส่ง CSV รายการลงเวลาเข้า LINE</button>
+     </div>`);
+  document.getElementById('btnCsv')?.addEventListener('click', async ()=>{
+    try{
+      const rows = [['date','in','out','hours','lateMin','leave']];
+      (days||[]).forEach(d=>{
+        const lt = lateMinutesForDay(d, shiftIn, grace);
+        const lv = (leaveByDate[d.date]||[]).map(l=> (l.reason||'')+(l.hours?` ${l.hours}`:'')).join('|');
+        rows.push([d.date, d.inTime||'', d.outTime||'', Number(d.hours||0).toFixed(2), lt, lv]);
+      });
+      const csv = rows.map(r=> r.map(v=> `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+      const fname = `logs_${emp.lineUserId}_${$month.value||monthStr()}.csv`;
+      const { url } = await uploadCsvAndGetUrl(fname, csv);
+      await shareTextToLine(`รายการลงเวลา: ${emp.fullName||emp.lineUserId} (${ $month.value||monthStr() })\n${url}`);
+    }catch(e){
+      alert('ส่งไฟล์เข้า LINE ไม่สำเร็จ: ' + (e.message||e));
+    }
+  });
+}
+
+/* ---------- PAYROLL page ---------- */
+const $prMonth = document.getElementById('pr-month');
+const $prQ = document.getElementById('pr-q');
+const $prRun = document.getElementById('pr-run');
+const $prStatus = document.getElementById('pr-status');
+const $prBody = document.getElementById('pr-body');
+const $prTotal = document.getElementById('pr-total');
+const $prCheckAll = document.getElementById('pr-checkall');
+const $prMsg = document.getElementById('pr-msg');
+
+$prMonth.value = FORCED_MONTH || monthStr();
+
+let __payrollRows = [];
+
+$prQ.oninput = ()=> renderPayrollTable(__payrollRows);
+document.getElementById('pr-filter-status').onchange = ()=> renderPayrollTable(__payrollRows);
+
+$prCheckAll.addEventListener('change', ()=>{
+  [...$prBody.querySelectorAll('input[type="checkbox"]')].forEach(cb=> cb.checked = $prCheckAll.checked);
+  recomputePayrollTotal();
+});
+
+function recomputePayrollTotal(){
+  let s = 0;
+  [...$prBody.querySelectorAll('tr')].forEach(tr=>{
+    const cb = tr.querySelector('input[type="checkbox"]');
+    const net = Number(tr.dataset.net || 0);
+    if (cb && cb.checked) s += net;
+  });
+  $prTotal.textContent = s.toLocaleString(undefined,{maximumFractionDigits:2});
+}
+let __statusMap = {};
+let __slipped = new Set();
+
+function renderPayrollTable(rows){
+  const q = ($prQ.value||'').toLowerCase();
+  const fStatus = document.getElementById('pr-filter-status').value || '';
+  $prBody.innerHTML = '';
+  rows.filter(notOwner)
+      .filter(x => !q || `${x.fullName||''} ${x.jobTitle||''}`.toLowerCase().includes(q))
+      .filter(x => !fStatus || (String(x.status||'')===fStatus))
+    .forEach((r)=>{
+      const st = r.status || 'Pending';
+      const slipMark = __slipped.has(r.lineUserId) ? `<span class="chip" title="ออกสลิปแล้ว">สลิป✓</span>` : '';
+      const tr = document.createElement('tr');
+      tr.dataset.net = r.netPay || 0;
+      tr.innerHTML = `
+        <td><input type="checkbox" checked></td>
+        <td>${r.fullName || '-'} ${slipMark}</td>
+        <td>${r.jobTitle || '-'}</td>
+        <td>${r.payType}</td>
+        <td style="text-align:right">${Number(r.payRate||0).toLocaleString()}</td>
+        <td style="text-align:right">${r.workDays}</td>
+        <td style="text-align:right">${r.workHours.toFixed(2)}</td>
+        <td style="text-align:right">${r.lateHours.toFixed(2)}</td>
+        <td style="text-align:right">${r.basePay.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+        <td style="text-align:right">${r.lateDeduct.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+        <td style="text-align:right"><b>${r.netPay.toLocaleString(undefined,{maximumFractionDigits:2})}</b></td>
+        <td>${r.payoutChannel || '-'}</td>
+        <td>${r.bankName||'-'} ${r.bankAccount||''}</td>
+        <td class="status-col">
+            <select class="pr-status">
+              <option value="Pending"${st==='Pending'?' selected':''}>Pending</option>
+              <option value="Approved"${st==='Approved'?' selected':''}>Approved</option>
+              <option value="Transferred"${st==='Transferred'?' selected':''}>Transferred</option>
+            </select>
+        </td>
+        <td>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn-ghost pr-save">บันทึก</button>
+            <button class="btn pr-slip">ออกสลิป</button>
+          </div>
+        </td>`;
+      $prBody.appendChild(tr);
+      const $sel = tr.querySelector('.pr-status');
+      const $btnSave = tr.querySelector('.pr-save');
+      const $btnSlip = tr.querySelector('.pr-slip');
+
+      $btnSave.addEventListener('click', async ()=>{
+        try{
+          const status = $sel.value;
+          await savePayrollStatus({
+            month: $prMonth.value || monthStr(),
+            lineUserId: r.lineUserId,
+            status
+          });
+          $prMsg.textContent = `บันทึกสถานะเป็น ${status} แล้ว`;
+          r.status = status;
+        }catch(e){ $prMsg.textContent = 'บันทึกสถานะไม่สำเร็จ: ' + (e.message||e); }
+      });
+
+      $btnSlip.addEventListener('click', async ()=>{
+        try{
+          const url = await generatePayslipPdf({
+            month: $prMonth.value || monthStr(),
+            record: r
+          });
+          __slipped.add(r.lineUserId);
+          renderPayrollTable(__payrollRows);
+          await shareTextToLine(`สลิปเงินเดือน ${r.fullName} (${ $prMonth.value || monthStr() })\n${url}`);
+          $prMsg.textContent = 'สร้างสลิปสำเร็จและส่งลิงก์เข้า LINE แล้ว';
+        }catch(e){ $prMsg.textContent = 'ออกสลิปไม่สำเร็จ: ' + (e.message||e); }
+      });
+    });
+  recomputePayrollTotal();
+}
+
+async function runPayroll(){
+  try{
+    $prStatus.textContent = 'กำลังคำนวณ…';
+    const m = $prMonth.value || monthStr();
+    const rows = [];
+    for (const emp of __users){
+      if (!notOwner(emp)) continue;
+      const { days, leave, summary } = await fetchLogs(emp.lineUserId, m);
+      const shiftIn = emp.shiftIn || ''; const grace = Number(emp.lateGraceMin || 0);
+      let totalLateMin = 0;
+      (days||[]).forEach(d=> totalLateMin += lateMinutesForDay(d, shiftIn, grace));
+      const lateHours = totalLateMin / 60;
+
+      const workHours = Number(summary?.workHours || 0);
+      const workDays  = Number(summary?.workDays  || 0);
+      const payType     = String(emp.payType || 'daily');
+      const payRate     = Number(emp.payRate || 0);
+      const dailyHours  = Number(emp.dailyHours || 8);
+      const prorateLate = String(emp.prorateLate||'false').toLowerCase()==='true';
+      const payEveryN   = Number(emp.payEveryN || 0);
+
+      let basePay=0;
+      if (payType==='hourly') basePay = workHours * payRate;
+      else if (payType==='daily') basePay = workDays * payRate;
+      else if (payType==='monthly'){ const effDays = dailyHours>0 ? (workHours/dailyHours) : 0; basePay = (payRate/30) * effDays; }
+      else if (payType==='every_n_days' && payEveryN>0){ basePay = (workDays/payEveryN) * payRate; }
+      else if (payType==='every_n_hours' && payEveryN>0){ basePay = (workHours/payEveryN) * payRate; }
+
+      let lateDeduct=0;
+      if (prorateLate && dailyHours>0 && payType!=='hourly'){
+        const perHour = (payType==='daily') ? (payRate/dailyHours)
+                        : (payType==='monthly') ? ((payRate/30)/dailyHours)
+                        : (payRate/dailyHours);
+        lateDeduct = perHour * lateHours;
+      }
+      const netPay = Math.max(0, basePay - lateDeduct);
+
+      rows.push({
+        month: m,
+        lineUserId: emp.lineUserId,
+        fullName: emp.fullName || '',
+        jobTitle: emp.jobTitle || '',
+        payType, payRate,
+        workDays, workHours,
+        lateHours, basePay, lateDeduct, netPay,
+        payoutChannel: emp.payoutChannel || 'bank',
+        bankName: emp.bankName || '', bankAccount: emp.bankAccount || ''
+      });
+    }
+    __payrollRows = rows;
+
+    const monthNow = m;
+    __statusMap = await fetchPayrollStatusMap(monthNow);
+    const logs = await fetchPayslipLogs(monthNow);
+    __slipped = new Set(logs.map(x => x.lineUserId));
+    __payrollRows = rows.map(r => {
+      const st = __statusMap[r.lineUserId]?.status;
+      return Object.assign({}, r, { status: st ? String(st).replace(/^\w/,c=>c.toUpperCase()) : 'Pending' });
+    });
+
+    renderPayrollTable(__payrollRows);
+
+    $prStatus.textContent = `คำนวณแล้ว ${rows.length} คน · เลือกเพื่อรวมยอด / ส่งไฟล์ หรือ "ออกสลิปทั้งหมดที่เลือก" ด้านล่าง`;
+  }catch(e){
+    $prStatus.textContent = 'คำนวณไม่สำเร็จ: ' + (e.message||e);
+  }
+}
+
+$prRun.onclick = runPayroll;
+document.getElementById('pr-refresh').onclick = runPayroll;
+
+/* (2) ออกสลิปทั้งหมดที่เลือก */
+document.getElementById('pr-slip-selected').onclick = async ()=>{
+  try{
+    const month = $prMonth.value || monthStr();
+    const selected = [];
+    [...$prBody.querySelectorAll('tr')].forEach(tr=>{
+      const cb = tr.querySelector('input[type="checkbox"]');
+      if (!cb || !cb.checked) return;
+      const name = tr.children[1]?.textContent?.replace('สลิป✓','').trim() || '';
+      const found = __payrollRows.find(r => (r.fullName||'')===name);
+      if (found) selected.push(found);
+    });
+    if (!selected.length){ alert('ยังไม่ได้เลือกรายการ'); return; }
+
+    $prMsg.textContent = `กำลังออกสลิป ${selected.length} รายการ…`;
+    for (const r of selected){
+      const url = await generatePayslipPdf({ month, record: r });
+      __slipped.add(r.lineUserId);
+      renderPayrollTable(__payrollRows);
+      await shareTextToLine(`สลิปเงินเดือน ${r.fullName} (${month})\n${url}`);
+    }
+    $prMsg.textContent = `ออกสลิปสำเร็จ ${selected.length} รายการ และส่งลิงก์เข้า LINE แล้ว`;
+  }catch(e){
+    $prMsg.textContent = 'ออกสลิปแบบชุดไม่สำเร็จ: ' + (e.message||e);
+  }
+};
+
+document.getElementById('pr-dl-csv').onclick = async ()=>{
+  try{
+    if (!__payrollRows.length) { alert('ยังไม่มีข้อมูล กรุณาคำนวณก่อน'); return; }
+    const header = ['lineUserId','fullName','jobTitle','payType','payRate','workDays','workHours','lateHours','basePay','lateDeduct','netPay','month','payoutChannel','bankName','bankAccount'];
+    const rows = [header];
+    const chosen = [];
+    [...$prBody.querySelectorAll('tr')].forEach((tr)=>{
+      const cb = tr.querySelector('input[type="checkbox"]');
+      if (!cb || !cb.checked) return;
+      const name = tr.children[1]?.textContent || '';
+      const found = __payrollRows.find(r => (r.fullName||'')===name);
+      if (found) chosen.push(found);
+    });
+    (chosen.length ? chosen : __payrollRows).forEach(r=> rows.push(header.map(k=> r[k])));
+    const csv = rows.map(r=> r.map(v=> `"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\n');
+    const fname = `payroll_${TENANT}_${$prMonth.value||monthStr()}.csv`;
+
+    const { url } = await uploadCsvAndGetUrl(fname, csv);
+    await shareTextToLine(`ไฟล์เงินเดือน ${fname}\n${url}`);
+    $prMsg.textContent = 'ส่งลิงก์ไฟล์เข้า LINE แล้ว';
+  }catch(e){
+    $prMsg.textContent = 'ส่งไม่สำเร็จ: ' + (e.message||e);
+  }
+};
+
+async function fetchPayrollStatusMap(month){
+  const params = new URLSearchParams({ month, actorLineUserId:(await getActor()).lineUserId });
+  const r = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/payroll/status?`+params).catch(()=>null);
+  const j = await (r ? r.json().catch(()=>({})) : {});
+  if (!r || !r.ok || !j.ok) return {};
+  return j.data || {};
+}
+
+async function fetchPayslipLogs(month){
+  const params = new URLSearchParams({ month, actorLineUserId:(await getActor()).lineUserId });
+  const r = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/payroll/payslip_logs?`+params).catch(()=>null);
+  const j = await (r ? r.json().catch(()=>({})) : {});
+  if (!r || !r.ok || !j.ok) return [];
+  return j.data || [];
+}
+
+
+/* ---------- REPORTS page ---------- */
+const $rpMonth = document.getElementById('rp-month');
+const $rpStatus = document.getElementById('rp-status');
+const $rpBody = document.getElementById('rp-body');
+const $rpTotal = document.getElementById('rp-total');
+const $rpMsg = document.getElementById('rp-msg');
+const $rpRunPay = document.getElementById('rp-runpay');
+
+$rpMonth.value = FORCED_MONTH || monthStr();
+
+let __reportRows = [];
+let __runsCache = []; // cache รายชื่อ runs
+
+$rpRunPay.onclick = async ()=>{
+  try{
+    $rpRunPay.disabled = true;
+    $rpStatus.textContent = 'กำลังรันงวดเงินเดือน…';
+
+    const { first, last } = monthRangeStr($rpMonth.value || monthStr());
+    const out = await runPayrollRun({ periodStart:first, periodEnd:last });
+
+    $rpStatus.textContent = `รันงวดสำเร็จ (runId: ${out.runId || '-'}) · กำลังรีเฟรชข้อมูล…`;
+
+    await primeHistoryControls();
+    await loadHistory();
+    await runReport();
+  }catch(e){
+    $rpStatus.textContent = 'รันงวดไม่สำเร็จ: ' + (e.message || e);
+  }finally{
+    $rpRunPay.disabled = false;
+  }
+};
+
+async function runReport(){
+  try{
+    $rpStatus.textContent = 'กำลังรวมรายงาน…';
+    const m = $rpMonth.value || monthStr();
+    const rows =[];
+    for (const emp of __users){
+      if (!notOwner(emp)) continue;
+      const { days, leave, summary } = await fetchLogs(emp.lineUserId, m);
+      const shiftIn = emp.shiftIn || ''; const grace = Number(emp.lateGraceMin || 0);
+      let totalLateMin = 0;
+      (days||[]).forEach(d=> totalLateMin += lateMinutesForDay(d, shiftIn, grace));
+      const lateHours = totalLateMin / 60;
+
+      const workHours = Number(summary?.workHours || 0);
+      const workDays  = Number(summary?.workDays  || 0);
+      const payType     = String(emp.payType || 'daily');
+      const payRate     = Number(emp.payRate || 0);
+      const dailyHours  = Number(emp.dailyHours || 8);
+      const prorateLate = String(emp.prorateLate||'false').toLowerCase()==='true';
+      const payEveryN   = Number(emp.payEveryN || 0);
+
+      let basePay=0;
+      if (payType==='hourly') basePay = workHours * payRate;
+      else if (payType==='daily') basePay = workDays * payRate;
+      else if (payType==='monthly'){ const effDays = dailyHours>0 ? (workHours/dailyHours) : 0; basePay = (payRate/30) * effDays; }
+      else if (payType==='every_n_days' && payEveryN>0){ basePay = (workDays/payEveryN) * payRate; }
+      else if (payType==='every_n_hours' && payEveryN>0){ basePay = (workHours/payEveryN) * payRate; }
+
+      let lateDeduct=0;
+      if (prorateLate && dailyHours>0 && payType!=='hourly'){
+        const perHour = (payType==='daily') ? (payRate/dailyHours)
+                        : (payType==='monthly') ? ((payRate/30)/dailyHours)
+                        : (payRate/dailyHours);
+        lateDeduct = perHour * lateHours;
+      }
+      const netPay = Math.max(0, basePay - lateDeduct);
+
+      rows.push({
+        month: m,
+        lineUserId: emp.lineUserId,
+        fullName: emp.fullName || '',
+        jobTitle: emp.jobTitle || '',
+        payType, payRate,
+        workDays, workHours,
+        lateHours, basePay, lateDeduct, netPay
+      });
+    }
+    __reportRows = rows;
+
+    $rpBody.innerHTML = '';
+    let s = 0;
+    rows.forEach(r=>{
+      s += r.netPay || 0;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${r.fullName||'-'}</td>
+        <td>${r.jobTitle||'-'}</td>
+        <td>${r.payType}</td>
+        <td style="text-align:right">${Number(r.payRate||0).toLocaleString()}</td>
+        <td style="text-align:right">${r.workDays}</td>
+        <td style="text-align:right">${r.workHours.toFixed(2)}</td>
+        <td style="text-align:right">${r.lateHours.toFixed(2)}</td>
+        <td style="text-align:right">${r.basePay.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+        <td style="text-align:right">${r.lateDeduct.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+        <td style="text-align:right"><b>${r.netPay.toLocaleString(undefined,{maximumFractionDigits:2})}</b></td>
+      `;
+      $rpBody.appendChild(tr);
+    });
+    $rpTotal.textContent = s.toLocaleString(undefined,{maximumFractionDigits:2});
+
+    const empCount = rows.length;
+    const avg = empCount ? (s/empCount) : 0;
+    document.getElementById('rp-k1').textContent = $rpTotal.textContent;
+    document.getElementById('rp-k2').textContent = String(empCount);
+    document.getElementById('rp-k3').textContent = avg.toLocaleString(undefined,{maximumFractionDigits:2});
+
+    $rpStatus.textContent = `เสร็จแล้ว: เดือน ${$rpMonth.value||monthStr()} (ดูสรุปด้านบน และรายละเอียดตามตาราง)`;
+  }catch(e){
+    $rpStatus.textContent = 'สร้างรายงานไม่สำเร็จ: ' + (e.message||e);
+  }
+}
+
+document.getElementById('rp-dl-csv').onclick = async ()=>{
+  try{
+    if (!__reportRows.length) { alert('ยังไม่มีข้อมูล กรุณาสร้างรายงานก่อน'); return; }
+    const header = ['lineUserId','fullName','jobTitle','payType','payRate','workDays','workHours','lateHours','basePay','lateDeduct','netPay','month'];
+    const rows = [header];
+    __reportRows.forEach(r=> rows.push(header.map(k=> r[k])));
+    const csv = rows.map(r=> r.map(v=> `"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\n');
+    const fname = `report_${TENANT}_${$rpMonth.value||monthStr()}.csv`;
+    const { url } = await uploadCsvAndGetUrl(fname, csv);
+    await shareTextToLine(`รายงานเงินเดือน ${fname}\n${url}`);
+    $rpMsg.textContent = 'ส่งลิงก์ไฟล์เข้า LINE แล้ว';
+  }catch(e){
+    $rpMsg.textContent = 'ส่งไม่สำเร็จ: ' + (e.message||e);
+  }
+};
+
+// ===== Payroll History (runs + items) =====
+async function fetchRuns(){
+  const params = new URLSearchParams({ actorLineUserId:(await getActor()).lineUserId });
+  const r = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/payroll/runs?`+params).catch(()=>null);
+  const j = await (r ? r.json().catch(()=>({})) : {});
+  return (r && r.ok && j.ok) ? (j.data||[]) : [];
+}
+async function fetchItems({ runId, month, q }){
+  const params = new URLSearchParams({ actorLineUserId:(await getActor()).lineUserId });
+  if (runId) params.set('runId', runId);
+  if (month) params.set('month', month);
+  if (q) params.set('q', q);
+  const r = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/payroll/items?`+params).catch(()=>null);
+  const j = await (r ? r.json().catch(()=>({})) : {});
+  return (r && r.ok && j.ok) ? (j.data||[]) : [];
+}
+
+const $histRun  = document.getElementById('hist-run');
+const $histMonth= document.getElementById('hist-month');
+const $histQ    = document.getElementById('hist-q');
+const $histMin  = document.getElementById('hist-min');
+const $histMax  = document.getElementById('hist-max');
+const $histBody = document.getElementById('hist-body');
+
+$histMonth.value = monthStr();
+
+async function primeHistoryControls(){
+  const runs = await fetchRuns();
+  __runsCache = runs || [];
+  $histRun.innerHTML = `<option value="">— ทั้งหมด —</option>` +
+    __runsCache.map(r=> `<option value="${r.runId}">${r.runId} (${r.periodStart}→${r.periodEnd})</option>`).join('');
+}
+
+async function loadHistory(){
+  const runId = $histRun.value || '';
+  const month = $histMonth.value || '';
+  const kw = ($histQ.value||'').trim();
+
+  let rows = await fetchItems({ runId, month, q: kw });
+
+  const min = Number($histMin.value||'');
+  const max = Number($histMax.value||'');
+  rows = rows.filter(r => (isNaN(min) || Number(r.netPay||0) >= min) &&
+                          (isNaN(max) || Number(r.netPay||0) <= max));
+
+  $histBody.innerHTML = '';
+  rows.forEach((r)=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><a href="#" data-runid="${r.runId||''}" class="run-link">${r.runId||'-'}</a></td>
+      <td>${r.fullName||r.lineUserId||'-'}</td>
+      <td style="text-align:right">${Number(r.workDays||0)}</td>
+      <td style="text-align:right">${Number(r.workHours||0).toFixed(2)}</td>
+      <td style="text-align:right">${Number(r.basePay||0).toLocaleString()}</td>
+      <td style="text-align:right">${Number(r.lateDeduct||0).toLocaleString()}</td>
+      <td style="text-align:right"><b>${Number(r.netPay||0).toLocaleString()}</b></td>
+      <td><code style="font-size:11px">${(r.detail && Object.keys(r.detail).length)? '…' : '-'}</code></td>
+      <td>${(r.createdAt||'').replace('T',' ').slice(0,16)}</td>`;
+    $histBody.appendChild(tr);
+  });
+
+  // bind เปิดรายละเอียดงวด
+  [...document.querySelectorAll('.run-link')].forEach(a=>{
+    a.addEventListener('click', (e)=>{ e.preventDefault(); const rid=a.dataset.runid||''; if(rid) openRunDetail(rid); });
+  });
+}
+
+/* ---- Run detail modal ---- */
+function showRunModal(){ document.getElementById('run-modal').classList.remove('hidden'); }
+function hideRunModal(){ document.getElementById('run-modal').classList.add('hidden'); }
+document.getElementById('run-close').onclick = hideRunModal;
+document.querySelector('#run-modal .backdrop').onclick = hideRunModal;
+
+async function openRunDetail(runId){
+  try{
+    if (!__runsCache.length) __runsCache = await fetchRuns();
+    const meta = __runsCache.find(r=> r.runId===runId) || {};
+    const { periodStart, periodEnd } = { periodStart: meta.periodStart||'', periodEnd: meta.periodEnd||'' };
+
+    const items = await fetchItems({ runId });
+
+    const total = items.reduce((s,x)=> s + Number(x.netPay||0), 0);
+    const n = items.length;
+    const avg = n ? total/n : 0;
+
+    document.getElementById('run-title').textContent = `รายละเอียดงวด ${runId}`;
+    const periodTxt = (periodStart && periodEnd) ? `${periodStart} → ${periodEnd}` : '—';
+    document.getElementById('run-subtitle').textContent = `ช่วงงวด: ${periodTxt} · รายการทั้งหมด ${n} คน`;
+
+    document.getElementById('run-k1').textContent = total.toLocaleString(undefined,{maximumFractionDigits:2});
+    document.getElementById('run-k2').textContent = String(n);
+    document.getElementById('run-k3').textContent = avg.toLocaleString(undefined,{maximumFractionDigits:2});
+
+    const $rb = document.getElementById('run-body'); $rb.innerHTML = '';
+    items.forEach((r,idx)=>{
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${idx+1}</td>
+        <td>${r.fullName||r.lineUserId||'-'}</td>
+        <td>${(r.payType||'-')}/${Number(r.payRate||0).toLocaleString()}</td>
+        <td style="text-align:right">${Number(r.workDays||0)}</td>
+        <td style="text-align:right">${Number(r.workHours||0).toFixed(2)}</td>
+        <td style="text-align:right">${Number(r.lateHours||0).toFixed(2)} / ${Number(r.leaveHours||0).toFixed?.(2)??'0.00'}</td>
+        <td style="text-align:right">${Number(r.basePay||0).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+        <td style="text-align:right">${Number(r.lateDeduct||0).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+        <td style="text-align:right"><b>${Number(r.netPay||0).toLocaleString(undefined,{maximumFractionDigits:2})}</b></td>`;
+      $rb.appendChild(tr);
+    });
+
+    document.getElementById('run-export').onclick = async ()=>{
+      try{
+        const header = ['runId','lineUserId','fullName','payType','payRate','workDays','workHours','lateHours','basePay','lateDeduct','netPay','month'];
+        const rows = [header];
+        items.forEach(r=> rows.push(header.map(k=> r[k])));
+        const csv = rows.map(r=> r.map(v=> `"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\n');
+        const fname = `run_${runId}.csv`;
+        const { url } = await uploadCsvAndGetUrl(fname, csv);
+        await shareTextToLine(`รายละเอียดงวด ${runId} (${periodTxt})\n${url}`);
+        document.getElementById('run-msg').textContent = 'ส่งลิงก์ไฟล์เข้า LINE แล้ว';
+      }catch(e){
+        document.getElementById('run-msg').textContent = 'ส่งไม่สำเร็จ: ' + (e.message||e);
+      }
+    };
+
+    showRunModal();
+  }catch(e){
+    alert('เปิดรายละเอียดงวดไม่สำเร็จ: ' + (e.message||e));
+  }
+}
+
+/* ---------- boot ---------- */
+function applyRoute(){
+  const h=(location.hash||'').replace('#','').trim().toLowerCase();
+  const v=h||DEFAULT_VIEW||'menu';
+  show(v);
+}
+window.addEventListener('hashchange', applyRoute);
+document.getElementById('btnHome').addEventListener('click', e=>{ e.preventDefault(); go('menu'); });
+
+(async ()=>{
+  try{
+    if (!TENANT) throw new Error('URL ไม่มีพารามิเตอร์ tenant');
+    setMsg('กำลังเริ่มต้น LIFF…');
+    const ok = await ensureLiff(); if (!ok) return;
+    await getActor(); setMsg('พร้อมใช้งาน','ok');
+
+    const primeUsers = async ()=> {
+      try {
+        document.getElementById('lazyNote').textContent='รอสักครู่ กำลังโหลดข้อมูล…';
+        const rows = await getUsersOnce();
+        renderCards(rows);
+      } catch(e) {
+        document.getElementById('lazyNote').textContent='โหลดไม่สำเร็จ';
+      }
+    };
+    const primeLogs = async ()=> {
+      try {
+        document.getElementById('lazyNote2').textContent='รอสักครู่ กำลังโหลดรายชื่อ…';
+        await getUsersOnce();
+        renderUserStripLogs();
+        if (!CURRENT_USER && __users.length) openLogs(__users[0]);
+      } catch(e) {
+        document.getElementById('lazyNote2').textContent='โหลดไม่สำเร็จ';
+      }
+    };
+    const primePayroll = async ()=> {
+      try {
+        await getUsersOnce();
+        $prStatus.textContent = 'พร้อมคำนวณ เลือกเดือนแล้วกด “คำนวณเงินเดือน”';
+      } catch(e) {
+        $prStatus.textContent = 'โหลดรายชื่อไม่สำเร็จ';
+      }
+    };
+    const primeReports = async ()=> {
+      try {
+        await getUsersOnce();
+        $rpStatus.textContent = 'พร้อมสร้างรายงาน';
+        await primeHistoryControls();
+        await loadHistory();
+      } catch(e) {
+        $rpStatus.textContent = 'โหลดรายชื่อไม่สำเร็จ';
+      }
+    };
+
+    const firstView=(location.hash||'').slice(1)||DEFAULT_VIEW||'menu';
+    if (firstView==='users') await primeUsers();
+    if (firstView==='logs')  await primeLogs();
+    if (firstView==='payroll') await primePayroll();
+    if (firstView==='reports') await primeReports();
+
+    window.addEventListener('hashchange', async ()=>{
+      const v=(location.hash||'').slice(1);
+      if (v==='users') await primeUsers();
+      if (v==='logs')  await primeLogs();
+      if (v==='payroll') await primePayroll();
+      if (v==='reports') await primeReports();
+    });
+
+    await getUsersOnce();
+    if (firstView==='users') renderCards(__users);
+    if (firstView==='logs')  renderUserStripLogs();
+
+    document.getElementById('reload').onclick = async()=> renderCards(await listEmployees(await getActor()));
+    document.getElementById('q').oninput      = async()=> renderCards(await listEmployees(await getActor()));
+
+    if (MODE_PAYROLL){ go('payroll'); await primePayroll(); }
+    if (MODE_REPORT){ go('reports'); await primeReports(); }
+
+  }catch(e){ setMsg('ผิดพลาด: '+ (e.message||e), 'err'); }
+})();
+</script>
+</body>
+</html>

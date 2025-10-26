@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+  <title>ลางาน</title>
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <script src="/__boot/liff-id.js"></script>
+  <style>
+    :root { --pri:#0b5cff; --ok:#0a7d00; --err:#b00020; --bg:#f6f7fb; }
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:var(--bg);}
+    .wrap{max-width:540px;margin:0 auto;padding:20px;}
+    .card{background:#fff;border-radius:14px;box-shadow:0 6px 16px rgba(0,0,0,.06);padding:18px;}
+    h2{margin:0 0 12px 0}
+    .row{display:flex;gap:12px}
+    .col{flex:1}
+    label{font-size:13px;color:#333;display:block;margin-bottom:6px}
+    input,select,textarea{width:100%;padding:12px;border:1px solid #e3e6ef;border-radius:10px;font-size:15px;background:#fff}
+    textarea{min-height:72px;resize:vertical}
+    .muted{color:#666;font-size:13px}
+    .mt{margin-top:12px}
+    .btn{width:100%;padding:14px;border:0;border-radius:12px;background:var(--pri);color:#fff;font-size:16px}
+    .btn[disabled]{opacity:.6}
+    .ok{color:var(--ok)} .err{color:var(--err)}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h2>ขอลางาน</h2>
+      <p id="status" class="muted">กำลังเริ่มต้น…</p>
+
+      <div class="mt">
+        <label>วันที่ลา</label>
+        <input type="date" id="date"/>
+      </div>
+
+      <div class="row mt">
+        <div class="col">
+          <label>ชั่วโมงลา</label>
+          <input type="number" id="hours" min="0" step="0.5" placeholder="เช่น 8"/>
+        </div>
+        <div class="col">
+          <label>เหตุผล</label>
+          <select id="reason">
+            <option value="">-- เลือกเหตุผล --</option>
+            <option>ลากิจ</option>
+            <option>ลาป่วย</option>
+            <option>ลาพักผ่อน</option>
+            <option>อื่นๆ</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="mt">
+        <label>หมายเหตุ (ถ้ามี)</label>
+        <textarea id="note" placeholder="อาการ/รายละเอียดเพิ่มเติม…"></textarea>
+      </div>
+
+      <button id="submit" class="btn mt" disabled>ส่งคำขอ</button>
+    </div>
+  </div>
+
+<script>
+(function(){
+  // merge query (outer + liff.state)
+  function readParams(){
+    const outer = new URLSearchParams(location.search);
+    let merged = new URLSearchParams(outer);
+    const st = outer.get('liff.state');
+    if (st) {
+      const inner = new URLSearchParams(st.startsWith('?')? st.slice(1): st);
+      for (const [k,v] of inner.entries()) merged.set(k,v);
+    }
+    return merged;
+  }
+  const qs   = readParams();
+  const LIFF = qs.get('liffId') || (window.DEFAULT_LIFF_ID || '');
+  const TEN  = qs.get('tenant') || '';
+
+  const $status = document.getElementById('status');
+  const $submit = document.getElementById('submit');
+  const setMsg = (t,cls='muted') => { $status.className=cls; $status.textContent=t; };
+
+  async function ensureLiff(){
+    if (!LIFF) throw new Error('ไม่พบ LIFF ID');
+    await liff.init({ liffId: LIFF });
+    if (!liff.isLoggedIn()){
+      liff.login({ redirectUri: location.href });
+      return false;
+    }
+    return true;
+  }
+  function uid(){
+    const idt = liff.getDecodedIDToken();
+    return (idt && idt.sub) ? idt.sub.replace('line:','') : null;
+  }
+
+  async function submit(){
+    try{
+      $submit.disabled = true;
+      const lineUserId = uid();
+      if (!lineUserId) throw new Error('อ่าน LINE UserId ไม่ได้');
+      if (!TEN) throw new Error('URL ไม่มี tenant');
+
+      const date  = document.getElementById('date').value;
+      const hours = Number(document.getElementById('hours').value || 0);
+      const reason= document.getElementById('reason').value;
+      const note  = document.getElementById('note').value;
+
+      if (!date) throw new Error('กรุณาเลือกวันที่ลา');
+      if (!(hours > 0)) throw new Error('กรุณากรอกชั่วโมงลา (>0)');
+
+      setMsg('กำลังส่งคำขอ…');
+      const res = await fetch(`/api/tenants/${encodeURIComponent(TEN)}/leave/request`,{
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({ lineUserId, date, hours, reason, note })
+      });
+      const j = await res.json().catch(()=> ({}));
+      if (!res.ok || !j.ok) throw new Error(j.error || 'leave_failed');
+
+      setMsg('ส่งคำขอสำเร็จ ✅', 'ok');
+      try { if (liff.isInClient()) setTimeout(()=> liff.closeWindow(), 800); } catch {}
+    }catch(e){
+      setMsg('ผิดพลาด: ' + (e.message || e), 'err');
+    }finally{
+      $submit.disabled = false;
+    }
+  }
+
+  (async ()=>{
+    try{
+      setMsg('กำลังเริ่มต้น LIFF…');
+      const ok = await ensureLiff(); if (!ok) return;
+      // prefill today
+      const today = new Date(); today.setMinutes(today.getMinutes()-today.getTimezoneOffset());
+      document.getElementById('date').value = today.toISOString().slice(0,10);
+      setMsg('พร้อมส่งคำขอ');
+      $submit.disabled = false;
+    }catch(e){
+      setMsg('ผิดพลาด: ' + (e.message || e), 'err');
+    }
+  })();
+
+  $submit.addEventListener('click', submit);
+})();
+</script>
+</body>
+</html>

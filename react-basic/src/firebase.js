@@ -1,6 +1,11 @@
 // src/firebase.js
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import {
+  initializeAuth,
+  indexedDBLocalPersistence,
+  browserLocalPersistence,
+  inMemoryPersistence,
+} from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
@@ -9,18 +14,27 @@ const firebaseConfig = {
   authDomain: 'line-rich-menus-web.firebaseapp.com',
   projectId: 'line-rich-menus-web',
   appId: '1:610199065213:web:d3d4f4671af6862a3b1714',
-  storageBucket: 'line-rich-menus-web.firebasestorage.app', // ใช้อันนี้ได้
-  // storageBucket: 'line-rich-menus-web.appspot.com',
+  storageBucket: 'line-rich-menus-web.firebasestorage.app',
 };
 
-const app = initializeApp(firebaseConfig);
+export const app = initializeApp(firebaseConfig);
 
-export const auth = getAuth(app);
+// --- เลือก persistence ตามสภาพแวดล้อม ---
+const ua = (typeof navigator !== 'undefined' ? navigator.userAgent : '').toLowerCase();
+const isIOS = /iphone|ipad|ipod/.test(ua);
+const isLine = ua.includes(' line/');
+const isLineIOS = isIOS && isLine;
+
+// LINE iOS → ใช้ in-memory กันปัญหา IndexedDB/LocalStorage บน WKWebView
+// ที่อื่น → ใช้ IndexedDB (หรือ browserLocalPersistence ก็ได้)
+export const auth = initializeAuth(app, {
+  persistence: isLineIOS ? inMemoryPersistence : indexedDBLocalPersistence,
+});
+
 export const db = getFirestore(app);
 export const storage = getStorage(app);
-export { app };
 
-// --- เพิ่มบล็อกนี้ เพื่อใช้งานจาก DevTools Console ---
+// สำหรับดีบักใน DevTools
 if (typeof window !== 'undefined') {
   window.__app = app;
   window.__auth = auth;

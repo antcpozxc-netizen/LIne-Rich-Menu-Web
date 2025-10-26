@@ -2,18 +2,29 @@
 import React, { useMemo, useEffect, useState } from 'react';
 import { AppBar, Toolbar, Typography, Avatar, Chip, Button, Stack } from '@mui/material';
 import { getAuth, onIdTokenChanged } from 'firebase/auth';
+import { useLocation } from 'react-router-dom';
 
 export default function AppHeader() {
   const auth = getAuth();
   const user = auth.currentUser;
+  const location = useLocation();
 
-  // อ่าน claims จาก ID token
+  // === state สำหรับแสดงบนแถบ ===
   const [roleLabel, setRoleLabel] = useState('user');
   const [nameFromClaims, setNameFromClaims] = useState('');
   const [picFromClaims, setPicFromClaims] = useState('');
 
+  // ใช้ซ่อนปุ่มย้อนกลับเฉพาะหน้า TARegister
+  const isTARegister = location.pathname === '/app/attendance/register';
+
+  // helper: แปลง uid ของ Firebase (มาจาก custom token "uid":"line:Uxxxx")
+  const lineUserId = useMemo(() => {
+    const raw = user?.uid || '';
+    return raw.startsWith('line:') ? raw.slice(5) : raw;
+  }, [user?.uid]);
+
   useEffect(() => {
-    // ฟังก์ชันช่วย map ทั้งแบบ role=string และแบบ boolean claims เดิม
+    let first = true;
     const resolveRole = (claims = {}) =>
       String(
         claims.role ||
@@ -23,15 +34,59 @@ export default function AppHeader() {
         'user'
       );
 
-    // อัปเดตทุกครั้งที่ ID token เปลี่ยน และบังคับรีเฟรชครั้งแรก
     const off = onIdTokenChanged(auth, async (u) => {
-      if (!u) { setRoleLabel('user'); return; }
-      const tr = await u.getIdTokenResult(true).catch(() => null); // ← force refresh
-      setRoleLabel(resolveRole(tr?.claims || {}));
-      setNameFromClaims(tr?.claims?.name || tr?.claims?.username || '');
-      setPicFromClaims(tr?.claims?.picture || '');
+      if (!u) {
+        setRoleLabel('user');
+        setNameFromClaims('');
+        setPicFromClaims('');
+        return;
+      }
 
-      // fallback เพิ่มความชัวร์จาก session cookie ของเซิร์ฟเวอร์
+      // force refresh รอบแรกเท่านั้น กัน iOS กระตุก
+      const tr = await u.getIdTokenResult(first).catch(() => null);
+      first = false;
+      const claims = tr?.claims || {};
+      setRoleLabel(resolveRole(claims));
+      setNameFromClaims(claims?.name || claims?.username || '');
+
+      // 1) ถ้ามีรูปใน claims หรือ provider → ใช้ก่อน
+      const candidate =
+        claims?.picture ||
+        u.photoURL ||
+        u.providerData?.[0]?.photoURL ||
+        '';
+
+      if (candidate) {
+        setPicFromClaims(candidate);
+        return;
+      }
+
+      // 2) ถ้าไม่มีรูป ให้ลองยิงไป LINE profile proxy ของเรา
+      //    tenant เอาจาก custom-claims.tenant (เราเซ็ตไว้ตอนออก token)
+      const tenant = claims?.tenant;
+      if (!tenant || !lineUserId) {
+        // ถ้าไม่มีก็จบ ไม่ต้องยิง
+        return;
+      }
+
+      try {
+        console.debug('[AppHeader] fetch LINE profile', { tenant, lineUserId });
+        const r = await fetch(
+          `/api/tenants/${encodeURIComponent(tenant)}/line/profile?userId=${encodeURIComponent(lineUserId)}`
+        );
+        if (r.ok) {
+          const j = await r.json();
+          if (j?.ok && j?.profile?.pictureUrl) {
+            setPicFromClaims(j.profile.pictureUrl);
+          }
+        } else {
+          console.warn('[AppHeader] profile fetch not ok', r.status);
+        }
+      } catch (e) {
+        console.error('[AppHeader] profile fetch error', e);
+      }
+
+      // 3) เผื่อ role จาก session ฝั่ง server
       try {
         const r = await fetch('/api/session/me');
         if (r.ok) {
@@ -40,16 +95,16 @@ export default function AppHeader() {
         }
       } catch {}
     });
-    return () => off();
-  }, [auth]);
 
+    return () => off();
+  }, [auth, lineUserId]);
 
   const displayName = useMemo(
     () => nameFromClaims || user?.displayName || user?.providerData?.[0]?.displayName || 'Guest',
     [nameFromClaims, user]
   );
 
-  const avatarSrc = user?.photoURL || picFromClaims || undefined;
+  const avatarSrc = picFromClaims || user?.photoURL || undefined;
 
   const onBack = () => {
     if (document.referrer && document.referrer.startsWith(window.location.origin)) {
@@ -72,22 +127,21 @@ export default function AppHeader() {
 
         <Stack direction="row" spacing={1} alignItems="center">
           <Chip size="small" label={roleLabel} color="default" />
-          {user && (
-            <>
-              <Typography variant="body2">{displayName}</Typography>
-              <Avatar src={avatarSrc}>
-                {(displayName?.trim()?.[0] || 'U').toUpperCase()}
-              </Avatar>
-            </>
+          {displayName && <Typography variant="body2">{displayName}</Typography>}
+          <Avatar src={avatarSrc}>
+            {(displayName?.trim()?.[0] || 'U').toUpperCase()}
+          </Avatar>
+
+          {!isTARegister && (
+            <Button
+              variant="outlined"
+              size="small"
+              sx={{ ml: 1, color: '#fff', borderColor: 'rgba(255,255,255,.6)' }}
+              onClick={onBack}
+            >
+              ย้อนกลับ
+            </Button>
           )}
-          <Button
-            variant="outlined"
-            size="small"
-            sx={{ ml: 1, color: '#fff', borderColor: 'rgba(255,255,255,.6)' }}
-            onClick={onBack}
-          >
-            ย้อนกลับ
-          </Button>
         </Stack>
       </Toolbar>
     </AppBar>

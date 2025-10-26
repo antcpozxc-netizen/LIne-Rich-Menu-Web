@@ -395,6 +395,15 @@ export default function HomePageMain() {
               </ListItemButton>
             </ListItem>
 
+            {/* Time Attendance (single menu) */}
+            <ListItem disablePadding>
+              <ListItemButton onClick={() => navigate(`/homepage/settings/attendance${tenantQuery}`)}>
+                <ListItemIcon><AssignmentTurnedInOutlinedIcon /></ListItemIcon>
+                {sidebarOpen && <ListItemText primary="Time Attendance" secondary="ตั้งค่า & Apps Script" />}
+              </ListItemButton>
+            </ListItem>
+
+
             {/* Admin (collapsible) */}
             {allowAdminMenu && (
               <>
