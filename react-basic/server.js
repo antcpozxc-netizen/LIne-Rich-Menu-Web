@@ -8621,18 +8621,15 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
     }
 
 
-    
-    // ======= HELP (คำสั่ง: ช่วยเหลือ) – Single Bubble (no links) =======
-    // ======= HELP (คำสั่ง: ช่วยเหลือ) – Single Bubble (no spacer) =======
-    // ======= HELP (คำสั่ง: ช่วยเหลือ) – Single Bubble (themed, readable) =======
+    // ======= HELP (คำสั่ง: ช่วยเหลือ) – Single Bubble (multi-line items) =======
     if (/^ช่วยเหลือ$/i.test(text)) {
       if (!(await isAttendanceEnabled(tenantRef))) {
         return reply(replyToken, 'ยังไม่ได้เปิดใช้ระบบ Time Attendance ใน OA นี้', null, tenantRef);
       }
 
-      const THEME_PRIMARY = '#3B5BDB';   // ฟ้าอมม่วง (ใกล้ภาพตัวอย่าง)
+      const THEME_PRIMARY = '#3B5BDB';   // ฟ้าอมม่วง
       const THEME_SOFT    = '#EEF2FF';   // พื้นอ่อน
-      const TEXT_MUTED    = '#6b7280';
+      const TEXT_MUTED    = '#6B7280';
       const TEXT_HINT     = '#9CA3AF';
 
       const sectionTitle = (th, en) => ({
@@ -8644,18 +8641,38 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
         ]
       });
 
-      const item = (title, desc, hint) => ({
-        type: 'box',
-        layout: 'vertical',
-        backgroundColor: THEME_SOFT,
-        paddingAll: '12px',
-        margin: 'md',
-        contents: [
-          { type: 'text', text: title, weight: 'bold', size: 'sm', wrap: true },
-          { type: 'text', text: desc, size: 'sm', color: TEXT_MUTED, margin: 'xs', wrap: true },
-          { type: 'text', text: hint, size: 'xs', color: TEXT_HINT, margin: 'sm', wrap: true }
-        ]
-      });
+      // รองรับหลายบรรทัด: item('หัวข้อ', 'บรรทัด1', 'บรรทัด2', '...', '')
+      function item(title, ...lines) {
+        const texts = [];
+
+        // หัวข้อ
+        texts.push({ type: 'text', text: title, weight: 'bold', size: 'sm', wrap: true });
+
+        // เนื้อหาอื่น ๆ
+        for (const raw of lines) {
+          const line = String(raw ?? '').trim();
+          if (!line) continue; // ข้ามบรรทัดว่าง
+
+          const isHint = /^หมายเหตุ|^เฉพาะ|^พิมพ์:/.test(line);
+          texts.push({
+            type: 'text',
+            text: line,
+            size: isHint ? 'xs' : 'sm',
+            color: isHint ? TEXT_HINT : TEXT_MUTED,
+            margin: isHint ? 'sm' : 'xs',
+            wrap: true
+          });
+        }
+
+        return {
+          type: 'box',
+          layout: 'vertical',
+          backgroundColor: THEME_SOFT,
+          paddingAll: '12px',
+          margin: 'md',
+          contents: texts
+        };
+      }
 
       const bubble = {
         type: 'bubble',
@@ -8708,27 +8725,29 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
             item(
               'บันทึกการทำงาน',
               'ตรวจทานเวลาเข้า–ออก เพื่อใช้ดูตารางเข้า-ออกของพนักงาน รายละเอียดเข้าสาย/สถานที่ลงเวลา',
-              'เฉพาะ Owner / Admin พิมพ์: "บันทึกการทำงาน"'
+              'เฉพาะ Owner / Admin',
+              'พิมพ์: "บันทึกการทำงาน"'
             ),
             item(
               'ทำเงินเดือน',
               'tab 1 "ทำเงินเดือน" รวมชั่วโมง/วันทำงาน คิดฐานจ่ายตามรูปแบบ (รายชั่วโมง/รายวัน/รายเดือน/ทุก N วัน) คิดหักสาย/ลา และสรุปจ่ายรายกลุ่มที่ตั้งค่าไว้',
-              'รวมชั่วโมง/วันทำงาน คิดฐานจ่ายตามรูปแบบ (รายชั่วโมง/รายวัน/รายเดือน/ทุก N วัน) คิดหักสาย/ลา และสรุปจ่ายรายกลุ่มที่ตั้งค่าไว้',
-              '',
-              'tab 2 "ตั้งค่างวดเงินเดือน" เป็นการสร้างกลุ่ม และกำหนดวันจ่าย เพื่อนำไปคำนวณหน้าทำเงินเดิอน',
-              '',
-              'tab 3 "จ่ายเงินพนักงาน" เป็นการเรียกดูงวดเงินเดือนที่ทำแล้ว มาเพื่อทำการจ่ายให้พนักงานตามการคำนวนเงิน',
-              'เฉพาะ Owner / Admin พิมพ์: "ทำเงินเดือน"'
+              'tab 2 "ตั้งค่างวดเงินเดือน" สร้างกลุ่มและกำหนดวันจ่าย เพื่อนำไปคำนวณหน้าทำเงินเดือน',
+              'tab 3 "จ่ายเงินพนักงาน" เรียกดูงวดที่ทำแล้ว เพื่อตั้งสถานะจ่ายตามผลคำนวณ',
+              'เฉพาะ Owner / Admin',
+              'พิมพ์: "ทำเงินเดือน"'
             ),
             item(
               'รายงาน',
-              'ดูสรุปการจ่ายตามช่วงเวลา ดูรายละเอียดหรือกลับไปแก้ไขงวดเงินเดือน',
-              'เฉพาะ Owner / Admin พิมพ์: "รายงาน"'
+              'ดูสรุปการจ่ายตามช่วงเวลา ดูรายละเอียดและย้อนกลับไปแก้ไขงวดเงินเดือนที่เกี่ยวข้องได้',
+              'เฉพาะ Owner / Admin',
+              'พิมพ์: "รายงาน"'
             ),
             item(
               'ตั้งค่า',
-              'เปิดหน้าการตั้งค่าทั้ง 4 เมนู โดยที่ เมนูแรกจะเป็นการเรียกดูรายละเอียดพนักงานแต่ละคน สามารถคั้งค่าการจ่ายหรือแก้ไขรายละเอียดต่างๆ และ owner สามารถกำหนดสิทธิ์ใด้',
-              'เฉพาะ Owner / Admin พิมพ์: "ตั้งค่า"'
+              'รวมการตั้งค่าหลัก 4 เมนู: รายชื่อพนักงาน/โปรไฟล์และสิทธิ์, การตั้งค่าการจ่าย, กลุ่มงวดเงินเดือน, การแจ้งเตือนรอบจ่าย',
+              'Owner สามารถกำหนดสิทธิ์ให้ Admin/User ได้',
+              'เฉพาะ Owner / Admin',
+              'พิมพ์: "ตั้งค่า"'
             )
           ]
         },
@@ -8743,6 +8762,7 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
 
       return replyFlex(replyToken, bubble, 'คู่มือการใช้งาน Time Attendance', tenantRef);
     }
+
 
 
 
