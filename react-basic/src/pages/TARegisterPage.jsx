@@ -1,5 +1,5 @@
 // src/pages/TARegisterPage.jsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   Box, Stack, Typography, TextField, Button, Paper, Grid, Alert,
   Divider, IconButton, LinearProgress, useMediaQuery,
@@ -42,6 +42,16 @@ const EMPLOYMENT_TYPES = [
   { value: 'intern',  label: 'นักศึกษาฝึกงาน' },
 ];
 
+// helper: ค่าฟอร์มเริ่มต้น
+const makeInitialForm = () => ({
+  nationalId: '', fullName: '', idAddress: '',
+  phone: '', currentAddress: '', sameAsIdAddress: false,
+  birthDate: '', gender: '', jobTitle: '',
+  bankName: '', bankAccount: '',
+  registerDate: todayYMD(),
+  employmentType: '',
+});
+
 /* ========== PAGE ========== */
 export default function TARegisterPage() {
   const q = useQuery();
@@ -55,14 +65,7 @@ export default function TARegisterPage() {
   const [lineUserId, setLineUserId] = useState(uidFromQs);
   const [mode, setMode] = useState('register');
 
-  const [form, setForm] = useState({
-    nationalId: '', fullName: '', idAddress: '',
-    phone: '', currentAddress: '', sameAsIdAddress: false,
-    birthDate: '', gender: '', jobTitle: '',
-    bankName: '', bankAccount: '',
-    registerDate: todayYMD(),
-    employmentType: '',
-  });
+  const [form, setForm] = useState(makeInitialForm());
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving]   = useState(false);
@@ -72,6 +75,9 @@ export default function TARegisterPage() {
 
   // เก็บ raw จาก API (ใส่ใน Debug accordion)
   const [ocrDebug, setOcrDebug] = useState(null);
+
+  // ใช้สำหรับยกเลิก/เพิกเฉย OCR รอบเก่าเมื่อกดเคลียร์
+  const ocrRunIdRef = useRef(0);
 
   // preload session
   useEffect(() => {
@@ -134,7 +140,6 @@ export default function TARegisterPage() {
     })();
   }, [tenantId, lineUserId]);
 
-
   const setF = (k) => (e) => {
     const v = e?.target?.type === 'checkbox' ? !!e.target.checked : e.target.value;
     setForm(s => {
@@ -153,10 +158,12 @@ export default function TARegisterPage() {
       return;
     }
     const nid = String(form.nationalId || '').replace(/\D/g,'');
+
+    // ผ่อนกฎ: ถ้าใส่มาแต่ยังไม่ผ่านสูตร → เตือน แต่ "ไม่ return"
     if (nid && !isValidThaiId(nid)) {
-      setMsg({ type: 'warning', text: 'เลขบัตรประชาชนไม่ถูกต้อง (13 หลัก)' });
-      return;
+      setMsg({ type: 'info', text: 'บันทึกแล้วนะ แต่เลขบัตรดูยังไม่ครบ/ไม่ถูกต้อง (แก้ทีหลังได้)' });
     }
+
     setSaving(true); setMsg(null);
     try {
       const url = `/api/tenants/${encodeURIComponent(tenantId)}/attendance/profile`;
@@ -165,7 +172,7 @@ export default function TARegisterPage() {
         profile: {
           ...form,
           nationalId: nid,
-          registerDate: form.registerDate || todayYMD(),   // NEW: กันค่าว่าง
+          registerDate: form.registerDate || todayYMD(),   // กันค่าว่าง
         }
       };
       const r = await fetch(url, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(body) });
@@ -218,7 +225,8 @@ export default function TARegisterPage() {
       return objectUrl;
     });
 
-    // เริ่ม OCR
+    // เริ่ม OCR — จับรอบงานไว้เพื่อยกเลิกเมื่อมีการ clear
+    const rid = ++ocrRunIdRef.current;
     setOcrDebug(null);
     setOcrBusy(true);
     setMsg({ type: 'info', text: 'กำลังอ่านข้อมูลจาก IAPP OCR…' });
@@ -226,6 +234,7 @@ export default function TARegisterPage() {
     (async () => {
       try {
         const info = await callIappApi(file);
+        if (rid !== ocrRunIdRef.current) return;
 
         // เก็บ debug (รวม upstream ถ้ามี)
         setOcrDebug(info.raw || {
@@ -234,26 +243,32 @@ export default function TARegisterPage() {
           rawBirth: info.birthDate || '',
           rawAddr: info.idAddress || '',
         });
+        if (rid !== ocrRunIdRef.current) return;
 
         // เติมเฉพาะช่องที่หาได้
-        setForm(s => ({
-          ...s,
-          nationalId: info.nationalId || s.nationalId,
-          fullName:   info.fullName   || s.fullName,
-          idAddress:  info.idAddress  || s.idAddress,
-          birthDate:  info.birthDate  || s.birthDate,
-          ...(s.sameAsIdAddress ? { currentAddress: info.idAddress || s.idAddress || s.currentAddress } : {})
-        }));
+        setForm(s => {
+          if (rid !== ocrRunIdRef.current) return s;
+          return {
+            ...s,
+            nationalId: info.nationalId || s.nationalId,
+            fullName:   info.fullName   || s.fullName,
+            idAddress:  info.idAddress  || s.idAddress,
+            birthDate:  info.birthDate  || s.birthDate,
+            ...(s.sameAsIdAddress ? { currentAddress: info.idAddress || s.idAddress || s.currentAddress } : {})
+          };
+        });
+        if (rid !== ocrRunIdRef.current) return;
 
         const got = ['nationalId','fullName','birthDate','idAddress'].filter(k => !!info[k]).length;
         if (got >= 3) setMsg({ type:'success', text:'อ่านข้อมูลจากบัตรแล้ว (IAPP) ✅' });
         else if (got >= 1) setMsg({ type:'info', text:'อ่านได้บางส่วน — โปรดกรอกส่วนที่ขาดต่อเอง' });
         else setMsg({ type:'warning', text:'ยังจับข้อมูลหลักไม่ได้ — ลองรูปให้คม/สว่างขึ้น หรือวางบัตรให้ตรง' });
       } catch (e) {
+        if (rid !== ocrRunIdRef.current) return;
         console.warn('IAPP OCR error', e);
         setMsg({ type:'error', text:`อ่านบัตรไม่สำเร็จ: ${e.message || e}` });
       } finally {
-        setOcrBusy(false);
+        if (rid === ocrRunIdRef.current) setOcrBusy(false);
       }
     })();
   }
@@ -263,6 +278,28 @@ export default function TARegisterPage() {
     return () => { if (imgDataUrl) URL.revokeObjectURL(imgDataUrl); };
   }, [imgDataUrl]);
 
+  // ล้างทั้งหมด (ฟอร์ม/รูป/OCR)
+  function onClearAll() {
+    // ยกเลิกงาน OCR ที่กำลังวิ่งอยู่
+    ocrRunIdRef.current++;
+
+    // ล้างข้อความแจ้งเตือน
+    setMsg(null);
+
+    // ล้างฟอร์มกลับค่าเริ่มต้น (คง tenantId/lineUserId/mode เดิมไว้)
+    setForm(makeInitialForm());
+
+    // ล้างผล debug และสถานะ OCR
+    setOcrDebug(null);
+    setOcrBusy(false);
+
+    // ล้างพรีวิวรูป + คืน URL เก่า
+    setImgDataUrl(prev => {
+      if (prev) URL.revokeObjectURL(prev);
+      return '';
+    });
+  }
+
   const missingCore = !tenantId || !lineUserId;
 
   return (
@@ -271,9 +308,10 @@ export default function TARegisterPage() {
         <Typography variant="h6" fontWeight={800}>
           {mode === 'update' ? 'แก้ไขโปรไฟล์เข้างาน' : 'ลงทะเบียนเข้างาน'}
         </Typography>
-        <Typography variant="body2" color="text.secondary">
+        {/* ซ่อนการแสดงค่า tenant/lineUserId ตามที่ขอ */}
+        {/* <Typography variant="body2" color="text.secondary">
           tenant: {tenantId || '—'} | lineUserId: {lineUserId || '—'}
-        </Typography>
+        </Typography> */}
       </Stack>
 
       {loading && <LinearProgress sx={{ mb: 2 }} />}
@@ -309,6 +347,8 @@ export default function TARegisterPage() {
               <IconButton
                 aria-label="clear"
                 onClick={() => {
+                  // ถ้าต้องการให้ปุ่มไอคอนล้างเฉพาะรูป ให้คงโค้ดนี้
+                  // ถ้าต้องให้ล้างทั้งหมด ให้เปลี่ยนเป็น onClearAll();
                   if (imgDataUrl) URL.revokeObjectURL(imgDataUrl);
                   setImgDataUrl('');
                   setOcrDebug(null);
@@ -354,11 +394,18 @@ export default function TARegisterPage() {
           <Grid container spacing={1.5}>
             <Grid item xs={12} sm={6}>
               <TextField
-                fullWidth size="small" label="เลขบัตรประชาชน"
-                value={form.nationalId} onChange={setF('nationalId')}
+                fullWidth
+                size="small"
+                label="เลขบัตรประชาชน"
+                value={form.nationalId}
+                onChange={setF('nationalId')}
                 inputProps={{ inputMode: 'numeric', pattern: '[0-9]*', maxLength: 13 }}
-                helperText={form.nationalId && !isValidThaiId(form.nationalId) ? 'รูปแบบไม่ถูกต้อง' : ' '}
-                error={!!form.nationalId && !isValidThaiId(form.nationalId)}
+                helperText={
+                  form.nationalId
+                    ? (isValidThaiId(form.nationalId) ? '✓ ดูโอเค' : 'ใส่ได้ภายหลัง ไม่จำเป็นต้องครบตอนนี้')
+                    : 'ใส่ภายหลังได้ (ไม่บังคับ)'
+                }
+                error={false}
               />
             </Grid>
             <Grid item xs={12} sm={6}>
@@ -452,7 +499,9 @@ export default function TARegisterPage() {
             <Button variant="contained" onClick={onSave} disabled={saving || missingCore}>
               {saving ? 'กำลังบันทึก…' : (mode === 'update' ? 'บันทึกการเปลี่ยนแปลง' : 'ลงทะเบียน')}
             </Button>
-            <Button variant="outlined" onClick={() => setMsg(null)}>ล้างข้อความ</Button>
+            <Button variant="outlined" onClick={onClearAll}>
+              ล้างแบบฟอร์ม/รูป/OCR
+            </Button>
           </Stack>
         </Stack>
       </Paper>

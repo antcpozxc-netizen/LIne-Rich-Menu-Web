@@ -7,42 +7,37 @@
   <title>ลงเวลา</title>
   <style>
     :root{
-      --ok:#16a34a;          /* เขียวเข้า */
-      --out:#ef4444;         /* แดงออก */
+      --ok:#16a34a;     /* สีหลักสำหรับเข้า */
+      --out:#ef4444;    /* สีหลักสำหรับออก */
       --fg:#111;
       --muted:#6b7280;
       --line:#e5e7eb;
       --bg:#f8fafc;
       --card:#fff;
       --shadow: 0 10px 25px rgba(2,6,23,.08), 0 4px 8px rgba(2,6,23,.06);
+      --accent: var(--ok); /* จะถูกสลับเป็น --out เมื่อ type=out */
     }
     @media (prefers-color-scheme: dark){
       :root{ --fg:#e5e7eb; --muted:#94a3b8; --line:#1f2937; --bg:#0b1220; --card:#0f172a; --shadow:none; }
-      body{ background: #0b1220; }
+      body{ background:#0b1220; }
     }
-    *{ box-sizing: border-box }
+    *{ box-sizing:border-box }
     html,body{ height:100% }
     body{
       margin:0; padding:24px;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans Thai", sans-serif;
+      font-family: system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans Thai",sans-serif;
       color:var(--fg); background:var(--bg);
       display:flex; align-items:center; justify-content:center;
     }
     .card{
-      width:min(640px, 100%);
-      background:var(--card);
-      border:1px solid var(--line);
-      border-radius:16px;
-      box-shadow:var(--shadow);
-      overflow:hidden;
+      width:min(640px,100%); background:var(--card);
+      border:1px solid var(--line); border-radius:16px;
+      box-shadow:var(--shadow); overflow:hidden;
     }
     .head{
       display:flex; align-items:center; gap:12px;
-      padding:18px 20px;
-      background:
-        linear-gradient(180deg, rgba(255,255,255,.0), rgba(255,255,255,.0)),
-        var(--accent);
-      color:#fff;
+      padding:18px 20px; color:#fff;
+      background: linear-gradient(180deg,rgba(255,255,255,.0),rgba(255,255,255,.0)), var(--accent);
     }
     .head .icon{
       width:42px; height:42px; border-radius:12px;
@@ -50,49 +45,35 @@
       display:grid; place-items:center; font-size:22px;
     }
     .title{ font-size:20px; font-weight:700; line-height:1.2 }
-    .sub{ opacity:.9; font-size:13px }
+    .sub{ opacity:.95; font-size:13px }
 
     .body{ padding:18px 20px; display:grid; gap:14px }
     .progress{ width:100%; height:8px; background:var(--line); border-radius:999px; overflow:hidden }
-    .bar{ height:100%; width:0%; background:#fff; opacity:.9; }
+    .bar{ height:100%; width:0%; background:var(--accent); transition:width .6s ease }
 
-    .steps{ display:grid; gap:10px }
-    .step{
-      display:flex; align-items:flex-start; gap:10px;
-      padding:10px 12px; border:1px dashed var(--line); border-radius:12px;
-    }
-    .step .dot{
-      width:10px; height:10px; border-radius:999px; margin-top:6px; background:var(--line);
-    }
-    .step.active{ border-style:solid }
-    .step.active .dot{ background:#fff; outline:3px solid rgba(255,255,255,.5) }
-    .step.done  .dot{ background:#22c55e }
-    .step .t{ font-weight:600; font-size:14px }
-    .step .d{ font-size:13px; color:var(--muted) }
-
+    .who{ font-size:20px; font-weight:800 }
     .muted{ color:var(--muted); font-size:13px }
-    .err{ color:#f43f5e; font-weight:600 }
-    .ok{ color:#22c55e; font-weight:600 }
+    .ok{ color:#22c55e; font-weight:700 }
+    .err{ color:#f43f5e; font-weight:700 }
 
-    .row{ display:flex; gap:8px; flex-wrap:wrap }
-    .btn{
-      flex:1 1 auto;
-      padding:12px 16px; border:0; border-radius:12px;
-      background:#1d4ed8; color:#fff; font-size:16px; font-weight:600;
-      box-shadow: 0 6px 14px rgba(30,64,175,.25);
+    .pill{
+      display:inline-block; font-size:12px; font-weight:700; letter-spacing:.3px;
+      padding:6px 10px; border-radius:999px; color:#fff; background:var(--accent);
     }
-    .btn[disabled]{ background:#94a3b8; box-shadow:none }
+
+    .row{ display:flex; gap:10px; flex-wrap:wrap }
+    .btn{
+      flex:1 1 auto; min-width:120px;
+      padding:12px 16px; border:0; border-radius:12px;
+      background:#1d4ed8; color:#fff; font-size:16px; font-weight:700;
+      box-shadow:0 6px 14px rgba(30,64,175,.25); cursor:pointer;
+    }
+    .btn.secondary{ background:#0f172a }
+    .btn[disabled]{ background:#94a3b8; box-shadow:none; cursor:not-allowed }
     .hint{
       background:#fff7ed; color:#9a3412; border:1px solid #fed7aa;
       padding:10px 12px; border-radius:12px; font-size:13px; display:none;
     }
-
-    .spinner{
-      width:18px; height:18px; border:3px solid rgba(255,255,255,.35);
-      border-top-color:#fff; border-radius:50%; display:inline-block;
-      animation:spin 1s linear infinite; vertical-align:-3px; margin-right:6px;
-    }
-    @keyframes spin{ to{ transform: rotate(360deg) } }
     footer{ padding:10px 16px; border-top:1px solid var(--line); font-size:12px; color:var(--muted); text-align:center }
   </style>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
@@ -104,55 +85,27 @@
       <div class="icon" id="heroIcon">⏱️</div>
       <div>
         <div class="title" id="title">ลงเวลา</div>
-        <div class="sub" id="subtitle">กำลังเริ่มต้น…</div>
+        <div class="sub" id="subtitle">กำลังเตรียมการ…</div>
       </div>
     </header>
 
     <section class="body">
       <div class="progress"><div class="bar" id="bar"></div></div>
 
-      <div class="steps" id="steps">
-        <div class="step active" data-step="1">
-          <div class="dot"></div>
-          <div>
-            <div class="t">เริ่มต้น LIFF</div>
-            <div class="d">เตรียมพร้อมเข้าสู่ระบบ</div>
-          </div>
-        </div>
-        <div class="step" data-step="2">
-          <div class="dot"></div>
-          <div>
-            <div class="t">ยืนยันตัวตน</div>
-            <div class="d">อ่าน LINE User ID</div>
-          </div>
-        </div>
-        <div class="step" data-step="3">
-          <div class="dot"></div>
-          <div>
-            <div class="t">อ่านพิกัด</div>
-            <div class="d">ขอสิทธิ์ระบุตำแหน่ง</div>
-          </div>
-        </div>
-        <div class="step" data-step="4">
-          <div class="dot"></div>
-          <div>
-            <div class="t">บันทึกลงเวลา</div>
-            <div class="d">ส่งข้อมูลไปยังระบบ</div>
-          </div>
-        </div>
-      </div>
+      <div class="who" id="who">—</div>
+      <div class="muted" id="when">—</div>
 
       <div id="status" class="muted">กำลังเริ่มต้น…</div>
 
-      <div class="row">
-        <button id="retry" class="btn" style="display:none">
-          <span class="spinner" aria-hidden="true"></span>ลองใหม่
-        </button>
+      <div class="row" id="actions" style="display:none">
+        <button id="retry" class="btn">ลองใหม่</button>
+        <button id="close" class="btn secondary">ปิดหน้าต่าง</button>
       </div>
 
       <div id="geoHelp" class="hint">
-        ไม่สามารถอ่านพิกัดได้ กรุณาเปิดการระบุตำแหน่ง (Location) แล้วลองใหม่อีกครั้ง
-        หากใช้ iPhone: Settings → Privacy &amp; Security → Location Services → เปิด และอนุญาตให้ LINE ใช้งาน
+        ไม่สามารถอ่านพิกัดได้ กรุณาเปิดการระบุตำแหน่ง (Location) แล้วลองใหม่อีกครั้ง<br/>
+        <b>iPhone:</b> Settings → Privacy &amp; Security → Location Services → เปิด และอนุญาตให้ LINE ใช้งาน (เลือก <i>While Using</i> และเปิด <i>Precise Location</i>)<br/>
+        <b>Android:</b> Settings → Apps → LINE → Permissions → Location → Allow while using
       </div>
     </section>
 
@@ -161,35 +114,32 @@
 
 <script>
 (function () {
-  // ---------- UI helpers ----------
+  // ---------- helpers ----------
   const $ = (s)=>document.querySelector(s);
-  const steps = Array.from(document.querySelectorAll('.step'));
   const $bar = $('#bar');
   const $status = $('#status');
-  const $retry = $('#retry');
   const $title = $('#title');
   const $sub = $('#subtitle');
-  const $hero = $('#hero');
   const $icon = $('#heroIcon');
+  const $hero = $('#hero');
+  const $who = $('#who');
+  const $when = $('#when');
+  const $retry = $('#retry');
+  const $close = $('#close');
+  const $actions = $('#actions');
   const $geoHelp = $('#geoHelp');
 
   function setAccent(hex){
-    // เปลี่ยนสีหัวเรื่องตามเข้า/ออก
-    $hero.style.setProperty('--accent', hex);
+    document.documentElement.style.setProperty('--accent', hex);
     $hero.style.background = `linear-gradient(180deg, rgba(255,255,255,.0), rgba(255,255,255,.0)), ${hex}`;
   }
-  function setStep(n, msg, cls){
-    steps.forEach((el,i)=>{
-      el.classList.toggle('active', i===n-1);
-      if(i < n-1) el.classList.add('done');
-    });
-    $bar.style.width = (n-1)*33 + '%';
-    if(msg){ $status.className = cls || 'muted'; $status.textContent = msg; }
+  function setProgress(p){ $bar.style.width = Math.max(0, Math.min(100, p)) + '%'; }
+  function setStatus(text, cls){ $status.className = cls || 'muted'; $status.textContent = text; }
+  function fmtNow(){
+    const d = new Date();
+    return d.toLocaleString('th-TH', { dateStyle:'full', timeStyle:'short' });
   }
-  function showRetry(show, isGeoErr){
-    $retry.style.display = show ? 'inline-block':'none';
-    $geoHelp.style.display = (show && isGeoErr) ? 'block':'none';
-  }
+  function showActions(show){ $actions.style.display = show ? 'flex' : 'none'; }
 
   // ---------- merge query + liff.state ----------
   function readParams() {
@@ -208,18 +158,22 @@
   const TENANT  = qs.get('tenant') || '';
   const TYPE    = (qs.get('type') || 'in').toLowerCase(); // in|out
 
-  // header icon + color
+  // Header theme
   if (TYPE === 'in'){ $title.textContent = 'ลงเวลาเข้า'; $icon.textContent = '🟢'; setAccent('#16a34a'); }
   else { $title.textContent = 'ลงเวลาออก'; $icon.textContent = '🔴'; setAccent('#ef4444'); }
 
+  // พิมพ์เวลาปัจจุบัน (จะอัปเดตอีกรอบตอนสำเร็จ)
+  $when.textContent = 'วันที่ ' + fmtNow();
+
   async function ensureLiff() {
     if (!LIFF_ID) throw new Error('ไม่พบ LIFF ID');
-    setStep(1, 'กำลังเริ่มต้น LIFF…');
+    setProgress(15);
+    setStatus('กำลังเตรียม LIFF…');
     await liff.init({ liffId: LIFF_ID });
     if (!liff.isLoggedIn()) {
       $sub.textContent = 'กำลังเข้าสู่ระบบ…';
       liff.login({ redirectUri: location.href });
-      return false; // จะรีไดเรกต์ออกไป
+      return false; // จะ redirect ออกไป
     }
     return true;
   }
@@ -229,61 +183,101 @@
     return (idt && idt.sub) ? idt.sub.replace('line:', '') : null;
   }
 
+  async function fetchFullName(uid){
+    try{
+      const res = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/attendance/profile?lineUserId=${encodeURIComponent(uid)}`);
+      const j = await res.json().catch(()=> ({}));
+      return (j && j.ok && j.data && j.data.fullName) ? String(j.data.fullName) : '';
+    }catch{ return ''; }
+  }
+
+  function explainGeoError(err){
+    const code = err && (err.code ?? 0);
+    if (code === 1) return { msg:'ระบบไม่ได้รับสิทธิ์ใช้ตำแหน่ง (โปรดเปิดสิทธิ์ Location ให้ LINE แล้วลองใหม่)', showHelp:true };
+    if (code === 2) return { msg:'สัญญาณตำแหน่งไม่พร้อม (ลองเปิด GPS/ออกไปพื้นที่โล่ง แล้วลองใหม่)', showHelp:false };
+    if (code === 3) return { msg:'อ่านพิกัดไม่ทันเวลา (ลองใหม่อีกครั้ง)', showHelp:false };
+    return { msg:(err && err.message) ? String(err.message) : 'อ่านพิกัดไม่สำเร็จ', showHelp:false };
+  }
+
   function getGeoAndSend(uid) {
     if (!navigator.geolocation) throw new Error('อุปกรณ์ไม่รองรับการระบุตำแหน่ง');
 
-    setStep(3, 'กำลังอ่านพิกัด…');
+    setProgress(55);
+    setStatus('กำลังอ่านพิกัด…');
     navigator.geolocation.getCurrentPosition(async (pos) => {
       try {
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
 
-        setStep(4, 'กำลังบันทึก…');
+        setProgress(75);
+        setStatus('กำลังบันทึก…');
+
         const res = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/attendance/clock`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ lineUserId: uid, type: TYPE, lat, lng })
         });
-
         const j = await res.json().catch(()=> ({}));
         if (!res.ok || !j.ok) throw new Error(j.error || 'clock_failed');
 
-        setStep(4, 'บันทึกสำเร็จ ✅', 'ok');
-        $sub.textContent = 'เรียบร้อยแล้ว';
-        try { if (liff.isInClient()) setTimeout(()=> liff.closeWindow(), 900); } catch {}
+        setProgress(100);
+        setStatus('บันทึกสำเร็จ ✅', 'ok');
+        $sub.textContent = 'เสร็จแล้ว';
+        $when.textContent = 'วันที่ ' + fmtNow();
+
+        // ปิดอัตโนมัติ 3 วินาที (เฉพาะใน LINE)
+        try { if (liff.isInClient()) setTimeout(()=> liff.closeWindow(), 3000); } catch {}
       } catch (e) {
-        setStep(4, 'บันทึกไม่สำเร็จ: ' + (e.message || e), 'err');
-        showRetry(true, false);
+        setProgress(100);
+        setStatus('บันทึกไม่สำเร็จ: ' + (e.message || e), 'err');
+        showActions(true);
       }
     }, (err) => {
-      setStep(3, 'อ่านพิกัดไม่สำเร็จ: ' + (err.message || err), 'err');
-      showRetry(true, true);
+      const info = explainGeoError(err);
+      setProgress(100);
+      setStatus(info.msg, 'err');
+      $geoHelp.style.display = info.showHelp ? 'block' : 'none';
+      showActions(true);
     }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
   }
 
   async function boot() {
     try {
-      $sub.textContent = 'กำลังเริ่มต้น…';
-      showRetry(false, false);
-      setStep(1);
+      setProgress(8);
+      $sub.textContent = TYPE === 'in' ? 'กำลังลงเวลาเข้า…' : 'กำลังลงเวลาออก…';
+      $who.innerHTML = '<span class="pill">กำลังดำเนินการ</span>';
+
+      showActions(false);
+      $geoHelp.style.display = 'none';
 
       const ok = await ensureLiff();
       if (ok === false) return; // login redirect
 
-      setStep(2, 'กำลังยืนยันตัวตน…');
+      setProgress(30);
+      setStatus('กำลังยืนยันตัวตน…');
       const uid = getUid();
       if (!uid) throw new Error('ไม่สามารถอ่าน LINE UserId ได้');
-
       if (!TENANT) throw new Error('URL ไม่มีพารามิเตอร์ tenant');
+
+      // ชื่อจากโปรไฟล์ (fullName) + ข้อความ "กำลังลงเวลาให้ …"
+      const fullName = (await fetchFullName(uid)) || '';
+      const actText = (TYPE === 'in') ? 'กำลังลงเวลาเข้า' : 'กำลังลงเวลาออก';
+      $who.textContent = (fullName ? `${fullName} ` : '') + actText;
+      $when.textContent = 'วันที่ ' + fmtNow();
 
       getGeoAndSend(uid);
     } catch (e) {
-      setStep(1, 'ผิดพลาด: ' + (e.message || e), 'err');
-      showRetry(true, false);
+      setProgress(100);
+      setStatus('ผิดพลาด: ' + (e.message || e), 'err');
+      showActions(true);
     }
   }
 
-  $retry.addEventListener('click', () => { showRetry(false,false); boot(); });
+  $retry.addEventListener('click', () => { boot(); });
+  $close.addEventListener('click', () => {
+    try { if (liff.isInClient()) liff.closeWindow(); else window.close(); } catch { window.close(); }
+  });
+
   boot();
 })();
 </script>

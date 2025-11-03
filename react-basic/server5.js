@@ -16,9 +16,83 @@ const admin = require('firebase-admin');
 const crypto = require('crypto'); 
 const sharp = require('sharp');
 
+const multer = require("multer");
+const dotenv = require("dotenv");
+
 const cookie  = require('cookie');
 
+
 const cron = require('node-cron');
+
+
+const FormData = require('form-data');
+
+const PDFDocument = require('pdfkit');
+dotenv.config();
+
+
+const THAI_FONT_REG  = process.env.THAI_FONT_PATH
+  ? path.resolve(process.env.THAI_FONT_PATH)
+  : path.join(__dirname, 'assets/fonts/NotoSansThai-Regular.ttf');
+
+const THAI_FONT_BOLD = process.env.THAI_FONT_BOLD_PATH
+  ? path.resolve(process.env.THAI_FONT_BOLD_PATH)
+  : path.join(__dirname, 'assets/fonts/NotoSansThai-Bold.ttf');
+
+  /* === HARD GUARD + LOG === */
+const HAVE_REG  = fs.existsSync(THAI_FONT_REG);      // <<< ต้องมีสองบรรทัดนี้
+const HAVE_BOLD = fs.existsSync(THAI_FONT_BOLD);
+
+console.log('[PDF font] REG:', THAI_FONT_REG, fs.existsSync(THAI_FONT_REG) ? 'OK' : 'MISSING');
+console.log('[PDF font] BOLD:', THAI_FONT_BOLD, fs.existsSync(THAI_FONT_BOLD) ? 'OK' : 'MISSING');
+
+if (!HAVE_REG) {
+  // ล้มตั้งแต่เริ่มรัน เพื่อกัน PDF หลุดไปใช้ Helvetica
+  throw new Error('THAI_FONT_PATH not found: ' + THAI_FONT_REG);
+}
+if (!HAVE_BOLD) {
+  // ไม่มี Bold ก็ยังไปต่อได้ แต่จะแจ้งเตือนและใช้ Regular แทน
+  console.warn('[PDF font] Bold not found, will fallback to Regular:', THAI_FONT_BOLD);
+}
+
+// helper ใช้ในทุก route ที่ทำ PDF
+// ฟอนต์ไทยสำหรับ PDFKit + fallback
+// ฟอนต์ไทยสำหรับ PDFKit + fallback (ใช้ absolute path เสมอ)
+function applyThaiFonts(doc) {
+  // ใช้ค่าที่คำนวณไว้ตั้งแต่ตอนโหลดไฟล์ (absolute path)
+  const pathRegular = THAI_FONT_REG;
+  const pathBold    = THAI_FONT_BOLD;
+
+  try {
+    doc.registerFont('th', pathRegular);
+  } catch (e) {
+    console.warn('[PDF font] register "th" failed:', e.message, 'path =', pathRegular);
+  }
+
+  let boldOk = false;
+  try {
+    doc.registerFont('thb', pathBold);
+    boldOk = true;
+  } catch (e) {
+    console.warn('[PDF font] register "thb" failed, fallback to regular:', e.message, 'path =', pathBold);
+    try {
+      doc.registerFont('thb', pathRegular);
+      boldOk = false;
+    } catch {}
+  }
+
+  // ตั้ง default เป็นฟอนต์ไทย
+  try { doc.font('th'); } catch {}
+
+  // helper chain เพื่อเรียกง่าย ๆ ทุกครั้งก่อน text()
+  doc.useThai = {
+    regular() { try { doc.font('th'); } catch {} return doc; },
+    bold()    { try { doc.font('thb'); } catch { try { doc.font('th'); } catch {} } return doc; },
+    boldOk
+  };
+  return doc;
+}
+
 
 
 
@@ -92,6 +166,10 @@ try {
 }
 
 const app = express();
+const IAPP_KEY = process.env.IAPP_API_KEY;
+const upload = multer({ storage: multer.memoryStorage() });
+app.set('trust proxy', 1);
+
 
 
 if (TRUST_PROXY) app.set('trust proxy', 1);
@@ -130,15 +208,9 @@ function setSessionCookie(res, payload, days = 7) {
     httpOnly: true,
     maxAge: days * 24 * 60 * 60
   };
-  if (isProd) {
-    // บน Render/HTTPS → ปลอดภัยสุด
-    cookieOpts.secure   = true;
-    cookieOpts.sameSite = 'none';
-  } else {
-    // บน localhost/ngrok → ให้ cookie ติดแน่นอน
-    cookieOpts.secure   = false;
-    cookieOpts.sameSite = 'lax';
-  }
+  // ใช้ผ่าน ngrok/https → ถือว่าเป็น third-party context บางกรณี (LINE)
+  cookieOpts.secure   = true;
+  cookieOpts.sameSite = 'none';
   res.setHeader('Set-Cookie', cookie.serialize(SESSION_COOKIE_NAME, token, cookieOpts));
 }
 
@@ -229,11 +301,534 @@ function requireRole(roles = []) {
   };
 }
 
-// ช่วยให้เรียกง่ายใน route แอดมิน
-const requireAdminLike = requireRole(['developer', 'admin', 'supervisor']);
 
-// ตัวอย่างใช้งาน:
-// app.use('/api/admin', requireAuth, requireAdminLike);
+const GAS_ROLE_TIMEOUT_MS = 2500;
+
+function withTimeout(p, ms, label='') {
+  return Promise.race([
+    p,
+    new Promise((_, rej) => setTimeout(() => rej(new Error(`timeout:${label}`)), ms))
+  ]);
+}
+
+// cache 30 วินาที ต่อ tenant+uid
+const _roleCache = new Map(); // key -> {role, exp}
+function getRoleCacheKey(tenantId, uid){ return `${tenantId}::${uid}`; }
+function stashRole(tenantId, uid, role){
+  _roleCache.set(getRoleCacheKey(tenantId, uid), { role, exp: Date.now()+30_000 });
+}
+function readRole(tenantId, uid){
+  const r = _roleCache.get(getRoleCacheKey(tenantId, uid));
+  if (r && r.exp > Date.now()) return r.role;
+  return null;
+}
+
+// ---- tenant attendance config helper (used by getRoleSafe) ----
+async function getTenantCfg(tenantId) {
+  try {
+    const tenantRef = db.collection('tenants').doc(tenantId);
+    const snap = await tenantRef.collection('integrations').doc('attendance').get();
+
+    // sheetId: รับทั้งค่าบน Firestore และ fallback ไป .env (คีย์ใหม่/เก่า)
+    const appsSheetId = String(
+      snap.get('appsSheetId') ||
+      process.env.TA_SHEET_ID ||            // คีย์เก่า (ยังเผื่อไว้)
+      process.env.APPS_SHEET_ID ||          // เผื่อมีตั้งชื่อแบบนี้
+      ''
+    ).trim();
+
+    // GAS URL: รองรับหลายชื่อฟิลด์ + env ใหม่
+    const gasUrl = String(
+      snap.get('gasUrl') ||                 // โปรเจ็กต์เก่า
+      snap.get('endpoint') ||               // บางที่ใช้ endpoint
+      snap.get('execUrl') ||                // ถ้าไปเซฟชื่อ execUrl
+      process.env.APPS_SCRIPT_EXEC_URL_TA ||// ✅ คีย์ใหม่ (ที่คุณตั้งไว้)
+      ''
+    ).trim();
+
+    // sharedKey: อ่านจากไฟล์/Firestore + env ใหม่
+    const sharedKey = String(
+      snap.get('sharedKey') ||
+      process.env.APPS_SCRIPT_SHARED_KEY_TA || // ✅ คีย์ใหม่
+      process.env.APPS_SCRIPT_SHARED_KEY ||    // เผื่อคีย์กลาง
+      process.env.APPS_SCRIPT_KEY ||           // เผื่อคีย์เก่า
+      ''
+    ).trim();
+
+    return { appsSheetId, gasUrl, sharedKey };
+  } catch (e) {
+    // fallback จาก .env เพื่อไม่ให้ล่ม
+    return {
+      appsSheetId: String(
+        process.env.TA_SHEET_ID || process.env.APPS_SHEET_ID || ''
+      ).trim(),
+      gasUrl: String(
+        process.env.process.env.APPS_SCRIPT_EXEC_URL_TA || ''
+      ).trim(),
+      sharedKey: String(
+        process.env.APPS_SCRIPT_SHARED_KEY_TA || ''
+      ).trim(),
+    };
+  }
+}
+
+
+
+async function getRoleSafe(tenantId, lineUserId){
+  const hit = readRole(tenantId, lineUserId);
+  if (hit) return hit;
+  try {
+    const r = await withTimeout(
+      callTA(tenantId, 'get_role', { lineUserId }),
+      GAS_ROLE_TIMEOUT_MS,
+      'get_role'
+    );
+    const role = (r && (r.role || r.data?.role)) || 'user';
+    stashRole(tenantId, lineUserId, role);
+    return role;
+  } catch (e) {
+    console.warn('[getRoleSafe]', String(e));
+    // fallback เป็น user แล้วค่อยให้ไปเช็คสิทธิ์ต่อในหน้า LIFF อีกชั้น
+    return 'user';
+  }
+}
+
+
+// ===== mini cache to tame repeated GAS calls =====
+const TA_CACHE = new Map();          // key -> { expires, data }
+const TA_INFLIGHT = new Map();       // key -> Promise
+
+const TA_CACHE_TTL = {
+  get_role:        60_000,  // 1 นาที (สิทธิ์ไม่เปลี่ยนบ่อย)
+  list_employees:  10_000,  // 10 วิ
+  list_work_logs:   8_000,  // 8 วิ (ขึ้นกับช่วงวันที่)
+  pg_list:         30_000,  // 30 วิ
+  pg_get:          30_000,  // 30 วิ
+};
+
+function taKey(tenantId, action, payload) {
+  const shallow = { ...(payload || {}) };
+  // ตัด noise ไม่ทำให้ผลเปลี่ยน
+  delete shallow.actor;
+  delete shallow.ts;
+  return `${tenantId}:${action}:${JSON.stringify(shallow)}`;
+}
+function taCacheGet(key) {
+  const rec = TA_CACHE.get(key);
+  if (!rec) return null;
+  if (Date.now() > rec.expires) { TA_CACHE.delete(key); return null; }
+  return rec.data;
+}
+function taCacheSet(key, data, ttlMs) {
+  if (!ttlMs) return;
+  TA_CACHE.set(key, { expires: Date.now() + ttlMs, data });
+}
+function withInflight(key, factory) {
+  if (TA_INFLIGHT.has(key)) return TA_INFLIGHT.get(key);
+  const p = (async () => {
+    try { return await factory(); }
+    finally { TA_INFLIGHT.delete(key); }
+  })();
+  TA_INFLIGHT.set(key, p);
+  return p;
+}
+
+
+// ---- Apps Script (Time Attendance) proxy helpers ----
+async function callTA(tenantId, action, payload = {}, timeoutMs = 12_000) {
+  const cfg = await getTenantCfg(tenantId);
+
+  const sheetId   = cfg?.appsSheetId || '';
+  const url       = (cfg?.gasUrl || '').trim();
+  // ✅ รองรับ sharedKey จาก Firestore/Config และ fallback ไป .env คีย์ใหม่/เก่า
+  const sharedKey = (
+    (cfg && cfg.sharedKey) ||
+    process.env.APPS_SCRIPT_SHARED_KEY_TA ||
+    process.env.APPS_SCRIPT_SHARED_KEY ||
+    process.env.APPS_SCRIPT_KEY ||
+    ''
+  ).trim();
+
+  if (!sheetId || !url) {
+    console.warn('[GAS/TA] missing config for tenant', tenantId, { sheetId, url });
+    return { ok: false, error: 'tenant_no_gas' };
+  }
+
+  // ---- cache + inflight dedupe ----
+  const key = taKey(tenantId, action, payload);
+  const ttl = TA_CACHE_TTL[action] || 0;
+
+  if (ttl) {
+    const hit = taCacheGet(key);
+    if (hit) return hit;
+  }
+
+  const doFetch = async () => {
+    // ✅ แนบ sharedKey หากมี
+    const body = { action, sheetId, ...(sharedKey ? { sharedKey } : {}), ...payload };
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let res, j;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      j = await res.json().catch(() => ({}));
+    } catch (e) {
+      clearTimeout(timer);
+      console.error('[GAS/TA] fetch error', action, e);
+      return { ok: false, error: 'fetch_error' };
+    } finally {
+      clearTimeout(timer);
+    }
+
+    const out = (res && res.ok && j) ? j : { ok: false, error: j?.error || `gas_${res?.status || 'fail'}` };
+    if (ttl && out?.ok !== false) taCacheSet(key, out, ttl);
+    return out;
+  };
+
+  // ถ้ากำลังยิงคีย์เดียวกันอยู่ ให้รออันเดิม
+  return ttl ? withInflight(key, doFetch) : doFetch();
+}
+
+
+
+// --- Helper: ตรวจสิทธิ์ admin/owner ของ tenant ผ่าน Apps Script + Fallback Firestore ---
+async function canAdminForTenant(tenantId, lineUserId) {
+  if (!tenantId || !lineUserId) return false;
+
+  // 1) พยายามถาม Apps Script ก่อน (ใช้ action: get_role ที่เพิ่งทำไว้)
+  try {
+    const r = await callTA(tenantId, 'get_role', { lineUserId });
+    const role = String(r?.role || '').toLowerCase();
+    if (role === 'owner' || role === 'admin') return true;
+  } catch (_) {
+    // no-op, ไป fallback ต่อ
+  }
+
+  // 2) Fallback: เผื่อมี role ใน Firestore (ถ้ามี collection นี้อยู่ในโปรเจกต์)
+  try {
+    const doc = await db
+      .collection('tenants').doc(tenantId)
+      .collection('roles').doc(lineUserId).get();
+
+    const role = String(doc.exists ? (doc.data().role || '') : '').toLowerCase();
+    if (role === 'owner' || role === 'admin') return true;
+  } catch (_) {
+    // ignore
+  }
+
+  // 3) (ทางเลือก) เปิด bypass ตอน dev ได้ ถ้าต้องการ
+  if (process.env.SKIP_ADMIN_CHECK === '1') return true;
+
+  return false;
+}
+
+
+
+// ดึงบทบาทจาก GAS (roles sheet → fallback employees.role)
+async function getRoleViaGAS(tenantId, lineUserId) {
+  if (!tenantId || !lineUserId) throw new Error('tenantId/lineUserId required');
+  const r = await callTA(tenantId, 'get_role', { lineUserId });
+  if (!r || r.ok === false) throw new Error(r?.error || 'gas_failed');
+  // r.role จะเป็น 'owner' | 'admin' | 'user' (ตัวพิมพ์เล็ก)
+  return { role: r.role || 'user' };
+}
+
+// --- Simple in-memory cache for role lookups (TTL 2 minutes)
+ // key -> { role, exp }
+function _roleKey(tenantId, userId) { return `${tenantId}:${userId}`; }
+
+async function getRoleCached(tenantId, userId) {
+  try {
+    const key = _roleKey(tenantId, userId);
+    const hit = _roleCache.get(key);
+    if (hit && hit.exp > Date.now()) return hit.role;
+
+    const r = await getRoleViaGAS(tenantId, userId); // ใช้ฟังก์ชันเดิมของคุณ
+    const role = (r && r.role) ? r.role : 'user';
+
+    _roleCache.set(key, { role, exp: Date.now() + 120_000 }); // 120 วินาที
+    return role;
+  } catch (e) {
+    // ถ้าพัง ให้ fallback เป็น 'user' (หรือ 'owner' ตามนโยบายของคุณ)
+    return 'user';
+  }
+}
+
+const _idem = new Map();
+function _idemKey(req) {
+  // ให้ client ส่ง x-idempotency-key หรือ body.idempotencyKey มาก็ได้
+  const h = String(req.headers['x-idempotency-key'] || req.body?.idempotencyKey || '');
+  if (h) return h;
+  // fallback: สร้างจาก tenant + path + jobs ที่เลือก (ไม่รวมตัวเลขสุ่ม)
+  const body = req.body || {};
+  const minJobs = Array.isArray(body.jobs)
+    ? body.jobs.map(j => ({
+        u: j.lineUserId, s: j.periodStart, e: j.periodEnd,
+        m: Number(j?.adjustments?.minus || 0),
+        p: Number(j?.adjustments?.plus  || 0)
+      }))
+    : [];
+  return crypto.createHash('sha1')
+    .update(JSON.stringify({ t: req.params?.id, path: req.path, jobs: minJobs }))
+    .digest('hex');
+}
+function _idemGet(key) {
+  const v = _idem.get(key);
+  if (!v) return null;
+  if (Date.now() - v.at > 30_000) { _idem.delete(key); return null; }
+  return v.data;
+}
+function _idemSet(key, data) { _idem.set(key, { at: Date.now(), data }); }
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of _idem.entries()) if (now - v.at > 60_000) _idem.delete(k);
+}, 60_000);
+
+
+// === LINE push helper ===
+async function pushLineFlex(tenantRef, to, altText, bubble) {
+  try {
+    const accessToken = await getTenantSecretAccessToken(tenantRef);
+    await fetchFn('https://api.line.me/v2/bot/message/push', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        to,
+        messages: [{ type: 'flex', altText, contents: bubble }]
+      })
+    });
+  } catch (e) {
+    console.warn('[PUSH] fail', e?.message || e);
+  }
+}
+
+// === card builders ===
+// 1) Payslip card (ส่งให้พนักงาน)
+function buildPayslipCard({ month, employeeName, netPay, pdfUrl, actorName }) {
+  const alt = `สลิปเงินเดือน ${employeeName} (${month})`;
+  const bubble = {
+    type: 'bubble',
+    header: {
+      type: 'box', layout: 'vertical', paddingAll: '16px',
+      contents: [
+        { type: 'text', text: 'สลิปเงินเดือน', weight: 'bold', size: 'lg' },
+        { type: 'text', text: `เดือน ${month}`, color: '#64748B', size: 'sm' }
+      ]
+    },
+    body: {
+      type: 'box', layout: 'vertical', spacing: 'sm', contents: [
+        { type: 'box', layout: 'baseline', contents: [
+          { type: 'text', text: 'พนักงาน', size: 'sm', color: '#64748B', flex: 3 },
+          { type: 'text', text: employeeName || '-', size: 'sm', weight: 'bold', flex: 5, wrap: true }
+        ]},
+        { type: 'box', layout: 'baseline', contents: [
+          { type: 'text', text: 'สุทธิ', size: 'sm', color: '#64748B', flex: 3 },
+          { type: 'text', text: Number(netPay||0).toLocaleString(undefined,{maximumFractionDigits:2}) + ' บาท', size: 'sm', weight: 'bold', flex: 5 }
+        ]},
+        { type: 'separator', margin: 'md' },
+        { type: 'text', text: `สร้างโดย ${actorName||'-'}`, size: 'xs', color: '#94A3B8' },
+        { type: 'text', text: new Date().toLocaleString('th-TH'), size: 'xs', color: '#94A3B8' }
+      ]
+    },
+    footer: {
+      type: 'box', layout: 'vertical', spacing: 'sm', contents: [
+        { type: 'button', style: 'primary',
+          action: { type: 'uri', label: 'เปิดสลิป (PDF)', uri: pdfUrl } }
+      ]
+    },
+    styles: { header: { backgroundColor: '#F1F5FF' } }
+  };
+  return { alt, bubble };
+}
+
+// 2) Payroll/Report CSV card (ส่งให้ owner)
+function buildReportCard({ title, month, fileName, fileUrl, actorName }) {
+  const alt = `${title} (${month})`;
+  const bubble = {
+    type: 'bubble',
+    header: {
+      type: 'box', layout: 'vertical', paddingAll: '16px',
+      contents: [
+        { type: 'text', text: title, weight: 'bold', size: 'lg' },
+        { type: 'text', text: `เดือน ${month}`, color: '#64748B', size: 'sm' }
+      ]
+    },
+    body: {
+      type: 'box', layout: 'vertical', spacing: 'sm', contents: [
+        { type: 'box', layout: 'baseline', contents: [
+          { type: 'text', text: 'ไฟล์', size: 'sm', color: '#64748B', flex: 3 },
+          { type: 'text', text: fileName || '-', size: 'sm', weight: 'bold', flex: 5, wrap: true }
+        ]},
+        { type: 'separator', margin: 'md' },
+        { type: 'text', text: `สร้างโดย ${actorName||'-'}`, size: 'xs', color: '#94A3B8' },
+        { type: 'text', text: new Date().toLocaleString('th-TH'), size: 'xs', color: '#94A3B8' }
+      ]
+    },
+    footer: {
+      type: 'box', layout: 'vertical', spacing: 'sm', contents: [
+        { type: 'button', style: 'primary',
+          action: { type: 'uri', label: 'เปิดไฟล์', uri: fileUrl } }
+      ]
+    },
+    styles: { header: { backgroundColor: '#F1F5FF' } }
+  };
+  return { alt, bubble };
+}
+
+
+// IAPP OCR Proxy: รับไฟล์จากฟรอนต์ → ส่งต่อไป IAPP → map 4 ฟิลด์กลับมา
+app.post('/api/ocr/iapp', upload.single('file'), async (req, res) => {
+  try {
+    if (!IAPP_KEY) return res.status(500).json({ ok:false, error:'Missing IAPP_API_KEY' });
+    if (!req.file)  return res.status(400).json({ ok:false, error:'no file' });
+
+    // 1) เตรียมภาพ: พยายาม re-encode ด้วย sharp; ถ้าพัง ให้ใช้บัฟเฟอร์เดิม
+    let imgBuf = req.file.buffer;
+    try {
+      imgBuf = await sharp(req.file.buffer, { failOn: 'none' }) // กันเคส JPEG มี bytes เกิน
+        .rotate()                                               // หมุนตาม EXIF
+        .toFormat('jpeg', { quality: 92 })
+        .toBuffer();
+    } catch (e) {
+      console.warn('[IAPP OCR] sharp failed, use original buffer:', e.message);
+      imgBuf = req.file.buffer; // fallback
+    }
+
+    // 2) ส่งขึ้น IAPP ด้วย form-data (ของแพ็กเกจ form-data)
+    const fd = new FormData();
+    fd.append('file', imgBuf, { filename: 'idcard.jpg', contentType: 'image/jpeg' });
+
+    const upstream = await fetch('https://api.iapp.co.th/thai-national-id-card/v3.5/front', {
+      method: 'POST',
+      headers: { apikey: IAPP_KEY, ...fd.getHeaders() },
+      body: fd
+    });
+
+    // ถ้า IAPP ตอบ non-200 ให้ลองอ่านข้อความ error
+    if (!upstream.ok) {
+      const txt = await upstream.text().catch(()=> '');
+      return res.status(502).json({ ok:false, error:`IAPP ${upstream.status}`, detail: txt?.slice(0,500) });
+    }
+
+    const payload = await upstream.json().catch(() => ({}));
+    const o = payload?.data || payload || {};
+
+    /* ---------- helpers ---------- */
+    const TH_MONTH = {
+      'ม.ค.':1,'ก.พ.':2,'มี.ค.':3,'เม.ย.':4,'พ.ค.':5,'มิ.ย.':6,'ก.ค.':7,'ส.ค.':8,'ก.ย.':9,'ต.ค.':10,'พ.ย.':11,'ธ.ค.':12,
+      'มกราคม':1,'กุมภาพันธ์':2,'มีนาคม':3,'เมษายน':4,'พฤษภาคม':5,'มิถุนายน':6,'กรกฎาคม':7,'สิงหาคม':8,'กันยายน':9,'ตุลาคม':10,'พฤศจิกายน':11,'ธันวาคม':12
+    };
+    const EN_MONTH = {jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
+    const mapThaiDigits = s => String(s||'').replace(/[๐-๙]/g, ch => '๐๑๒๓๔๕๖๗๘๙'.indexOf(ch));
+    const firstNonEmpty = arr => (arr || []).find(v => v === 0 || (v !== undefined && v !== null && String(v).trim() !== '')) ?? '';
+
+    function normalizeBirthDate(s) {
+      if (!s) return '';
+      const txt = mapThaiDigits(String(s).trim());
+
+      // 6 พ.ค. 2544 / 6 พฤษภาคม 2544
+      let m = txt.match(/(\d{1,2})\s*(ม\.ค\.|ก\.พ\.|มี\.ค\.|เม\.ย\.|พ\.ค\.|มิ\.ย\.|ก\.ค\.|ส\.ค\.|ก\.ย\.|ต\.ค\.|พ\.ย\.|ธ\.ค\.|มกราคม|กุมภาพันธ์|มีนาคม|เมษายน|พฤษภาคม|มิถุนายน|กรกฎาคม|สิงหาคม|กันยายน|ตุลาคม|พฤศจิกายน|ธันวาคม)\s*(\d{2,4})/);
+      if (m) {
+        const d = +m[1], mo = TH_MONTH[m[2]] || 0, y = +m[3];
+        const yyyy = y > 2400 ? y - 543 : y;
+        if (mo) return `${String(yyyy).padStart(4,'0')}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      }
+
+      // 6 May 2001
+      m = txt.match(/(\d{1,2})\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s*(\d{4})/i);
+      if (m) {
+        const d = +m[1], y = +m[3], mo = EN_MONTH[m[2].toLowerCase().slice(0,3)] || 0;
+        if (mo) return `${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      }
+
+      // 06/05/2544 หรือ 06-05-2001
+      m = txt.match(/(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/);
+      if (m) {
+        const d = +m[1], mo = +m[2], y = +m[3];
+        const yyyy = y > 2400 ? y - 543 : (y < 100 ? y + 2000 : y);
+        return `${String(yyyy).padStart(4,'0')}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      }
+      return '';
+    }
+
+    /* ---------- mapping: ยึดตามคีย์ที่ IAPP ส่งจริง ---------- */
+
+    // 1) Citizen ID
+    let nid = firstNonEmpty([
+      o.id_number, o.idNumber, o.citizen_id, o.citizenId, o.cid, o.nid,
+      o.identification_number, o.identificationNumber,
+      (o.id_number_with_dash || o.idNumberWithDash || '').replace?.(/\D/g,''),
+      (o.id_number_without_dash || o.idNumberWithoutDash || '').replace?.(/\D/g,'')
+    ]);
+    nid = String(nid || '').replace(/\D/g,'');
+
+    // 2) Full name (TH) – จาก th_init + th_fname + th_lname หรือ th_name
+    const thInit  = firstNonEmpty([ o.th_init,  o.name_prefix_th, o.th_prefix, o.prefix_th ]);
+    const thFirst = firstNonEmpty([ o.th_fname, o.th_firstname, o.firstname_th, o.given_name_th, o.first_name_th ]);
+    const thLast  = firstNonEmpty([ o.th_lname, o.th_lastname, o.lastname_th, o.family_name_th, o.last_name_th, o.surname_th ]);
+
+    let fullName = firstNonEmpty([
+      o.th_name,                      // ถ้า IAPP รวมให้แล้ว
+      o.fullname_th, o.name_th_full, o.name_th,
+      [thInit, thFirst, thLast].filter(Boolean).join(' ')
+    ]).replace(/\s{2,}/g,' ').trim();
+
+    // 3) Address (TH) – ใช้ home_address ก่อน แล้วค่อย fallback ประกอบเอง
+    let idAddress = firstNonEmpty([
+      o.address_th, o.th_address, o.idcard_address_th, o.address, o.address_full_th,
+      o.home_address
+    ]);
+    if (!idAddress) {
+      const parts = [
+        firstNonEmpty([o.house_no]),
+        firstNonEmpty([o.road]),
+        firstNonEmpty([o.lane]),         // ซอย/ตรอก
+        firstNonEmpty([o.sub_district]), // แขวง/ตำบล
+        firstNonEmpty([o.district]),     // เขต/อำเภอ
+        firstNonEmpty([o.province]),
+        firstNonEmpty([o.postal_code]),
+      ].filter(Boolean);
+      idAddress = parts.join(' ').replace(/\s{2,}/g,' ').trim();
+    }
+
+    // 4) Birth date – รองรับทั้งไทยและอังกฤษ
+    const birthRaw = firstNonEmpty([
+      o.th_dob, o.birth_date_th, o.date_of_birth_th, o.birthday_th,
+      o.en_dob, o.birth_date, o.date_of_birth, o.birthday_en, o.birth_date_en
+    ]);
+    const birthDate = normalizeBirthDate(birthRaw);
+
+    return res.json({
+      ok: true,
+      data: {
+        nationalId: nid || '',
+        fullName:   (fullName || '').trim(),
+        idAddress:  (idAddress || '').trim(),
+        birthDate:  birthDate || '',
+        raw: {
+          rawNid:   nid || '',
+          rawName:  fullName || '',
+          rawBirth: birthRaw || '',
+          rawAddr:  idAddress || '',
+          upstream: o
+        }
+      }
+    });
+  } catch (e) {
+    console.error('[IAPP OCR] error', e);
+    return res.status(500).json({ ok:false, error: e.message || 'IAPP OCR failed' });
+  }
+});
+
 
 
 function remapOldNext(n) {
@@ -244,39 +839,44 @@ function remapOldNext(n) {
   return n; // อย่างอื่นปล่อยผ่าน
 }
 
-async function fetchAndShrinkToLINE(absUrl) {
-  const resp = await fetch(absUrl);
-  const buf  = Buffer.from(await resp.arrayBuffer());
-  // resize ให้ตรงสัดส่วน rich menu และบีบคุณภาพ
-  return await sharp(buf)
-    .resize(2500, 1686, { fit: 'cover' })
-    .jpeg({ quality: 85, mozjpeg: true })
-    .toBuffer();
-}
-
 
 app.disable('x-powered-by');
 
+// === Security headers (allow LINE webview + avoid WKWebView COOP/COEP bug) ===
 app.use((req, res, next) => {
-  // ห้ามส่ง X-Frame-Options (Safari/iOS ไม่รองรับ ALLOW-FROM และจะทำให้ขาว)
+  // ไม่บังคับ X-Frame-Options (Safari/iOS ไม่รองรับ ALLOW-FROM)
   res.removeHeader('X-Frame-Options');
 
-  // อนุญาตให้หน้าเราถูกเปิดจาก LINE domains
-  // ครอบคลุมแอป LINE และ LIFF ทั้ง iOS/Android
+  const ua = String(req.headers['user-agent'] || '');
+  const isLine = /\bLine\/\d/i.test(ua);
+  const isIOS  = /\biPhone|iPad|iPod|iOS/i.test(ua);
+  const isIOSLine = isLine && isIOS;
+
+  // อนุญาตให้ถูกฝังจาก LINE domains (อย่าแตะ script-src เพื่อไม่บล็อค bundle)
   res.setHeader(
     'Content-Security-Policy',
-    "frame-ancestors 'self' https://*.line.me https://*.line-apps.com https://*.line-scdn.net"
+    "frame-ancestors 'self' https://*.line.me https://*.liff.line.me https://*.line-apps.com https://*.line-scdn.net"
   );
 
-  // กันบางเคสที่ iOS webview เปิด popups/redirect แล้วค้าง
-  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
-  res.setHeader('Cross-Origin-Embedder-Policy', 'unsafe-none');
+  // ปิด COOP/COEP เฉพาะ LINE iOS (WKWebView มีบั๊กทำให้ JS ไม่ execute)
+  if (isIOSLine) {
+    res.removeHeader('Cross-Origin-Opener-Policy');
+    res.removeHeader('Cross-Origin-Embedder-Policy');
+  } else {
+    // นอก LINE: COOP แบบอ่อน ๆ (ถ้าไม่ต้องใช้ SAB ไม่ต้องตั้ง COEP)
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+    res.removeHeader('Cross-Origin-Embedder-Policy');
+  }
+
+  // กัน content sniffing
+  res.setHeader('X-Content-Type-Options', 'nosniff');
 
   next();
 });
+
+
+
 // 1) หน้า auto-submit (ไม่ตั้งคุกกี้ใน GET)
-// === Magic link: open -> verify -> issue custom token -> redirect (with logs) ===
-// === Magic link: open -> verify -> issue custom token -> redirect (robust) ===
 // === MAGIC LINK: ตั้งคุกกี้ session + ส่ง custom token กลับให้ AuthGate ===
 app.get('/auth/magic', async (req, res) => {
   try {
@@ -345,16 +945,22 @@ app.get('/auth/magic', async (req, res) => {
       ? '/app'
       : safeNext;
 
-    // 6) redirect ไปหน้า dest พร้อม #token ให้ AuthGate จับไป login Firebase
+    // 6) redirect → ส่ง custom token ทาง query (?mt=) + กัน iOS ดรอป hash
     const u = new URL(dest, base);
-    u.hash  = `token=${encodeURIComponent(customToken)}&next=${encodeURIComponent(dest)}`;
+    u.searchParams.set('mt', customToken);
+    u.searchParams.set('next', dest);
+    if (trace) u.searchParams.set('trace', '1');
 
-    if (trace) {
-      console.log('[MAGIC/AUTH/REDIRECT]', { dest, isAdminLike, role, tid });
-      console.log('[MAGIC/AUTH/URL]', u.toString());
-    }
+    // ⭐ สำคัญ: log URL ที่จะ redirect "ทุกครั้ง" (จะได้เห็นว่ามี ?mt= จริง)
+    console.log('[MAGIC/AUTH/URL]', u.toString());
 
-    return res.redirect(u.toString());
+    // กัน cache/redirect แคชค้างบน iOS WebView
+    res.set('Cache-Control', 'no-store');
+
+    // ใช้ 302 ชัดเจน
+    return res.redirect(302, u.toString());
+
+
   } catch (e) {
     console.error('[MAGIC/AUTH/ERR]', e?.message || e);
     return res.status(500).send('magic failed');
@@ -420,7 +1026,8 @@ app.post('/auth/magic/consume', express.urlencoded({ extended: false }), async (
     console.log('[CONSUME] customToken length', customToken.length);
 
     const safeNext = remapOldNext(next);
-    const redirectUrl = `${base}${safeNext}#token=${encodeURIComponent(customToken)}&next=${encodeURIComponent(safeNext)}`;
+    const sep = safeNext.includes('?') ? '&' : '?';
+    const redirectUrl = `${base}${safeNext}${sep}mt=${encodeURIComponent(customToken)}&next=${encodeURIComponent(safeNext)}`;
 
     console.log('[CONSUME] redirect =>', redirectUrl);
 
@@ -470,6 +1077,48 @@ app.post('/auth/logout', (req, res) => {
 
 
 
+// --- [LINE profile proxy] GET /api/tenants/:tenant/line/profile?userId=Uxxxx
+async function getChannelAccessTokenForTenant(tenant) {
+  // TODO: ถ้ามีหลาย tenant ให้ดึงจาก Firestore/DB ของคุณ
+  // ชั่วคราว: ใช้ตัวเดียวจาก .env
+  return process.env.LINE_CHANNEL_ACCESS_TOKEN || '';
+}
+
+// LINE profile proxy for AppHeader avatar
+// LINE profile proxy for AppHeader avatar
+app.get('/api/tenants/:tenant/line/profile', async (req, res) => {
+  try {
+    const tenantId = String(req.params.tenant || '');
+    const userId   = String(req.query.userId || req.query.lineUserId || '');
+
+    if (!tenantId) return res.status(400).json({ ok:false, error:'missing tenant' });
+    if (!userId)   return res.status(400).json({ ok:false, error:'missing userId' });
+
+    // สร้าง tenantRef จาก Firestore โดยตรง
+    const tenantRef = admin.firestore().collection('tenants').doc(tenantId);
+
+    // ใช้ helper เดิมของโปรเจกต์
+    const accessToken = await getTenantSecretAccessToken(tenantRef);
+
+    // เรียก LINE profile API (ใช้ fetchFn ของโปรเจกต์)
+    const r = await fetchFn(`https://api.line.me/v2/bot/profile/${encodeURIComponent(userId)}`, {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+
+    if (!r.ok) {
+      const txt = await r.text().catch(()=> '');
+      return res.status(r.status).json({ ok:false, error:`LINE profile error ${r.status}`, detail: txt });
+    }
+
+    const profile = await r.json(); // { userId, displayName, pictureUrl, statusMessage? }
+    return res.json({ ok:true, profile });
+  } catch (e) {
+    console.error('[line/profile] error', e);
+    return res.status(500).json({ ok:false, error: e.message || String(e) });
+  }
+});
+
+
 
 
 // 3) ตรวจ session (ให้หน้า React ดึงดูได้)
@@ -482,6 +1131,20 @@ app.get('/api/session/me', requireAuth, (req,res) => {
 //   // TODO: ดึงข้อมูลจริงตาม req.user.tenant
 //   res.json({ ok:true, items:[], tenant: req.user.tenant });
 // });
+
+// ให้หน้า React อ่าน session เบื้องต้นได้ โดย "ไม่" บังคับ requireAuth
+app.get('/api/auth/session', (req, res) => {
+  try {
+    const sess = readSession(req); // { uid, tenant, name, role } หรือ null
+    if (sess && sess.uid) {
+      return res.json({ uid: sess.uid, tenant: sess.tenant, name: sess.name || '', role: sess.role || 'user' });
+    }
+    return res.json({}); // ไม่มีเซสชัน → ให้หน้าเว็บแสดงคำแนะนำ (ไม่ crash)
+  } catch {
+    return res.json({});
+  }
+});
+
 
 
 
@@ -518,31 +1181,95 @@ app.use(express.json({
 }));
 app.use(cookieParser());
 
+function setAppCookie(res, payload) {
+  const sess = {
+    uid: payload.uid,
+    tenant: payload.tenant,
+    name: payload.name || '',
+    role: payload.role || 'user'
+  };
 
-// ==== Static & SPA (REPLACE BLOCK) ====
+  // LINE in-app บางเวอร์ชันถือว่าเป็น third-party context ในบางกรณี
+  // → ต้องใช้ SameSite=None; Secure; Path=/
+  // (อย่าตั้ง domain เพื่อเลี่ยงไม่ตรงซับโดเมน ngrok)
+  res.cookie('app_sess', JSON.stringify(sess), {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'none',
+    path: '/',
+    maxAge: 1000 * 60 * 60 * 4 // 4 ชม.
+  });
+}
+
+
+// ----- FORCE ONE-TIME SW KILL FOR iOS LINE -----
+function isLineIOS(ua) {
+  ua = String(ua || '');
+  return /\bLine\/\d/i.test(ua) && /\biPhone|\biPad|\biPod|\biOS/i.test(ua);
+}
+
+// // เฉพาะเส้นทางหน้าเว็บ (ไม่ยุ่ง /api /auth /webhook /static ...)
+// app.use((req, res, next) => {
+//   const { originalUrl } = req;
+//   // สนใจเฉพาะหน้า SPA
+//   if (!/^\/($|app\/|admin\/)/.test(originalUrl)) return next();
+
+//   const ua = req.headers['user-agent'] || '';
+//   const hasCookie = (req.headers.cookie || '').includes('swfix=1');
+//   const hasParam  = /[?&]__swfix=1\b/.test(originalUrl);
+
+//   if (isLineIOS(ua) && !hasCookie && !hasParam) {
+//     // ใส่ __swfix=1 หนึ่งครั้ง แล้วตั้งคุกกี้ swfix=1 (1 วันพอ)
+//     const url = new URL(req.protocol + '://' + req.get('host') + req.originalUrl);
+//     url.searchParams.set('__swfix', '1');
+
+//     res.cookie('swfix', '1', {
+//       httpOnly: false,
+//       sameSite: 'Lax',
+//       maxAge: 24 * 60 * 60 * 1000,
+//       secure: true,
+//       path: '/'
+//     });
+
+//     return res.redirect(302, url.pathname + url.search);
+//   }
+//   next();
+// });
+
+
+
+// ==== Static & SPA ====
 // วาง "หลัง" /api, /auth, /webhook ทั้งหมด และ "ก่อน" app.listen(...)
 
 const WEB_ROOT   = __dirname;
 const PUBLIC_DIR = path.join(WEB_ROOT, 'public');
 const BUILD_DIR  = path.join(WEB_ROOT, 'build');
 
-// 0) logger – ดูให้ชัดว่าเข้าเส้นไหน/Accept อะไร
+// 0) logger – ดูให้ชัดว่าเข้าเส้นไหน/UA อะไร
 app.use((req, _res, next) => {
-  console.log('[REQ]', req.method, req.path, '| Accept=', req.headers.accept || '(none)');
+  console.log('[REQ]', req.method, req.originalUrl, '| UA=', req.headers['user-agent'] || '(none)');
   next();
 });
 
 // ---------- 1) เสิร์ฟ /static/* แบบกำหนด MIME เอง & ไม่ให้ fallback ----------
 function setStaticHeadersByExt(res, filePath) {
-  res.removeHeader('X-Content-Type-Options');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
   const ext = path.extname(filePath).toLowerCase();
-  if (ext === '.js' || ext === '.mjs') res.type('application/javascript; charset=utf-8');
-  else if (ext === '.css')             res.type('text/css; charset=utf-8');
-  else if (ext === '.json')            res.type('application/json; charset=utf-8');
-  else if (ext === '.svg')             res.type('image/svg+xml');
+  if (ext === '.js'  || ext === '.mjs')      res.type('application/javascript; charset=utf-8');
+  else if (ext === '.css')                   res.type('text/css; charset=utf-8');
+  else if (ext === '.json')                  res.type('application/json; charset=utf-8');
+  else if (ext === '.svg')                   res.type('image/svg+xml; charset=utf-8');
+  else if (ext === '.ico')                   res.type('image/x-icon');
+  else if (ext === '.png')                   res.type('image/png');
+  else if (ext === '.jpg' || ext === '.jpeg')res.type('image/jpeg');
+  else if (ext === '.webp')                  res.type('image/webp');
+  else if (ext === '.woff2')                 res.type('font/woff2');
+
+  // cache long for hashed assets
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  // ปล่อยให้ cross-origin โหลดได้ (เช่น ngrok/LINE webview)
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
 }
 
 app.use(
@@ -557,7 +1284,7 @@ app.use(
 );
 
 // ---------- 2) ไฟล์พิเศษที่ต้องเป็นไฟล์จริงเสมอ ----------
-app.get('/asset-manifest.json', (req, res) => {
+app.get('/asset-manifest.json', (_req, res) => {
   res.set({
     'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
     'Pragma': 'no-cache',
@@ -569,7 +1296,10 @@ app.get('/asset-manifest.json', (req, res) => {
 app.get('/manifest.json', (_req, res) =>
   res.type('application/manifest+json').sendFile(path.join(PUBLIC_DIR, 'manifest.json'))
 );
-app.get('/favicon.ico', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'favicon.ico')));
+app.get('/favicon.ico', (req, res) => {
+  res.set('Cache-Control', 'public, max-age=86400');
+  res.sendFile(path.join(__dirname, 'public', 'favicon.ico'));
+});
 app.get('/static/hr_menu_admin.png', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'hr_menu_admin.png')));
 app.get('/static/ta_menu_user.png', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'ta_menu_user.png')));
 app.get('/logo192.png', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'logo192.png')));
@@ -579,17 +1309,11 @@ const SW_KILL = `
 self.addEventListener('install', e => self.skipWaiting());
 self.addEventListener('activate', e => {
   e.waitUntil((async () => {
-    try {
-      const names = await caches.keys();
-      await Promise.all(names.map(n => caches.delete(n)));
-    } catch (_) {}
+    try { const names = await caches.keys(); await Promise.all(names.map(n => caches.delete(n))); } catch (_) {}
     try { await self.registration.unregister(); } catch (_) {}
-    // ไม่ navigate ใด ๆ ปล่อยให้หน้าเดิมตัดสินใจเอง
   })());
 });
-self.addEventListener('fetch', e => {
-  // ไม่ intercept – ให้เครือข่ายทำงานตามปกติ
-});
+self.addEventListener('fetch', e => {}); // ไม่ intercept
 `;
 app.get(['/service-worker.js','/serviceWorker.js','/sw.js','/firebase-messaging-sw.js'], (_req, res) => {
   res.set({
@@ -619,122 +1343,190 @@ app.get('/__diag/index-info', (_req, res) => {
   });
 });
 
-// ---------- 5) ส่ง index แบบ no-cache + rewrite /static → absolute + boot-diag ----------
+// อ่าน entrypoints จาก build/asset-manifest.json
+function getEntrypointsFromManifest() {
+  try {
+    const manifestPath = path.join(BUILD_DIR, 'asset-manifest.json');
+    const txt = fs.readFileSync(manifestPath, 'utf8');
+    const json = JSON.parse(txt);
+
+    if (Array.isArray(json.entrypoints)) {
+      const css = json.entrypoints.filter(p => p.endsWith('.css'));
+      const js  = json.entrypoints.filter(p => p.endsWith('.js'));
+      return { css, js };
+    }
+    const files = json.files || {};
+    const css = []; const js = [];
+    if (files['main.css']) css.push(files['main.css']);
+    if (files['main.js'])  js.push(files['main.js']);
+    return { css, js };
+  } catch { return { css: [], js: [] }; }
+}
+
+// ถ้า index.html ไม่มี /static/js/... ให้ฉีด <link>/<script> จาก manifest เข้าไป
+function ensureIndexHasBundles(rawHtml) {
+  if (/\/static\/js\//.test(rawHtml)) return rawHtml; // มีอยู่แล้ว ไม่ต้องฉีด
+  const { css, js } = getEntrypointsFromManifest();
+  if (css.length === 0 && js.length === 0) {
+    console.warn('[SPA] asset-manifest.json ไม่มี entrypoints — อาจยังไม่ได้ build');
+    return rawHtml;
+  }
+  let html = rawHtml;
+  if (html.includes('</head>') && css.length) {
+    html = html.replace('</head>', css.map(h => `<link rel="stylesheet" href="${h}">`).join('') + '\n</head>');
+  }
+  if (html.includes('</body>') && js.length) {
+    html = html.replace('</body>', js.map(s => `<script defer src="${s}"></script>`).join('') + '\n</body>');
+  }
+  console.log('[SPA] injected bundles from manifest →', { css, js });
+  return html;
+}
+
+// beacon: ถ้า JS execute ได้ จะยิง /__boot/pixel (ช่วยวินิจฉัย)
+app.get('/__boot/pixel', (req, res) => {
+  console.log('[BOOT] pixel', req.query);
+  res.type('image/gif').end();
+});
+
+
+// ---------- 4.9) LINE WebView: one-shot SW/cache clear using URL flag ----------
+function isLineUA(req) {
+  const ua = String(req.headers['user-agent'] || '').toLowerCase();
+  return ua.includes(' line/');
+}
+function hasSwFixed(req) {
+  const q = String(req.url || '');
+  if (/\b__swfix=1\b/.test(q)) return true;
+  const cookie = String(req.headers.cookie || '');
+  return /(?:^|;\s*)swfix=1(?:;|$)/.test(cookie);
+}
+
+app.get(['/','/app/*'], (req, res, next) => {
+  // ใช้เฉพาะ LINE; ถ้าเคย fix แล้ว ให้ไปเส้นทางปกติ
+  if (!isLineUA(req) || hasSwFixed(req)) return next();
+
+  try {
+    let html = fs.readFileSync(INDEX_HTML, 'utf8');
+    html = ensureIndexHasBundles(html);
+
+    const killer = `
+<script>
+(function(){try{
+  // รันเฉพาะ LINE และเฉพาะเมื่อยังไม่มี __swfix=1 เท่านั้น
+  var isLINE=(/\\bLine\\/\\d/i).test(navigator.userAgent||'');
+  if(!isLINE) return;
+  if((location.search||'').indexOf('__swfix=1')>=0) return;
+
+  // ตั้งคุกกี้กันลูปสำรอง (10 นาที)
+  try{ document.cookie='swfix=1; max-age=600; path=/'; }catch(_){}
+
+  // ล้าง cache และ SW แล้ว reload พร้อมเติม __swfix=1
+  var done=function(){
+    var u=new URL(location.href);
+    if(!u.searchParams.has('__swfix')) u.searchParams.set('__swfix','1');
+    location.replace(u.toString());
+  };
+
+  var clearCaches = function(){
+    try{
+      if(window.caches && caches.keys){
+        return caches.keys().then(function(ks){ return Promise.all(ks.map(function(k){return caches.delete(k)})); });
+      }
+    }catch(_){}
+    return Promise.resolve();
+  };
+
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.getRegistrations()
+      .then(function(rs){ return Promise.all(rs.map(function(r){ return r.unregister().catch(function(){}) })); })
+      .then(clearCaches).then(function(){ setTimeout(done,50); })
+      .catch(function(){ done(); });
+  }else{
+    clearCaches().then(function(){ setTimeout(done,30); });
+  }
+}catch(e){}})();
+</script>`.trim();
+
+    // ฉีดสคริปต์ก่อน </head>
+    if (html.includes('</head>')) html = html.replace('</head>', killer + '\n</head>'); else html = killer + '\n' + html;
+
+    // beacon 1px (debug) ว่า JS เริ่มทำงาน
+    if (html.includes('</body>')) {
+      html = html.replace('</body>', `<script>try{new Image().src='/__boot/pixel?t='+(Date.now())}catch(e){}</script></body>`);
+    }
+
+    // กัน cache เต็มรูปแบบ + เคลียร์ข้อมูลฝั่ง UA
+    res.set({
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+      'Surrogate-Control': 'no-store',
+      'Vary': 'Accept, User-Agent',
+      'Clear-Site-Data': '"cache", "storage"',
+      'X-Content-Type-Options': 'nosniff',
+      // ตั้งคุกกี้ swfix=1 เผื่อ UA ไม่เขียนคุกกี้จาก JS
+      'Set-Cookie': 'swfix=1; Max-Age=600; Path=/',
+    });
+
+    res.type('text/html; charset=utf-8').send(html);
+  } catch (e) {
+    return next();
+  }
+});
+
+// ---------- 5) ส่ง index แบบ no-cache ----------
 function sendIndexNoCache(req, res) {
-  // 1) no-cache (+ แยก UA เพราะเราจงใจ inline สำหรับ iOS LINE)
+  const ua = String(req.headers['user-agent'] || '');
+  const isLINE = /\bLine\/\d/i.test(ua);
+  const isFix  = /[?&]__swfix=1\b/.test(req.originalUrl);
+
+  // no-store ทุกเคส
   res.set({
     'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
     'Pragma': 'no-cache',
     'Expires': '0',
     'Surrogate-Control': 'no-store',
     'Vary': 'Accept, User-Agent',
+    'X-Content-Type-Options': 'nosniff',
   });
 
-  // เคลียร์ cache/storage อัตโนมัติเมื่อเปิดผ่าน LINE (กัน cache ค้างใน WKWebView)
-  const ua = String(req.headers['user-agent'] || '');            // ✅ ใช้ตัวนี้ตัวเดียว
-  if (ua.includes(' Line/')) res.set('Clear-Site-Data', '"cache", "storage"');
 
-  // 2) อ่าน index.html
-  let html;
-  try { html = fs.readFileSync(INDEX_HTML, 'utf8'); }
-  catch (e) { console.error('[SPA] cannot read index.html', e); return res.status(500).send('index not found'); }
 
-  // 3) origin ปัจจุบัน
-  const proto  = (req.headers['x-forwarded-proto'] || req.protocol || 'https');
-  const host   = (req.headers['x-forwarded-host'] || req.headers.host || '').replace(/:\d+$/, '');
-  const origin = `${proto}://${host}`.replace(/\/+$/, '');
-
-  // 4) หา main.*.js
-  function pickMain() {
-    try {
-      const man = JSON.parse(fs.readFileSync(path.join(BUILD_DIR, 'asset-manifest.json'), 'utf8'));
-      if (Array.isArray(man.entrypoints)) {
-        const ep = man.entrypoints.find(p => /\/?static\/js\/main\..+\.js$/i.test(p))
-               ||  man.entrypoints.find(p => /\/?static\/js\/.+\.js$/i.test(p));
-        if (ep) return ep.startsWith('/') ? ep : '/' + ep;
-      }
-      if (man.files && typeof man.files['main.js'] === 'string') {
-        const f = man.files['main.js']; return f.startsWith('/') ? f : '/' + f;
-      }
-      if (man.files) for (const k of Object.keys(man.files)) {
-        const v = String(man.files[k] || '');
-        if (/\/?static\/js\/main\..+\.js$/i.test(v)) return v.startsWith('/') ? v : '/' + v;
-      }
-    } catch(e) { console.warn('[SPA] read manifest fail:', e.message); }
-    // directory scan เผื่อฉุกเฉิน
-    try {
-      const files = fs.readdirSync(path.join(BUILD_DIR, 'static', 'js'));
-      const main = files.find(f => /^main\..+\.js$/i.test(f));
-      if (main) return '/static/js/' + main;
-    } catch {}
-    return '';
+  // ผ่อน CSP เฉพาะ LINE (กันบล็อคสคริปต์)
+  if (isLINE) {
+    res.set('Content-Security-Policy', [
+      "default-src 'self' blob: data: https:",
+      "script-src 'self' blob: 'unsafe-inline' 'unsafe-eval' https:",
+      "style-src 'self' 'unsafe-inline' https:",
+      "img-src 'self' data: blob: https:",
+      "connect-src 'self' https:",
+      "font-src 'self' data: https:",
+      "frame-ancestors *"
+    ].join('; '));
   }
 
-  const mainJs     = pickMain();                                 // ✅ เรียกจริง
-  const mainRel    = mainJs || '/static/js/main.js';
-  const mainAbsURL = `${origin}${mainRel}`;
-  const mainAbsFile= path.join(BUILD_DIR, mainRel.replace(/^\//,''));
+  try {
+    const raw  = fs.readFileSync(INDEX_HTML, 'utf8');
+    let html   = ensureIndexHasBundles(raw);
 
-  // --- ลบแท็ก main.*.js เดิมใน index ให้หมดก่อน ---
-  let removedCount = 0;
-  const reStrict = /<script\b[^>]*\bsrc=(["'])(?:https?:\/\/[^"']+)?\/static\/js\/main\.[^"']+\1[^>]*>\s*<\/script>/ig;
-  const reLoose  = /<script\b[^>]*\bsrc=(["'])(?:https?:\/\/[^"']+)?\/static\/js\/main\.[^"']+\1[^>]*>\s*/ig;
-  html = html.replace(reStrict, () => { removedCount++; return ''; });
-  html = html.replace(reLoose,  () => { removedCount++; return ''; });
+    // beacon แบบ <img> (ไม่พึ่ง JS)
+    const beacon = `<img alt="" src="/__boot/pixel?t=html" width="1" height="1" style="position:absolute;left:-9999px;top:-9999px">`;
+    html = html.includes('</body>') ? html.replace('</body>', beacon + '\n</body>') : (html + '\n' + beacon);
 
-  // --- iOS LINE: inline main.js ---
-  const isIOS  = /iPhone|iPad|iPod/i.test(ua);
-  const isLINE = /Line\/\d/i.test(ua);
-
-  if (isIOS && isLINE && fs.existsSync(mainAbsFile)) {
-    try {
-      let js = fs.readFileSync(mainAbsFile, 'utf8');
-      js = js.replace(/<\/script/gi, '<\\/script').replace(/<!--/g, '<\\!--').replace(/-->/g, '--\\>');
-      const inlineTag = `<script defer data-inlined="main">(function(){\n${js}\n})();</script>`;
-      html = /<\/body>/i.test(html) ? html.replace(/<\/body>/i, `${inlineTag}\n</body>`) : (html + `\n${inlineTag}\n`);
-      console.log('[SPA] inlined main for iOS LINE ->', mainAbsFile, '| removed=', removedCount);
-      res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-    } catch (e) {
-      console.warn('[SPA] inline failed:', e.message, ' -> fallback external');
-      const tag = `<script defer src="${mainAbsURL}" crossorigin="anonymous"></script>`;
-      html = /<\/body>/i.test(html) ? html.replace(/<\/body>/i, `${tag}\n</body>`) : (html + `\n${tag}\n`);
-    }
-  } else {
-    const tag = `<script defer src="${mainAbsURL}" crossorigin="anonymous"></script>`;
-    html = /<\/body>/i.test(html) ? html.replace(/<\/body>/i, `${tag}\n</body>`) : (html + `\n${tag}\n`);
+    res.type('text/html; charset=utf-8').send(html);
+  } catch (e) {
+    console.error('[SPA] cannot read index.html', e);
+    res.status(500).type('text/plain').send('index not found');
   }
-
-  // --- Boot diag ---
-  const bootDiag = `
-  <script>(function(){
-    var box=document.createElement('div');
-    box.style.cssText='position:fixed;left:8px;right:8px;bottom:8px;max-height:45vh;overflow:auto;background:#fff;border:1px solid #ddd;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,.15);font:12px/1.5 ui-monospace,monospace;z-index:999999;padding:10px';
-    function log(){ box.innerHTML+=[].slice.call(arguments).join(' ').replace(/</g,'&lt;')+'<br>'; }
-    document.body.appendChild(box);
-    var btn=document.createElement('button');btn.textContent='Reload';
-    btn.style.cssText='margin-top:6px;padding:6px 10px;border:1px solid #999;border-radius:8px;background:#fafafa';
-    btn.onclick=function(){ location.reload(); }; box.appendChild(btn);
-    log('<b>Boot Diag</b>'); log('UA:',navigator.userAgent); log('URL:',location.href);
-    var cnt=[].slice.call(document.scripts).filter(s=>/\\/static\\/js\\/main\\./.test(s.src)).length;
-    var inl=document.querySelectorAll('script[data-inlined="main"]').length;
-    log('[diag] main tags left =',cnt,'| inlined =',inl);
-    log('[scripts in DOM] =',document.scripts.length);
-    for(var i=0;i<document.scripts.length;i++){var s=document.scripts[i].src||'(inline)';log(' -',s.replace(location.origin,''));}
-    var r=document.getElementById('root'),ticks=0,tm=setInterval(function(){
-      ticks++; if(r&&r.childElementCount>0){log('[root] mounted ✓');clearInterval(tm);return;}
-      if(ticks>20){log('[root] still empty after 10s');clearInterval(tm);}
-    },500);
-  })();</script>`;
-  html = html.replace(/<\/body>/i, bootDiag + '\n</body>');
-
-  res.type('text/html; charset=utf-8').send(html);
 }
 
 
+app.get('/index.html', sendIndexNoCache);
 
 // ---------- 6) เส้นทางเว็บ + catch-all (ยกเว้นระบบ) ----------
-app.get([/^\/liff(\/.*)?$/, /^\/(app|admin)(\/.*)?$/, /^\/$/], sendIndexNoCache);
-app.get(/^\/(?!api\/|auth\/|webhook\/|static\/|asset-manifest\.json$|manifest\.json$|favicon\.ico$|__diag\/).*/, sendIndexNoCache);
+app.get([/^\/(app|admin)(\/.*)?$/, /^\/$/], sendIndexNoCache);
+app.get(/^\/(?!api\/|auth\/|webhook\/|static\/|asset-manifest\.json$|manifest\.json$|favicon\.ico$|__diag\/|__boot\/).*/, sendIndexNoCache);
+
 app.get('/__diag/ping', (_req, res) => res.type('text/plain').send('ok'));
 app.get('/__sw-reset', (_req, res) => {
   res.type('text/html; charset=utf-8').send(`<!doctype html>
@@ -743,32 +1535,51 @@ app.get('/__sw-reset', (_req, res) => {
 SW reset page…</pre>
 <button id="reload" style="margin:12px;padding:10px 14px;border-radius:8px;border:1px solid #999">Reload</button>
 <script>
-const L = (...a)=>{document.getElementById('log').textContent += a.join(' ') + "\\n";}
-document.getElementById('reload').onclick = ()=>location.reload();
-(async ()=>{
-  L('UA:', navigator.userAgent);
+const L=(...a)=>{document.getElementById('log').textContent+=a.join(' ')+'\\n'};
+document.getElementById('reload').onclick=()=>location.reload();
+(async()=>{
+  L('UA:',navigator.userAgent);
   try{
-    if ('serviceWorker' in navigator) {
-      const regs = await navigator.serviceWorker.getRegistrations();
+    if('serviceWorker' in navigator){
+      const regs=await navigator.serviceWorker.getRegistrations();
       L('[sw] regs =', regs.length);
-      for (const r of regs) { try { await r.unregister(); L('[sw] unregistered'); } catch(e){ L('[sw] unregister err', e.message);} }
-    } else {
-      L('[sw] API not available');
-    }
-    if (window.caches && caches.keys) {
-      const keys = await caches.keys();
-      L('[cache] keys =', keys.join(', ') || '(none)');
-      await Promise.all(keys.map(k => caches.delete(k)));
+      for(const r of regs){try{await r.unregister();L('[sw] unregistered')}catch(e){L('[sw] unregister err',e.message)}}
+    }else{L('[sw] API not available')}
+    if(window.caches&&caches.keys){
+      const keys=await caches.keys();
+      L('[cache] keys =', keys.join(', ')||'(none)');
+      await Promise.all(keys.map(k=>caches.delete(k)));
       L('[cache] cleared');
     }
     L('DONE → กด Reload หรือปิดหน้านี้แล้วเปิดลิงก์เดิมใหม่');
-  }catch(e){ L('ERROR:', e && e.message); }
+  }catch(e){L('ERROR:',e&&e.message)}
 })();
 </script>`);
 });
+// ==== END Static & SPA ====
 
-// ==== END Static & SPA (REPLACE BLOCK) ====
 
+app.get('/__diag/ua', (req, res) => {
+  res.type('text/plain').send(req.headers['user-agent'] || '(no ua)');
+});
+
+app.get('/__diag/index-plain', (_req, res) => {
+  res.type('text/html; charset=utf-8').sendFile(INDEX_HTML);
+});
+
+app.get('/__diag/index-csp', (req, res) => {
+  // ส่ง index พร้อม CSP ที่ผ่อน (เหมือนใน sendIndexNoCache)
+  res.set('Content-Security-Policy', [
+    "default-src 'self' blob: data: https:",
+    "script-src 'self' blob: 'unsafe-inline' 'unsafe-eval' https:",
+    "style-src 'self' 'unsafe-inline' https:",
+    "img-src 'self' data: blob: https:",
+    "connect-src 'self' https:",
+    "font-src 'self' data: https:",
+    "frame-ancestors *"
+  ].join('; '));
+  res.type('text/html; charset=utf-8').sendFile(INDEX_HTML);
+});
 
 
 
@@ -837,9 +1648,14 @@ function extractLineUserId(user) {
 
 
 
+
+
+
 // ==============================
 // 3) Helpers
 // ==============================
+
+
 
 async function isTaskbotEnabled(tenantRef) {
   // เปิดใช้ “integrations/taskbot.enabled” ก่อน, ถ้าไม่มีค่อยดู “settings/taskbot.enabled”
@@ -848,6 +1664,34 @@ async function isTaskbotEnabled(tenantRef) {
   const b = await tenantRef.collection('settings').doc('taskbot').get().catch(()=>null);
   return !!b?.get('enabled');
 }
+
+
+
+// ---------- FORCE call Attendance GAS (with sheetId + script='ATTEND') ----------
+// helper ยิง GAS Attendance โดยตรง (ใช้ตามที่เราติดตั้งก่อนหน้า)
+async function callAttendanceGASDirect(action, body = {}) {
+  const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
+  const url = process.env.APPS_SCRIPT_EXEC_URL_TA;
+  const sharedKey = process.env.APPS_SCRIPT_SHARED_KEY_TA;
+  if (!url) throw new Error('missing_env_APPS_SCRIPT_EXEC_URL_TA');
+  if (!sharedKey) throw new Error('missing_env_APPS_SCRIPT_SHARED_KEY_TA');
+
+  let sheetId = String(body.sheetId || body.appsSheetId || '').trim();
+  if (!sheetId) {
+    const integSnap = await body.tenantRef.collection('integrations').doc('attendance').get();
+    const integ = integSnap.exists ? (integSnap.data() || {}) : {};
+    sheetId = String(integ.appsSheetId || '').trim();
+  }
+  if (!sheetId) throw new Error('attendance_gas_missing_sheetId');
+
+  const payload = { action, sharedKey, sheetId, ...body };
+  const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+  const text = await r.text(); let j={}; try{ j=JSON.parse(text) }catch{}
+  if (!r.ok || j.ok === false) throw new Error(`APPS_SCRIPT_ERROR: ${j?.error || `HTTP ${r.status} ${text}`}`);
+  return j;
+}
+
+
 
 
 function validateMessages(messages) {
@@ -995,20 +1839,47 @@ async function requireTenantFromReq(req) {
 
 // === เรียก LINE API โดยอิง tenantRef และ retry อัตโนมัติถ้าเจอ 401 ===
 async function callLineAPITenant(tenantRef, path, options = {}) {
-  let token = await getTenantSecretAccessToken(tenantRef);
-  let res = await fetchFn('https://api.line.me' + path, {
+  const doFetch = async (token) => fetchFn('https://api.line.me' + path, {
     ...options,
     headers: { ...(options.headers || {}), Authorization: `Bearer ${token}` }
   });
 
+  let token = await getTenantSecretAccessToken(tenantRef);
+  let res = await doFetch(token);
+
   if (res.status === 401) {
-    // ออก token ใหม่ แล้วลองยิงซ้ำอีกรอบ
+    console.warn('[lineapi] 401 -> reissue token');
     token = await reissueChannelAccessToken(tenantRef);
-    res = await fetchFn('https://api.line.me' + path, {
-      ...options,
-      headers: { ...(options.headers || {}), Authorization: `Bearer ${token}` }
-    });
+    res = await doFetch(token);
   }
+
+  if (res.status < 200 || res.status >= 300) {
+    const body = await res.text().catch(() => '');
+    console.warn('[lineapi] HTTP', res.status, path, body || '(no body)');
+  }
+
+  return res;
+}
+async function callLineAPITenant(tenantRef, path, options = {}) {
+  const doFetch = async (token) => fetchFn('https://api.line.me' + path, {
+    ...options,
+    headers: { ...(options.headers || {}), Authorization: `Bearer ${token}` }
+  });
+
+  let token = await getTenantSecretAccessToken(tenantRef);
+  let res = await doFetch(token);
+
+  if (res.status === 401) {
+    console.warn('[lineapi] 401 -> reissue token');
+    token = await reissueChannelAccessToken(tenantRef);
+    res = await doFetch(token);
+  }
+
+  if (res.status < 200 || res.status >= 300) {
+    const body = await res.text().catch(() => '');
+    console.warn('[lineapi] HTTP', res.status, path, body || '(no body)');
+  }
+
   return res;
 }
 
@@ -1152,11 +2023,41 @@ async function saveTaskbotSettings(tenantRef, partial) {
   await tenantRef.collection('settings').doc('taskbot').set(partial, { merge: true });
 }
 
+
+// === NEW: read Time Attendance GAS secrets (per-tenant overrides -> env) ===
+async function readTimeAttendanceSecrets(tenantRef) {
+  try {
+    // อนุญาตให้เก็บ override ไว้ใน Firestore ได้ (ถ้ามี)
+    const integ = await tenantRef.collection('integrations').doc('attendance').get();
+    const execUrl =
+      (integ.exists && (integ.get('appsExecUrl') || '')) ||
+      (process.env.APPS_SCRIPT_EXEC_URL_TA || '');
+    const sharedKey =
+      (integ.exists && (integ.get('appsSharedKey') || '')) ||
+      (process.env.APPS_SCRIPT_SHARED_KEY_TA || process.env.APPS_SCRIPT_SHARED_KEY || '');
+
+    return { execUrl, sharedKey };
+  } catch {
+    return {
+      execUrl: process.env.APPS_SCRIPT_EXEC_URL_TA || '',
+      sharedKey: process.env.APPS_SCRIPT_SHARED_KEY_TA || process.env.APPS_SCRIPT_SHARED_KEY || ''
+    };
+  }
+}
+
 // ===== Unified Apps Script caller (keep this, delete the old ones) =====
 // เรียก Apps Script โดยอ่าน URL/KEY จาก .env และส่ง sheet_id ของ OA นั้น ๆ
+
+
+
 // ส่งคำสั่งถึง Apps Script แบบผูก OA → Sheet (มี sheet_id + auth)
 async function callAppsScriptForTenant(tenantRef, action, payload = {}, opts = {}) {
-  const { execUrl, sharedKey } = await readTaskBotSecrets(tenantRef);
+  // เลือกสคริปต์จาก opts.script ('TA' | 'TASK')
+  const useTA = String(opts.script || '').toUpperCase() === 'TA' ||
+                String(opts.sheetFrom || '').toLowerCase() === 'attendance';
+  const { execUrl, sharedKey } = useTA
+    ? await readTimeAttendanceSecrets(tenantRef)
+    : await readTaskBotSecrets(tenantRef);
   if (!execUrl) throw new Error('APPS_SCRIPT_EXEC_URL_NOT_SET');
 
   // 1) ดึง sheet_id ต่อ use-case
@@ -1167,8 +2068,11 @@ async function callAppsScriptForTenant(tenantRef, action, payload = {}, opts = {
       if (integTA.exists) sheetId = integTA.get('appsSheetId') || '';
     } catch {}
   }
+  // ❗ ถ้าระบุให้ใช้ Attendance แต่ไม่มี sheet → หยุดเลย (กัน fallback)
+  if (useTA && !sheetId) {
+    throw new Error('ATTENDANCE_SHEET_ID_REQUIRED');
+  }
   if (!sheetId) {
-    // fallback: taskbot (ของเดิม)
     try {
       const integ = await tenantRef.collection('integrations').doc('taskbot').get();
       if (integ.exists) sheetId = integ.get('appsSheetId') || integ.get('sheetId') || '';
@@ -1194,7 +2098,9 @@ async function callAppsScriptForTenant(tenantRef, action, payload = {}, opts = {
   };
 
   // (ดีบักได้ปลอดภัย ไม่พิมพ์ key)
-  console.log('[GAS] →', action, { sheetId, url: execUrl.replace(/\?.*$/, '') });
+  console.log('[GAS] →', action, {
+    sheetId, url: execUrl.replace(/\?.*$/, ''), script: useTA ? 'TA' : 'TASK'
+  });
 
   const r = await fetchFn(execUrl, {
     method: 'POST',
@@ -1400,6 +2306,21 @@ async function getUserRichMenuIdByToken(accessToken, userId) {
   const j = JSON.parse(txt || '{}');
   return j.richMenuId || '';
 }
+// Verify & retry using existing *ByToken helpers*
+async function ensureUserLinkedRichMenuByToken(accessToken, userId, targetRichMenuId, maxRetry = 2) {
+  for (let i = 0; i <= maxRetry; i++) {
+    const cur = await getUserRichMenuIdByToken(accessToken, userId).catch(() => '');
+    if (cur === targetRichMenuId) return true;
+
+    await unlinkRichMenuFromUserByToken(accessToken, userId).catch(() => {});
+    await linkRichMenuToUserByToken(accessToken, userId, targetRichMenuId).catch(() => {});
+
+    const after = await getUserRichMenuIdByToken(accessToken, userId).catch(() => '');
+    if (after === targetRichMenuId) return true;
+  }
+  return false;
+}
+
 
 async function linkRichMenuToUserByToken(accessToken, userId, richMenuId) {
   const res = await callLineAPI(
@@ -1428,6 +2349,12 @@ async function unsetDefaultRichMenuByToken(accessToken) {
     throw new Error('unset_default_richmenu_failed: ' + (txt || res.statusText));
   }
 }
+
+
+
+
+
+
 
 
 
@@ -4200,8 +5127,10 @@ app.post('/api/tenants/:id/integrations/taskbot/disable',
 
 
 
+// API TA
 
 // ==== Enable Time Attendance (สร้าง/อัปโหลด Rich Menu ของ Attendance แล้วบันทึกสถานะ) ====
+
 app.post('/api/tenants/:id/integrations/attendance/enable', requireFirebaseAuth, async (req, res) => {
   try {
     const { id } = req.params;
@@ -4210,45 +5139,40 @@ app.post('/api/tenants/:id/integrations/attendance/enable', requireFirebaseAuth,
 
     const accessToken = await getTenantSecretAccessToken(tenant.ref);
 
-    // 1) ใช้ preset กลาง (ไทย + ฝั่งขวา)
+    // --- MUST HAVE: appsSheetId ก่อนเปิดใช้งาน ---
+    const integRef = tenant.ref.collection('integrations').doc('attendance');
+    const snap = await integRef.get();
+    const cfg  = snap.exists ? (snap.data() || {}) : {};
+    // อนุญาตรับจาก body ด้วย (กันกรณีเพิ่งกรอกแล้วยังไม่ save แยก)
+    const appsSheetId = String(req.body?.appsSheetId || cfg.appsSheetId || '').trim();
+    if (!appsSheetId) {
+      console.warn('[attendance/enable] missing appsSheetId; abort enable');
+      return res.status(400).json({
+        ok:false,
+        error:'appsSheetId_required',
+        message:'กรุณาใส่ Google Sheet ID (appsSheetId) ใน Settings แล้วบันทึกก่อนเปิดใช้งาน'
+      });
+    }
+
+    // 1) ใช้ preset กลาง (ไทย + ฝั่งขวา) แล้ว "บังคับ" ปุ่ม index 3 ให้เป็น message action (ไม่ใช้ LIFF)
     const ADMIN_IMAGE = ATTEND_ADMIN_IMG;
     const USER_IMAGE  = ATTEND_USER_IMG;
     const ADMIN_AREAS = ATTEND_ADMIN_AREAS_TH;
     const USER_AREAS  = ATTEND_USER_AREAS_TH;
 
-    // ดึง LIFF ID กลางจาก .env
-    const LIFF_ID = process.env.LIFF_ID || process.env.REACT_APP_LIFF_ID;
-    console.log('[ATTEND/LIFF] ENV LIFF_ID =', LIFF_ID || '(missing)');
-
-    // ADMIN: ปุ่มล่างขวา → เปลี่ยนเป็น "ส่งข้อความ" เพื่อให้ bot ออก Magic Link
-    const adminAreasForLiff = [...ADMIN_AREAS];
-    {
-      const last = adminAreasForLiff[3]; // ปุ่มล่างขวา (ตั้งค่า)
-      adminAreasForLiff[3] = {
-        bounds: last.bounds,
-        action: {
-          type: 'message',
-          text: 'ตั้งค่า'   // <-- คำสั่งที่ webhook จะจับ
-        }
-      };
+    // ADMIN: ปุ่มล่างขวา → บังคับเป็นข้อความ "ตั้งค่า"
+    const adminAreasMsg = [...ADMIN_AREAS];
+    if (adminAreasMsg[3]) {
+      const last = adminAreasMsg[3];
+      adminAreasMsg[3] = { bounds: last.bounds, action: { type:'message', text:'ตั้งค่า' } };
     }
 
-    // USER: ปุ่มล่างขวา → เดิมเปิด LIFF ลงทะเบียน — เปลี่ยนเป็นข้อความ
-    const userAreasForLiff = [...USER_AREAS];
-    {
-      const regBtn = userAreasForLiff[3];
-      userAreasForLiff[3] = {
-        bounds: regBtn.bounds,
-        action: {
-          type: 'message',
-          text: 'ลงทะเบียนเข้าใช้งาน' // ← ข้อความที่เราจะจับใน webhook
-        }
-      };
+    // USER: ปุ่มล่างขวา → บังคับเป็นข้อความ "ลงทะเบียนเข้าใช้งาน"
+    const userAreasMsg = [...USER_AREAS];
+    if (userAreasMsg[3]) {
+      const regBtn = userAreasMsg[3];
+      userAreasMsg[3] = { bounds: regBtn.bounds, action: { type:'message', text:'ลงทะเบียนเข้าใช้งาน' } };
     }
-
-    // ==== LOG สำคัญ: ยืนยันว่า index 3 กลายเป็น URI จริงไหม ====
-    console.log('[ATTEND/LIFF] ADMIN[3].action =', JSON.stringify(adminAreasForLiff?.[3]?.action));
-    console.log('[ATTEND/LIFF] USER [3].action =', JSON.stringify(userAreasForLiff?.[3]?.action));
 
     // 2) สร้าง/อัปโหลด (ถ้ายังไม่มี หรือ preset เปลี่ยนให้ recreate)
     async function ensure(docId, imageUrl, areasPx) {
@@ -4262,19 +5186,14 @@ app.post('/api/tenants/:id/integrations/attendance/enable', requireFirebaseAuth,
       const prevAreas = data.areas || [];
       const prevImg   = data.imageUrl || '';
       const sameImg   = prevImg === imageUrl;
-
       const prevStr = JSON.stringify(prevAreas || []);
       const nextStr = JSON.stringify(areasPx || []);
       const sameAreas = (prevStr === nextStr);
 
-      const prevIsUriAt3 = prevAreas?.[3]?.action?.type === 'uri';
-      const nextIsUriAt3 = areasPx?.[3]?.action?.type === 'uri';
+      console.log(`[ensureRichMenu:${docId}] rid=${rid || '(none)'} | sameImg=${sameImg} | sameAreas=${sameAreas}`);
 
-      console.log(`[ensureRichMenu:${docId}] current rid=`, rid || '(none)');
-      console.log(`[ensureRichMenu:${docId}] sameImg=${sameImg} | sameAreas=${sameAreas} | prevIsUriAt3=${prevIsUriAt3} -> nextIsUriAt3=${nextIsUriAt3}`);
-
-      // ตัดสินใจ recreate
-      const needsRecreate = !rid || !sameImg || !sameAreas || (nextIsUriAt3 && !prevIsUriAt3);
+      // ถ้าไม่มี หรือรูป/areas ต่าง → recreate
+      const needsRecreate = !rid || !sameImg || !sameAreas;
 
       if (needsRecreate) {
         if (rid) {
@@ -4284,9 +5203,8 @@ app.post('/api/tenants/:id/integrations/attendance/enable', requireFirebaseAuth,
               `/v2/bot/richmenu/${encodeURIComponent(rid)}`,
               { method: 'DELETE' }
             );
-            if (del.ok) {
-              console.log(`[ensureRichMenu:${docId}] deleted old`, rid);
-            } else {
+            if (del.ok) console.log(`[ensureRichMenu:${docId}] deleted old`, rid);
+            else {
               const txt = await del.text().catch(()=> '');
               console.warn(`[ensureRichMenu:${docId}] delete old warn`, rid, del.status, txt);
             }
@@ -4295,37 +5213,20 @@ app.post('/api/tenants/:id/integrations/attendance/enable', requireFirebaseAuth,
           }
         }
 
-        // LOG: สิ่งที่จะส่งไป LINE
         console.log(`[ensureRichMenu:${docId}] create payload preview:`, {
           title: docId, chatBarText: 'เมนู', size: 'large',
-          imageUrl,
-          areasCount: areasPx?.length || 0,
-          btn3Action: areasPx?.[3]?.action
+          imageUrl, areasCount: areasPx?.length || 0, btn3Action: areasPx?.[3]?.action
         });
 
-        // สร้างใหม่บน LINE
         const created = await createAndUploadRichMenuOnLINE({
-          accessToken,
-          title: docId,
-          chatBarText: 'เมนู',
-          size: 'large',
-          areasPx,
-          imageUrl
+          accessToken, title: docId, chatBarText: 'เมนู', size: 'large', areasPx, imageUrl
         });
         rid = created.richMenuId;
         console.log(`[ensureRichMenu:${docId}] created new rid=`, rid);
 
-        // อัปเดต Firestore
         await dref.set({
-          kind: docId,
-          title: docId,
-          size: 'large',
-          chatBarText: 'เมนู',
-          imageUrl,
-          areas: areasPx,
-          lineRichMenuId: rid,
-          status: 'ready',
-          updatedAt: new Date()
+          kind: docId, title: docId, size: 'large', chatBarText: 'เมนู',
+          imageUrl, areas: areasPx, lineRichMenuId: rid, status: 'ready', updatedAt: new Date()
         }, { merge: true });
 
       } else {
@@ -4335,11 +5236,11 @@ app.post('/api/tenants/:id/integrations/attendance/enable', requireFirebaseAuth,
       return rid;
     }
 
-    // ใช้ areas ที่แก้ไขแล้ว
-    const adminLineId = await ensure('ATTEND_MAIN_ADMIN', ADMIN_IMAGE, adminAreasForLiff);
-    const userLineId  = await ensure('ATTEND_MAIN_USER',  USER_IMAGE,  userAreasForLiff);
+    // ใช้ areas ที่แก้ไขแล้ว (message action เท่านั้น)
+    const adminLineId = await ensure('ATTEND_MAIN_ADMIN', ADMIN_IMAGE, adminAreasMsg);
+    const userLineId  = await ensure('ATTEND_MAIN_USER',  USER_IMAGE,  userAreasMsg);
 
-    // 3) เคลียร์ default เก่า แล้วตั้ง default OA เป็นเมนู USER + ลิงก์เมนูแอดมินให้คนกดเอง
+    // 3) เคลียร์ default เก่า แล้วตั้ง default OA เป็นเมนู USER
     try { await unsetDefaultRichMenu(tenant.ref); } catch {}
     try {
       await callLineAPITenant(
@@ -4351,32 +5252,41 @@ app.post('/api/tenants/:id/integrations/attendance/enable', requireFirebaseAuth,
     } catch (e) {
       console.warn('[attendance/enable] set default warn', e?.status || e);
     }
-    try {
-      const me = extractLineUserId(req.user);
-      if (me) {
-        // ดึง role ของผู้ที่กด enable
-        let role = 'user';
-        try {
-          // ถ้าคุณปรับ callAppsScriptForTenant ให้รับ opts.sheetFrom ได้แล้ว ให้ส่ง { sheetFrom:'attendance' }
-          const gu =
-            await callAppsScriptForTenant(tenant.ref, 'get_user', { user_id: me }, { sheetFrom: 'attendance' })
-              .catch(() => ({}));
-          role = String(gu?.user?.role || 'user').toLowerCase();
-        } catch {}
 
-        const ALLOWED = ['developer', 'admin', 'supervisor', 'owner', 'payroll'];
-        if (ALLOWED.includes(role)) {
-          const tok = await getTenantSecretAccessToken(tenant.ref);
-          await unlinkRichMenuFromUserByToken(tok, me).catch(() => {});
-          await linkRichMenuToUserByToken(tok, me, adminLineId).catch(() => {});
-          console.log('[attendance/enable] relink current user -> admin menu (allowed)', { me, role });
-        } else {
-          console.log('[attendance/enable] skip relink for current user (not admin role)', { me, role });
+    // 3.1) ลิงก์เมนู ADMIN ให้ owner/admin ตาม “ชีต” (roles -> fallback employees.role)
+    let linkedAdmins = 0;
+    try {
+      const resp = await callAttendanceGASDirect('list_admins', { tenantRef: tenant.ref });
+      const adminIds = Array.isArray(resp?.ids) ? resp.ids.filter(Boolean) : [];
+
+      for (const uid of adminIds) {
+        try {
+          // ตามสเปก LINE: link per-user = POST /v2/bot/user/{userId}/richmenu/{richMenuId}
+          const link = await callLineAPITenant(
+            tenant.ref,
+            `/v2/bot/user/${encodeURIComponent(uid)}/richmenu/${encodeURIComponent(adminLineId)}`,
+            { method: 'POST' }
+          );
+          if (!link.ok) {
+            const txt = await link.text().catch(()=> '');
+            console.warn('[attendance/enable] link admin menu fail', uid, link.status, txt);
+          } else {
+            linkedAdmins++;
+            console.log('[attendance/enable] linked admin menu ->', uid);
+          }
+        } catch (e) {
+          console.warn('[attendance/enable] link admin error', uid, String(e?.message || e));
         }
+        await new Promise(r => setTimeout(r, 70)); // ผ่อน rate limit
       }
+      console.log('[attendance/enable] per-user admin linked:', linkedAdmins, '/', adminIds.length);
     } catch (e) {
-      console.warn('[attendance/enable] relink current user warn', e?.message || e);
+      console.warn('[attendance/enable] list_admins failed; skip per-user admin link:', String(e?.message || e));
     }
+
+
+    // *** ตัดขั้นตอนดึง role และ relink เฉพาะผู้กด enable ออก (วิธี A) ***
+    console.log('[attendance/enable] skip per-user relink by role (method A)');
 
     // 4) บันทึกสถานะเปิดใช้งาน Attendance
     await tenant.ref.collection('integrations').doc('attendance').set({
@@ -4384,14 +5294,16 @@ app.post('/api/tenants/:id/integrations/attendance/enable', requireFirebaseAuth,
       updatedAt: new Date(),
       adminRichMenuDoc: 'ATTEND_MAIN_ADMIN',
       userRichMenuDoc:  'ATTEND_MAIN_USER',
+      appsSheetId,
     }, { merge:true });
 
-    return res.json({ ok:true, adminLineId, userLineId });
+    return res.json({ ok:true, adminLineId, userLineId, linkedAdmins });
   } catch (err) {
     console.error('[attendance/enable] error:', err);
     return res.status(500).json({ ok:false, error:String(err?.message || err) });
   }
 });
+
 
 
 
@@ -4407,14 +5319,32 @@ app.post(
       if (!tenant) return res.status(403).json({ ok:false, error:'not_member_of_tenant' });
 
       const deleteMenus = !!req.body?.deleteMenus;
-      const bodyIds = Array.isArray(req.body?.userIds) ? req.body.userIds.filter(Boolean) : [];
 
-      // ➜ NEW: หา current user แบบไม่ต้องพึ่งหน้าเว็บ
+      // รายชื่อที่จะ unlink: รับจาก body เท่านั้น (ไม่ดึงจาก GAS แล้ว)
+      // ---- รายชื่อที่จะ unlink ----
+      let unlinkUserIds = Array.isArray(req.body?.userIds) ? req.body.userIds.filter(Boolean) : [];
+
+      // (ออปชัน) current user
       const bodyCurrent = (req.body?.currentLineUserId || '').trim();
       let currentLineUserId = bodyCurrent;
       if (!currentLineUserId && typeof extractLineUserId === 'function') {
         try { currentLineUserId = extractLineUserId(req.user) || ''; } catch {}
       }
+      if (currentLineUserId) unlinkUserIds.push(currentLineUserId);
+
+    
+      // ✅ ดึง owner/admin จากชีต roles ผ่าน GAS Attendance
+      let adminIds = [];
+      try {
+        const resp = await callAttendanceGASDirect('list_admins', { tenantRef: tenant.ref });
+        adminIds = Array.isArray(resp?.ids) ? resp.ids.filter(Boolean) : [];
+        console.log('[attendance/disable] admins from sheet =', adminIds);
+      } catch (e) {
+        console.warn('[attendance/disable] list_admins via TA failed:', String(e?.message || e));
+      }
+      unlinkUserIds.push(...adminIds);
+      console.log('[attendance/disable] will unlink users:', unlinkUserIds);
+
 
       // 1) ล้าง default ของ OA
       try {
@@ -4428,22 +5358,7 @@ app.post(
         console.warn('[attendance/disable] unset default warn:', String(e?.message || e));
       }
 
-      // 2) รวมรายการ user ที่ต้อง unlink
-      let unlinkUserIds = [...bodyIds];
-      if (unlinkUserIds.length === 0) {
-        try {
-          const r = await callAppsScriptForTenant(tenant.ref, 'list_users', {});
-          const users = Array.isArray(r?.users) ? r.users : [];
-          unlinkUserIds = users.map(u => u.user_id || u.line_user_id).filter(Boolean);
-        } catch (e) {
-          console.warn('[attendance/disable] cannot list users from GAS:', String(e?.message || e));
-        }
-      }
-      if (currentLineUserId) unlinkUserIds.push(currentLineUserId);
-      // dedupe
-      unlinkUserIds = Array.from(new Set(unlinkUserIds)).filter(Boolean);
-
-      // 3) unlink รายบุคคล + verify
+      // 2) unlink รายบุคคล (ถ้าระบุมา)
       let unlinkedCount = 0;
       for (const uid of unlinkUserIds) {
         try {
@@ -4475,7 +5390,7 @@ app.post(
         await new Promise(r => setTimeout(r, 70));
       }
 
-      // 4) (ออปชัน) ลบเมนูทิ้งด้วย
+      // 3) (ออปชัน) ลบเมนูทิ้งด้วย
       let deletedMenus = 0;
       if (deleteMenus) {
         for (const kind of ['ATTEND_MAIN_ADMIN', 'ATTEND_MAIN_USER']) {
@@ -4503,7 +5418,7 @@ app.post(
         }
       }
 
-      // 5) อัปเดตสถานะ
+      // 4) อัปเดตสถานะ
       await tenant.ref.collection('integrations').doc('attendance')
         .set({ enabled:false, updatedAt:new Date() }, { merge:true });
 
@@ -4530,47 +5445,144 @@ app.post('/debug/attendance/disable', express.json(), async (req, res) => {
 
 // ===== Attendance Profiles (อ่าน/บันทึกข้อมูลลงทะเบียนจาก LIFF) =====
 
-// อ่านโปรไฟล์ตาม LINE userId (ไม่ต้อง requireFirebaseAuth เพราะเปิดจาก LIFF ของพนักงาน)
+
+
+
+// อ่านโปรไฟล์พนักงานจาก Apps Script TA
 app.get('/api/tenants/:id/attendance/profile', async (req, res) => {
   try {
     const { id } = req.params;
     const { lineUserId } = req.query;
     if (!lineUserId) return res.status(400).json({ ok:false, error:'missing lineUserId' });
 
-    // ดึง tenant ตรง ๆ (ไม่เช็คสิทธิ์ Firebase)
-    const snap = await db.collection('tenants').doc(id).get();
-    if (!snap.exists) return res.status(404).json({ ok:false, error:'tenant_not_found' });
-
-    const prof = await snap.ref.collection('attendance_profiles').doc(String(lineUserId)).get();
-    return res.json({ ok:true, data: prof.exists ? prof.data() : null });
+    const out = await callTA(id, 'get_profile', { lineUserId });
+    // debug แบบเบา ๆ
+    if (!out?.ok) console.warn('[TA/get_profile] bad response', out);
+    return res.json({ ok:true, data: out.data || null });
   } catch (e) {
-    console.error('[attendance/profile:get]', e);
+    console.error('[TA/get_profile]', e);
     return res.status(500).json({ ok:false, error:String(e?.message||e) });
   }
 });
 
-// บันทึก/อัปเดตโปรไฟล์ (เก็บเฉพาะข้อมูลข้อความจาก OCR/แบบฟอร์ม)
-app.post('/api/tenants/:id/attendance/profile', express.json({ limit:'6mb' }), async (req, res) => {
+
+// POST โปรไฟล์ (เขียนเข้าชีต + map jobTitle→role + เช็คบทบาทจากชีต แล้วสลับเมนูให้)
+// POST โปรไฟล์ (เขียนชีต + เซ็ต role จาก jobTitle อย่างเคร่งครัด + สลับเมนูให้)
+app.post('/api/tenants/:id/attendance/profile', express.json({ limit: '6mb' }), async (req, res) => {
   try {
     const { id } = req.params;
     const { lineUserId, profile } = req.body || {};
-    if (!lineUserId || !profile) return res.status(400).json({ ok:false, error:'missing params' });
+    if (!lineUserId || !profile) {
+      return res.status(400).json({ ok: false, error: 'missing params' });
+    }
 
-    const snap = await db.collection('tenants').doc(id).get();
-    if (!snap.exists) return res.status(404).json({ ok:false, error:'tenant_not_found' });
+    const actor = { lineUserId };
 
-    const data = {
-      ...profile,
-      lineUserId: String(lineUserId),
-      updatedAt: new Date(),
-    };
-    await snap.ref.collection('attendance_profiles').doc(String(lineUserId)).set(data, { merge:true });
-    return res.json({ ok:true });
+    // --- [A] เขียนโปรไฟล์ลงชีต TA ก่อน
+    await callTA(id, 'upsert_profile', { lineUserId, profile, actor });
+
+    // --- [B] ตีความ jobTitle -> role (owner/admin = สิทธิ์สูง, อื่นๆ = user)
+    const jtRaw = String(profile?.jobTitle || '').trim();
+    const jt = jtRaw.toLowerCase();
+
+    const isOwner = ['owner','เจ้าของ'].includes(jt);
+    const isAdmin = ['admin','administrator','แอดมิน','ผู้ดูแล','supervisor','หัวหน้า'].includes(jt);
+
+    // ถ้าไม่ใช่ owner หรือ admin → เป็น user ทั้งหมด
+    const desiredRole = isOwner ? 'owner' : (isAdmin ? 'admin' : 'user');
+
+    // --- [C] เซ็ต role ไปที่ชีต (ให้สิทธิ์ตั้ง owner ด้วย isSystem:true)
+    await callTA(id, 'set_role', {
+      actor:  { lineUserId, isSystem: true },
+      target: { lineUserId },
+      role: desiredRole
+    });
+
+    // --- [D] อ่าน role กลับมาเพื่อความชัวร์ (ถ้าอ่านไม่ได้ ใช้ desiredRole)
+    let role = desiredRole;
+    try {
+      const roleRes =
+        (await callTA(id, 'get_user', { user_id: lineUserId }).catch(() => null)) ||
+        (await callTA(id, 'get_role', { lineUserId }).catch(() => null));
+      const fromTop = String(roleRes?.role || '').toLowerCase();
+      const fromObj = String(roleRes?.user?.role || '').toLowerCase();
+      if (fromTop || fromObj) role = (fromTop || fromObj);
+    } catch { /* keep desiredRole */ }
+
+    // --- [E] ลิงก์/ปลดเมนูตาม role
+    const tRef = db.collection('tenants').doc(id);
+    const accessToken = await getTenantSecretAccessToken(tRef);
+
+    if (role === 'owner' || role === 'admin') {
+      const rmSnap = await tRef.collection('richmenus').doc('ATTEND_MAIN_ADMIN').get();
+      const rmData = rmSnap.exists ? (rmSnap.data() || {}) : {};
+      const adminMenuId = rmData.lineRichMenuId || rmData.richMenuId || '';
+      if (!adminMenuId) {
+        console.warn('[TA/profile] ADMIN richmenu not ready');
+      } else {
+        const ok = await ensureUserLinkedRichMenuByToken(accessToken, lineUserId, adminMenuId, 2);
+        console.log(`[TA/profile] link ADMIN verify=${ok} for ${lineUserId}`);
+      }
+    } else {
+      // role=user → ปลดเมนูรายคนให้ใช้ default OA (USER)
+      await unlinkRichMenuFromUserByToken(accessToken, lineUserId).catch(() => {});
+      try {
+        const cur = await getUserRichMenuIdByToken(accessToken, lineUserId);
+        console.log(`[TA/profile] unlink to default, current user menu id="${cur}" (empty=ok)`);
+      } catch {}
+    }
+
+
+    return res.json({ ok: true, role, menu: (role === 'owner' || role === 'admin') ? 'admin' : 'user' });
   } catch (e) {
-    console.error('[attendance/profile:post]', e);
+    console.error('[TA/upsert_profile]', e);
+    return res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+
+app.get('/debug/richmenu/user/:tenantId/:userId', async (req, res) => {
+  try {
+    const { tenantId, userId } = req.params;
+    const tRef = db.collection('tenants').doc(tenantId);
+    const accessToken = await getTenantSecretAccessToken(tRef);
+    const cur = await getUserRichMenuIdByToken(accessToken, userId);
+    res.json({ ok: true, userId, richMenuId: cur });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+
+
+// DEBUG ONLY: อ่านค่าการตั้งค่า TA ของ tenant
+app.get('/api/tenants/:id/attendance/debug-config', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const tdoc = await db.collection('tenants').doc(id).get();
+    if (!tdoc.exists) return res.status(404).json({ ok:false, error:'tenant_not_found' });
+
+    const data = tdoc.data() || {};
+    const sub = await tdoc.ref.collection('integrations').doc('attendance').get();
+    const att = sub.exists ? sub.data() : {};
+    return res.json({
+      ok:true,
+      data: {
+        inline: data?.integrations?.attendance || null,
+        legacy: data?.attendance || null,
+        subdoc: att || null,
+        envUrl: process.env.APPS_SCRIPT_EXEC_URL_TA ? 'set' : 'missing',
+        envKey: process.env.APPS_SCRIPT_SHARED_KEY_TA || process.env.APPS_SCRIPT_SHARED_KEY ? 'set' : 'missing',
+      }
+    });
+  } catch (e) {
+    console.error('[TA/debug-config]', e);
     return res.status(500).json({ ok:false, error:String(e?.message||e) });
   }
 });
+
+
+
 
 // ===== OCR (สแกนบัตรประชาชน) — ประมวลผลแล้ว "ไม่เก็บรูป" =====
 app.post('/api/tenants/:id/attendance/ocr', express.json({ limit:'15mb' }), async (req, res) => {
@@ -4608,6 +5620,1541 @@ app.post('/api/tenants/:id/attendance/ocr', express.json({ limit:'15mb' }), asyn
     return res.status(500).json({ ok:false, error:String(e?.message||e) });
   }
 });
+
+
+// ดึงผู้รับแจ้งเตือนจากชีต roles (owner/admin) — ถ้าไม่มีเลย ให้ส่งกลับหาคนกดเอง
+async function resolveClockRecipientsFromSheet(tenantId, actorUserId, { excludeSelfIfAdmin = false } = {}) {
+  try {
+    const res = await callTA(tenantId, 'list_admins', {});
+    let ids = Array.isArray(res?.ids) ? res.ids.filter(Boolean) : [];
+    if (excludeSelfIfAdmin) ids = ids.filter(id => id !== actorUserId);
+    if (!ids.length) ids = [actorUserId];
+    return Array.from(new Set(ids));
+  } catch (e) {
+    console.warn('[resolveClockRecipientsFromSheet] failed:', e?.message || e);
+    return [actorUserId];
+  }
+}
+
+
+// ================== [P0] CLOCK IN/OUT ==================
+app.post('/api/tenants/:id/attendance/clock', express.json(), async (req, res) => {
+  try {
+    const { id } = req.params;
+    let   { lineUserId, type, lat, lng, note } = req.body || {};
+    if (!lineUserId || !type) {
+      return res.status(400).json({ ok:false, error:'missing params' });
+    }
+
+    // normalize
+    type = String(type).toLowerCase();                     // 'in' | 'out'
+    lat  = (lat  === '' || lat  == null) ? undefined : Number(lat);
+    lng  = (lng  === '' || lng  == null) ? undefined : Number(lng);
+    if (Number.isNaN(lat)) lat = undefined;
+    if (Number.isNaN(lng)) lng = undefined;
+
+    const action = (type === 'in') ? 'clock_in' : 'clock_out';
+
+    // 1) บันทึกลง GAS
+    const gasRes = await callTA(id, action, { lineUserId, lat, lng, note });
+    // map error ที่มาจาก GAS
+    if (!gasRes || gasRes.ok === false) {
+      const map = { already_clocked_out_today: 'วันนี้คุณลงเวลาออกไปแล้ว' };
+      throw new Error(map[gasRes?.error] || gasRes?.error || 'gas_failed');
+    }
+
+
+    // 2) ดึงโปรไฟล์ + ที่อยู่ (สำหรับแสดงผล)
+    //    - jobTitle / fullName มาจากชีต employees (ผ่าน GAS:get_profile)
+    //    - address มาจาก reverse_geocode
+    let fullName = '';
+    let jobTitle = '';
+    try {
+      const prof = await callTA(id, 'get_profile', { lineUserId });
+      if (prof?.ok && prof.data) {
+        fullName = String(prof.data.fullName || '').trim();
+        jobTitle = String(prof.data.jobTitle || '').trim();
+      }
+    } catch {}
+    // fallback ชื่อจาก LINE ถ้ายังว่าง
+    if (!fullName) {
+      const tRef = db.collection('tenants').doc(id);
+      fullName = (await getDisplayName(tRef, lineUserId)) || 'พนักงาน';
+    }
+    if (!jobTitle) jobTitle = '-';
+
+    let address = '';
+    if (typeof lat === 'number' && typeof lng === 'number') {
+      try {
+        const geo = await callTA(id, 'reverse_geocode', { lat, lng });
+        address = String(geo?.address || '').trim();
+      } catch {}
+    }
+
+    // 3) สร้างข้อความ/ Flex ให้ทั้งผู้กด และ owner/admin
+    const thOpts = { timeZone: 'Asia/Bangkok' };
+    const dt = new Date();
+    const dateTh = dt.toLocaleDateString('th-TH', thOpts);
+    const timeTh = dt.toLocaleTimeString('th-TH', { ...thOpts, hour: '2-digit', minute: '2-digit' });
+
+    const title = (action === 'clock_in') ? 'ลงเวลาเข้า' : 'ลงเวลาออก';
+    const placeText = address
+      ? address
+      : (typeof lat === 'number' && typeof lng === 'number' ? `พิกัด: ${lat}, ${lng}` : '—');
+
+    const ACCENT   = (action === 'clock_in') ? '#16A34A' : '#EF4444';
+    const GREY_900 = '#111111';
+    const GREY_600 = '#6B7280';
+    const GREY_400 = '#9CA3AF';
+
+    // helper แถว label:value
+    const row = (label, value) => ({
+      type: 'box',
+      layout: 'baseline',
+      spacing: 'sm',
+      contents: [
+        { type: 'text', text: label, size: 'sm', color: GREY_400, flex: 2 },
+        { type: 'text', text: String(value || '—'), size: 'sm', color: GREY_900, flex: 5, wrap: true }
+      ]
+    });
+
+    const bubble = {
+      type: 'bubble',
+      size: 'mega',
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        paddingAll: '20px',
+        backgroundColor: '#FFFFFF',
+        contents: [
+          // Header (แถบสี + title + time/date)
+          {
+            type: 'box',
+            layout: 'horizontal',
+            contents: [
+              // ✅ box ต้องมี layout และ contents เสมอ
+              { type: 'box', layout: 'vertical', contents: [], width: '6px', height: '44px', backgroundColor: ACCENT },
+              {
+                type: 'box',
+                layout: 'vertical',
+                paddingStart: '12px',
+                contents: [
+                  { type: 'text', text: title, weight: 'bold', size: 'lg', color: ACCENT },
+                  { type: 'text', text: `${timeTh} • ${dateTh}`, size: 'xs', color: GREY_600 }
+                ]
+              }
+            ]
+          },
+
+          // ชื่อ + ตำแหน่ง
+          {
+            type: 'box',
+            layout: 'vertical',
+            margin: 'lg',
+            contents: [
+              { type: 'text', text: fullName, weight: 'bold', size: 'md', wrap: true },
+              { type: 'text', text: `ตำแหน่ง: ${jobTitle || '-'}`, size: 'sm', color: GREY_600, wrap: true }
+            ]
+          },
+
+          { type: 'separator', margin: 'md' },
+
+          // รายละเอียด
+          {
+            type: 'box',
+            layout: 'vertical',
+            margin: 'md',
+            spacing: 'sm',
+            contents: [
+              row('วัน', dateTh),
+              row('เวลา', timeTh),
+              row('สถานที่', placeText),
+              ...(note ? [row('หมายเหตุ', note)] : [])
+            ]
+          }
+        ]
+      }
+    };
+
+
+
+    // 4) ส่งให้ "คนกดเอง" เป็นใบเสร็จ
+    try {
+      const tRef = db.collection('tenants').doc(id);
+      console.log('[clock][notify] push self:', lineUserId);
+      await callLineAPITenant(tRef, '/v2/bot/message/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: lineUserId,
+          messages: [{ type: 'flex', altText: `${title} @${fullName}`, contents: bubble }]
+        })
+      });
+    } catch (e) {
+      console.warn('[clock][push self] fail', e?.status || e?.message);
+    }
+
+    // 5) แจ้งเตือน owner/admin
+    try {
+      let recipients = await resolveClockRecipientsFromSheet(id, lineUserId, { excludeSelfIfAdmin: false });
+
+      // sanitize id จากชีต: ตัดช่องว่าง/เครื่องหมาย : ท้ายสตริง
+      recipients = recipients
+        .map(s => String(s || '').trim().replace(/[:\s]+$/g, ''))
+        .filter(Boolean);
+
+      console.log('[clock][notify] admins:', recipients);
+
+      if (recipients.length) {
+        const tRef = db.collection('tenants').doc(id);
+        for (const to of recipients) {
+          await callLineAPITenant(tRef, '/v2/bot/message/push', {
+            method: 'POST',
+            headers: { 'Content-Type':'application/json' },
+            body: JSON.stringify({
+              to,
+              messages: [{ type:'flex', altText:`แจ้งเตือน${title} @${fullName}`, contents: bubble }]
+            })
+          }).catch(async (e) => {
+            const txt = await e?.text?.() || '';
+            console.warn('[clock][push admin] fail', to, e?.status || e?.message || txt);
+          });
+          await new Promise(r => setTimeout(r, 60));
+        }
+      }
+    } catch (e) {
+      console.warn('[clock][notify] failed:', e?.message || e);
+    }
+
+    // ตอบกลับ LIFF
+    return res.json({ ok:true, data: gasRes });
+  } catch (e) {
+    console.error('[attendance/clock]', e);
+    return res.status(500).json({ ok:false, error: String(e?.message || e || 'server_error') });
+  }
+});
+
+
+// ================== [P1] ATTENDANCE LOGS (list month) ==================
+app.get('/api/tenants/:id/attendance/logs', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { lineUserId, month, periodStart, periodEnd } = req.query || {};
+    if (!lineUserId) return res.status(400).json({ ok:false, error:'missing lineUserId' });
+
+    // เลือกโหมดช่วงเวลา
+    const payload = periodStart && periodEnd
+      ? { lineUserId, periodStart, periodEnd }
+      : { lineUserId, month: month || new Date().toISOString().slice(0,7) };
+
+    // เรียก GAS ผ่าน helper เดิม (คุณมีอยู่แล้ว)
+    // แนะนำทำ action ชื่อ 'get_logs' ฝั่ง GAS ให้คืน days, leave, summary
+    const r = await callTA(id, 'list_work_logs', payload);
+
+    // shape มาตรฐานสำหรับหน้า ta-admin.html
+    const out = {
+      days:    Array.isArray(r?.days)    ? r.days    : [],
+      leave:   Array.isArray(r?.leave)   ? r.leave   : [],
+      summary: r?.summary && typeof r.summary === 'object' ? r.summary : {
+        workHours: 0, workDays: 0, leaveHours: 0, leaveDays: 0
+      }
+    };
+    return res.json({ ok:true, data: out });
+  } catch (e) {
+    console.error('[attendance/logs]', e);
+    return res.status(500).json({ ok:false, error:String(e?.message||e) });
+  }
+});
+
+
+// ===== helpers: ตรวจสิทธิ์ผู้ดูแล =====
+async function ensureAdminOrOwner(tenantId, actor) {
+  const roleObj = await getRoleViaGAS(tenantId, actor?.lineUserId);
+  if (!roleObj || (roleObj.role !== 'admin' && roleObj.role !== 'owner')) {
+    const e = new Error('forbidden'); e.status = 403; throw e;
+  }
+  return true;
+}
+
+// ---------- Attendance config (single source of truth) ----------
+async function getAttendanceConfig(tenantId) {
+  const tenantRef = db.collection('tenants').doc(tenantId);
+  const snap = await tenantRef.collection('integrations').doc('attendance').get();
+  const att = snap.exists ? (snap.data() || {}) : {};
+
+  // รองรับหลายคีย์ + .env fallback
+  const sheetId =
+    att.sheetId ||
+    att.appsSheetId ||             // ชื่อที่ UI เขียนไว้
+    process.env.TA_SHEET_ID || ''; // เผื่ออนาคต
+
+  const webAppUrl =
+    att.webAppUrl ||
+    process.env.APPS_SCRIPT_EXEC_URL_TA || '';
+
+  const sharedKey =
+    att.sharedKey ||
+    process.env.APPS_SCRIPT_SHARED_KEY_TA ||
+    process.env.APPS_SCRIPT_SHARED_KEY || '';
+
+  // — debug ชัดๆ —
+  console.log('[ATT/CFG]', {
+    tenantId,
+    enabled: !!att.enabled,
+    sheetId_ok: !!sheetId,
+    webAppUrl_ok: !!webAppUrl,
+    // ถ้าอยากดูค่าจริง ให้ log ค่าเต็มชั่วคราว (ระวัง secrets)
+    // sheetId, webAppUrl
+  });
+
+  return { enabled: !!att.enabled, sheetId, webAppUrl, sharedKey };
+}
+
+function getStatusStoreFromReqOrTenant(att, req){
+  // ลำดับสิทธิ์: query > tenant settings > default
+  const q = String(req.query?.status_store || '').toLowerCase().trim();
+  if (q === 'sheet' || q === 'firestore') return q;
+
+  // เก็บ config ไว้ใน subdoc integrations/attendance ก็ได้ (optional)
+  const t = String(att?.payrollStatusStore || att?.statusStore || '').toLowerCase().trim();
+  if (t === 'sheet' || t === 'firestore') return t;
+
+  return 'firestore';
+}
+
+async function fetchPayStatusAuto(tenantId, month, lineUserId, req){
+  try{
+    const attCfg = await getAttendanceConfig(tenantId);
+    const store = getStatusStoreFromReqOrTenant(attCfg, req);
+    if (store === 'sheet') {
+      const r = await callTA(tenantId, 'pay_status_get_map', { month });
+      const m = (r && r.data) || {};
+      return m[lineUserId] || { status:'pending', note:'' };
+    }
+    // firestore (เดิม)
+    const ref  = admin.firestore().collection('tenants').doc(tenantId)
+                 .collection('payroll').doc(month).collection('employees').doc(lineUserId);
+    const snap = await ref.get();
+    const d = snap.exists ? (snap.data() || {}) : {};
+    return { status: d.status || 'pending', note: d.note || '' };
+  }catch(_){ return { status:'pending', note:'' }; }
+}
+
+// ตรวจว่า tenant เปิดใช้ Time Attendance และมีค่าเชื่อมต่อครบ
+async function ensureAttendanceEnabled(tenantId) {
+  const attSnap = await db.collection('tenants')
+    .doc(tenantId).collection('integrations').doc('attendance').get();
+  const att = attSnap.exists ? (attSnap.data() || {}) : {};
+
+  // ต้องเปิดใช้งาน
+  if (att.enabled !== true) {
+    const err = new Error('attendance_not_enabled');
+    err.status = 403;
+    throw err;
+  }
+
+  // ต้องมี sheetId/appsSheetId และ URL ของ GAS
+  const sheetId   = att.sheetId || att.appsSheetId || process.env.TA_SHEET_ID || '';
+  const webAppUrl = att.webAppUrl || process.env.APPS_SCRIPT_EXEC_URL_TA || '';
+
+  if (!sheetId) {
+    const err = new Error('missing sheetId in tenant settings');
+    err.status = 500;
+    throw err;
+  }
+  if (!webAppUrl) {
+    const err = new Error('missing Apps Script URL (webAppUrl/APPS_SCRIPT_EXEC_URL_TA)');
+    err.status = 500;
+    throw err;
+  }
+
+  return att; // เผื่อใช้ค่าต่อ
+}
+
+// ==== list payroll status for a month ====
+app.get('/api/tenants/:id/admin/payroll/status', async (req, res) => {
+  try {
+    // รองรับทั้ง param และ body (กันกรณีถูกเรียกผิดๆ ในอนาคต)
+    const tenantId = req.params.id || req.body?.tenantId || '';
+    const month = (req.query?.month || req.body?.month || '').trim();
+    const actorLineUserId =
+      req.query?.actorLineUserId ||
+      req.body?.actorLineUserId ||
+      req.body?.actor?.lineUserId ||
+      '';
+
+    if (!tenantId) {
+      return res.status(400).json({ ok:false, error:'tenantId required' });
+    }
+    if (!month) {
+      return res.status(400).json({ ok:false, error:'month required (YYYY-MM)' });
+    }
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+      return res.status(400).json({ ok:false, error:'invalid month format (use YYYY-MM)' });
+    }
+    if (!actorLineUserId) {
+      return res.status(400).json({ ok:false, error:'actorLineUserId required' });
+    }
+
+    // ตรวจสิทธิ์ (admin/owner)
+    await ensureAdminOrOwner(tenantId, { lineUserId: actorLineUserId });
+
+    // อ่าน config attendance (เพื่อรู้ว่าจะใช้ sheet หรือ firestore)
+    const attCfg = await getAttendanceConfig(tenantId);
+    const store = getStatusStoreFromReqOrTenant(attCfg, req);
+
+    // --- ดึงจาก Google Sheet ผ่าน GAS ---
+    if (store === 'sheet') {
+      const r = await callTA(tenantId, 'pay_status_get_map', { month });
+      if (!r || r.ok === false) {
+        throw new Error(r?.error || 'gas_failed');
+      }
+      // คาดหวัง r.data = { [lineUserId]: { status, note, by, updatedAt } }
+      return res.json({ ok:true, data: r.data || {} });
+    }
+
+    // --- ดึงจาก Firestore ---
+    const snap = await admin
+      .firestore()
+      .collection('tenants').doc(tenantId)
+      .collection('payroll').doc(month)
+      .collection('employees')
+      .get();
+
+    const map = {};
+    snap.forEach(d => {
+      // ป้องกันค่า null/undefined
+      const data = d.data() || {};
+      map[d.id] = {
+        status: data.status || 'Pending',
+        note: data.note || '',
+        by: data.by || '',
+        updatedAt: data.updatedAt || null
+      };
+    });
+
+    return res.json({ ok:true, data: map });
+  } catch (e) {
+    return res.status(500).json({ ok:false, error: String(e?.message || e) });
+  }
+});
+
+
+
+
+
+
+// save payroll status 
+app.post('/api/tenants/:id/admin/payroll/status', express.json(), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { month, lineUserId, status, note = '', actorLineUserId } = req.body || {};
+    if (!month || !lineUserId || !status) {
+      return res.status(400).json({ ok:false, error:'missing month/lineUserId/status' });
+    }
+    await ensureAdminOrOwner(id, { lineUserId: actorLineUserId });
+
+    const attCfg = await getAttendanceConfig(id);
+    const store = getStatusStoreFromReqOrTenant(attCfg, req);
+
+    if (store === 'sheet') {
+      // -> GAS
+      const r = await callTA(id, 'pay_status_save', {
+        month, lineUserId, status, note, actor: { lineUserId: actorLineUserId || '' }
+      });
+      if (!r || r.ok === false) throw new Error(r?.error || 'gas_failed');
+      return res.json({ ok:true, store:'sheet' });
+    }
+
+    // -> Firestore (ของเดิม)
+    const ref = admin.firestore().collection('tenants').doc(id)
+      .collection('payroll').doc(month).collection('employees').doc(lineUserId);
+    await ref.set({
+      status: String(status), note: String(note || ''), updatedAt: new Date(),
+      actorLineUserId: actorLineUserId || ''
+    }, { merge:true });
+
+    return res.json({ ok:true, store:'firestore' });
+  } catch (e) {
+    return res.status(500).json({ ok:false, error:String(e?.message||e) });
+  }
+});
+
+
+// อ่านโปรไฟล์พนักงานจาก GAS
+async function getEmployeeProfile(tenantId, lineUserId) {
+  const r = await callTA(tenantId, 'get_profile', { lineUserId });
+  if (!r || r.ok === false) return null;
+  return r.data || null;
+}
+
+// ดึงสรุปทำงานของเดือนจาก GAS
+async function getMonthlyLogs(tenantId, lineUserId, month) {
+  const r = await callTA(tenantId, 'list_work_logs', { lineUserId, month });
+  if (!r || r.ok === false) return { days: [], leave: [], summary:{workHours:0,workDays:0,leaveHours:0,leaveDays:0} };
+  const data = r.data || r; // กันกรณีคืนตรง
+  return {
+    days: data.days || [],
+    leave: data.leave || [],
+    summary: Object.assign({workHours:0,workDays:0,leaveHours:0,leaveDays:0}, data.summary||{})
+  };
+}
+
+// คำณวน “ชั่วโมงสายรวม” ตาม shift/grace (ใช้สูตรเดียวกับหน้า LIFF)
+function parseHm(hm){ const m=String(hm||'').match(/^(\d{1,2}):(\d{2})$/); if(!m) return null; return {h:+m[1], m:+m[2]}; }
+function lateMinutesForDay(d, shiftIn, graceMin){
+  if (!d?.inTime || !shiftIn) return 0;
+  const s = parseHm(shiftIn); if (!s) return 0;
+  const inAt = new Date(d.inTime);
+  const sch  = new Date(inAt); sch.setHours(s.h, s.m, 0, 0);
+  const diff = Math.round((inAt - sch) / 60000);
+  return Math.max(0, diff - Number(graceMin||0));
+}
+
+
+const TMP_FILES = new Map(); // token -> { buf, name, ctype, exp }
+setInterval(()=>{ // เก็บ 10 นาที
+  const now = Date.now();
+  for (const [k,v] of TMP_FILES.entries()) if (!v || v.exp < now) TMP_FILES.delete(k);
+}, 60_000);
+
+
+// รายการรอบจ่าย (จากชีต RUN) + summary ต่อ run
+app.get('/api/tenants/:id/admin/payroll/runs', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { actorLineUserId, withAgg } = req.query || {};
+    await ensureAdminOrOwner(id, { lineUserId: actorLineUserId });
+
+    const wantAgg = String(withAgg || '') === '1';
+    const tenantRef = db.collection('tenants').doc(id);
+
+    // 1) พยายามอ่าน runs จาก Firestore ก่อน
+    let runs = [];
+    try {
+      const snap = await tenantRef.collection('payroll_runs').orderBy('createdAt', 'desc').get();
+      runs = snap.docs.map(d => ({ runId: d.id, ...d.data() }));
+    } catch (_) { /* ignore */ }
+
+    // ถ้า Firestore ว่าง ให้ fallback ไป GAS
+    if (!runs.length) {
+      const r = await callTA(id, 'list_runs', {});
+      if (!r || r.ok === false) throw new Error(r?.error || 'gas_failed');
+      runs = r.data || [];
+    }
+
+    // 2) ถ้าไม่ขอสรุป -> ส่งกลับตรงๆ
+    if (!wantAgg) {
+      return res.json({ ok: true, data: runs });
+    }
+
+    // 3) คำนวณสรุปต่อ run จาก Firestore (ไม่เรียก GAS ทีละ run)
+    const itemsColl = tenantRef.collection('payroll_items');
+
+    const withSummary = await Promise.all(runs.map(async (r) => {
+      const runId = r.runId || r.id;
+      if (!runId) return { ...r, itemsCount: 0, sumNet: 0 };
+
+      let itemsCount = 0;
+      let sumNet = 0;
+
+      // 3.1 ลอง subcollection ใน run ก่อน (เร็วและเจาะจง)
+      try {
+        const subSnap = await tenantRef.collection('payroll_runs').doc(runId).collection('items').get();
+        if (!subSnap.empty) {
+          subSnap.forEach(doc => {
+            const x = doc.data() || {};
+            const net = Number(x.netPay ?? x.detail?.netPay ?? 0);
+            if (!Number.isNaN(net)) sumNet += net;
+            itemsCount += 1;
+          });
+          return { ...r, itemsCount, sumNet };
+        }
+      } catch (_) { /* ignore */ }
+
+      // 3.2 fallback: ค้นจากคอลเลกชันรวม (กรณีไม่ได้เก็บเป็น subcollection)
+      try {
+        const qSnap = await itemsColl.where('runId', '==', runId).get();
+        if (!qSnap.empty) {
+          qSnap.forEach(doc => {
+            const x = doc.data() || {};
+            const net = Number(x.netPay ?? x.detail?.netPay ?? 0);
+            if (!Number.isNaN(net)) sumNet += net;
+            itemsCount += 1;
+          });
+        }
+      } catch (_) { /* ignore */ }
+
+      return { ...r, itemsCount, sumNet };
+    }));
+
+    return res.json({ ok: true, data: withSummary });
+  } catch (e) {
+    res.status(500).json({ ok:false, error:String(e?.message || e) });
+  }
+});
+
+
+// รายการจ่ายต่อคน (จากชีต ITEM) — รองรับ filter ด้วย runId หรือ month หรือ keyword
+app.get('/api/tenants/:id/admin/payroll/items', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { actorLineUserId, runId, month, q } = req.query || {};
+    await ensureAdminOrOwner(id, { lineUserId: actorLineUserId });
+
+    const tenantRef = db.collection('tenants').doc(id);
+
+    // 1) พยายามอ่านจาก Firestore ก่อน (ที่ commit บันทึกไว้)
+    let saved = [];
+    if (runId) {
+      const snap = await tenantRef.collection('payroll_runs').doc(runId).collection('items').get();
+      saved = snap.docs.map(d => d.data());
+    } else if (month) {
+      const snap = await tenantRef.collection('payroll_items')
+        .where('month', '==', month).get();
+      saved = snap.docs.map(d => d.data());
+    }
+
+    // filter คำค้น
+    if (q && saved.length) {
+      const kw = String(q).toLowerCase();
+      saved = saved.filter(x =>
+        String(x.fullName||'').toLowerCase().includes(kw) ||
+        String(x.lineUserId||'').toLowerCase().includes(kw)
+      );
+    }
+
+    // ถ้ามีใน Firestore แล้ว ให้คืนเลย
+    if (saved.length) return res.json({ ok:true, data: saved });
+
+    // 2) fallback ไป GAS
+    const r = await callTA(id, 'list_items', { runId, month, q });
+    if (!r || r.ok === false) throw new Error(r?.error || 'gas_failed');
+    return res.json({ ok:true, data: r.data || [] });
+
+  } catch (e) {
+    res.status(500).json({ ok:false, error:String(e?.message || e) });
+  }
+});
+
+
+
+/* ===== Flex Card Helpers (Payroll) ===== */
+
+const BRAND_BLUE = '#3b82f6';
+const TEXT_MUTED = '#64748b';
+
+function fmtMoney(n) {
+  const v = Number(n || 0);
+  return (v % 1 === 0)
+    ? v.toLocaleString('th-TH', { maximumFractionDigits: 0 })
+    : v.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function shortName(s){ return (s || '').trim() || '-'; }
+
+/** Card ให้พนักงานรายคน — คำนวณสุทธิใหม่เสมอ */
+function buildEmployeePayrollCard({
+  monthLabel, periodStart, periodEnd, empName,
+  basePay = 0, lateDeduct = 0, adjPlus = 0, adjMinus = 0, note = ''
+}) {
+  const base  = Number(basePay || 0);
+  const late  = Number(lateDeduct || 0);
+  const plus  = Number(adjPlus || 0);
+  const minus = Number(adjMinus || 0);
+  const net   = Math.max(0, base - late - minus + plus);
+
+  return {
+    type: 'flex',
+    altText: `สรุปเงินเดือน ${monthLabel}: ${shortName(empName)} สุทธิ ${fmtMoney(net)} บาท`,
+    contents: {
+      type: 'bubble',
+      header: {
+        type: 'box', layout: 'vertical', paddingAll: '12px', contents: [
+          { type: 'text', text: 'สรุปเงินเดือน', weight: 'bold', color: '#ffffff', size: 'sm' },
+          { type: 'text', text: monthLabel, weight: 'bold', size: 'lg', color: '#ffffff' },
+          { type: 'text', text: `${periodStart} – ${periodEnd}`, size: 'xs', color: '#e5e7eb' },
+        ],
+        backgroundColor: BRAND_BLUE, cornerRadius: 'md'
+      },
+      body: {
+        type: 'box', layout: 'vertical', spacing: 'sm', contents: [
+          { type: 'text', text: shortName(empName), weight: 'bold', size: 'md' },
+          { type: 'separator', margin: 'md' },
+          rowKV('ฐานจ่าย',      fmtMoney(base)),
+          rowKV('หักสาย/ขาด',  fmtMoney(late)),
+          rowKV('บวกปรับ (+)',  fmtMoney(plus)),
+          rowKV('หัก/ปรับ (-)', fmtMoney(minus)),
+          { type: 'separator', margin: 'md' },
+          { type: 'box', layout: 'horizontal', contents: [
+              { type: 'text', text: 'รวมสุทธิ', weight: 'bold' },
+              { type: 'text', text: fmtMoney(net), weight: 'bold', align: 'end' }
+          ]},
+          ...(note ? [{ type: 'text', text: `หมายเหตุ: ${note}`, size: 'xs', color: TEXT_MUTED, wrap: true }] : [])
+        ]
+      },
+      styles: { body: { separator: true } }
+    }
+  };
+}
+
+/** Card สรุปให้ Owner/Admin — รวมยอดจาก items เอง */
+function buildOwnerPayrollCard({ title, periodStart, periodEnd, items = [], actorName }) {
+  const safeItems = items.map(x => ({ name: shortName(x.name), net: Number(x.net || 0) }));
+  const grand = safeItems.reduce((s, x) => s + x.net, 0);
+
+  return {
+    type: 'flex',
+    altText: `${title || 'สรุปการจ่ายเงินเดือน'} ช่วง ${periodStart} – ${periodEnd} รวม ${fmtMoney(grand)} บาท`,
+    contents: {
+      type: 'bubble',
+      header: {
+        type:'box', layout:'vertical', paddingAll:'12px',
+        contents:[
+          { type:'text', text:'สรุปการจ่ายเงินเดือน', size:'sm', weight:'bold', color:'#ffffff' },
+          { type:'text', text:(title || 'งวด'), size:'lg', weight:'bold', color:'#ffffff' },
+          { type:'text', text:`ช่วง ${periodStart} – ${periodEnd}`, size:'xs', color:'#e5e7eb' }
+        ],
+        backgroundColor: BRAND_BLUE, cornerRadius:'md'
+      },
+      body:{
+        type:'box', layout:'vertical', spacing:'sm', contents:[
+          { type:'box', layout:'vertical', spacing:'xs',
+            contents: safeItems.slice(0,10).map(x=>({
+              type:'box', layout:'horizontal', contents:[
+                { type:'text', text: x.name, size:'sm', flex: 2, wrap:true },
+                { type:'text', text: fmtMoney(x.net), size:'sm', align:'end', flex:1 }
+              ]
+            }))
+          },
+          { type:'separator', margin:'md' },
+          { type:'box', layout:'horizontal', contents:[
+            { type:'text', text:'รวมทั้งสิ้น', weight:'bold' },
+            { type:'text', text: fmtMoney(grand), weight:'bold', align:'end' }
+          ]},
+          ...(actorName ? [{ type:'text', text:`ผู้ดำเนินการ: ${shortName(actorName)}`, size:'xs', color: TEXT_MUTED, margin:'sm' }] : [])
+        ]
+      }
+    }
+  };
+}
+
+/* tiny helper row (เดิมใช้ต่อได้) */
+function rowKV(k,v){
+  return { type:'box', layout:'horizontal', contents:[
+    { type:'text', text:k, size:'sm', color: TEXT_MUTED },
+    { type:'text', text:v, size:'sm', align:'end' }
+  ]};
+}
+
+
+
+// ==== NEW: Commit payroll, notify with Flex Cards only (no PDFs) ====
+// Commit payroll (approve + notify) — idempotent + safe
+app.post('/api/tenants/:id/admin/payroll/commit', async (req, res) => {
+  const t0 = Date.now();
+  try {
+    const tenantId = req.params.id;
+    const actor = req.body?.actor || {};
+    const jobs  = Array.isArray(req.body?.jobs) ? req.body.jobs : [];
+    const notify = !!req.body?.notify;
+
+    const overwrite = !!req.body?.overwrite;
+    console.log('[payroll/commit] runId=%s overwrite=%s jobs=%d', req.body?.runId || '(new)', overwrite, jobs.length);
+
+    // ---- validate base ----
+    if (!actor?.lineUserId) return res.status(400).json({ ok:false, error:'actor required' });
+    if (!jobs.length)       return res.status(400).json({ ok:false, error:'jobs required' });
+    if (jobs.length > 200)  return res.status(400).json({ ok:false, error:'too_many_jobs' });
+
+    const roleOk = await canAdminForTenant(tenantId, actor.lineUserId);
+    if (!roleOk) return res.status(403).json({ ok:false, error:'forbidden' });
+
+    // ---- one period for all items + date format ----
+    const ps = String(jobs[0]?.periodStart || '').slice(0,10);
+    const pe = String(jobs[0]?.periodEnd   || '').slice(0,10);
+    const re = /^\d{4}-\d{2}-\d{2}$/;
+    if (!re.test(ps) || !re.test(pe))
+      return res.status(400).json({ ok:false, error:'invalid_period' });
+    const mixed = jobs.some(j =>
+      String(j.periodStart||'').slice(0,10) !== ps ||
+      String(j.periodEnd||'').slice(0,10)   !== pe
+    );
+    if (mixed) return res.status(400).json({ ok:false, error:'mixed_period' });
+
+    // ---- idempotency (30s window) ----
+    const key = _idemKey(req);
+    const replay = _idemGet(key);
+    if (replay) {
+      console.log('[payroll/commit] idem replay', key);
+      return res.json(replay);
+    }
+
+    // ---- runId fast-path ----
+    let runId = String(req.body?.runId || '').trim();
+    const onlyIds = Array.from(new Set(
+      jobs.map(j => String(j?.lineUserId || '').trim()).filter(Boolean)
+    ));
+    const groupId = String(req.body?.groupId || '').trim() || undefined;
+    if (!runId) {
+      const runResp = await callTA(tenantId, 'run_payroll', {
+        actor: { lineUserId: actor.lineUserId },
+        periodStart: ps,
+        periodEnd:   pe,
+        onlyLineUserIds: onlyIds,
+        ...(groupId ? { groupId } : {})
+      });
+      if (!runResp?.ok) throw new Error(runResp?.error || 'run_payroll failed');
+      runId = runResp.runId || runResp?.data?.runId || '';
+      if (!runId) throw new Error('runId missing');
+    }
+
+    // ---- fetch draft items of the run (authoritative baseline) ----
+    const itemsResp = await callTA(tenantId, 'list_items', { runId });
+    if (!itemsResp?.ok) throw new Error(itemsResp?.error || 'list_items failed');
+    const baseItems = Array.isArray(itemsResp.data) ? itemsResp.data : [];
+    const byUid = new Map(baseItems.map(x => [String(x.lineUserId), x]));
+
+    // ---- build safe items from selected jobs (only users in run) ----
+    const monthKey   = ps.slice(0,7); // YYYY-MM
+    const monthLabel = new Date(ps + 'T00:00:00')
+      .toLocaleDateString('th-TH', { month:'short', year:'numeric' });
+
+    const num = (v, fb=0) => { const n = Number(v); return Number.isFinite(n)? n : Number(fb)||0; };
+
+    const selectedForNotify = [];
+    let committed = 0;
+
+    for (const job of jobs) {
+      const uid = String(job?.lineUserId || '');
+      if (!uid) continue;
+      if (!byUid.has(uid)) continue; // ไม่อยู่ใน run นี้ → ข้าม
+
+      // ✅ normalize สถานะเป็นตัวพิมพ์เล็กเสมอ
+      const statusNorm = String(job.status || 'approved').toLowerCase();
+
+      const base = byUid.get(uid) || {};
+      const d = job?.detail || {};
+
+      // FIX: ใช้ recurring allowances/deductions จากฐาน (GAS) เป็นส่วนหนึ่งของสุทธิ
+      const baseAllow = num(base.allowances, 0);  // recurring จาก GAS
+      const baseDed   = num(base.deductions, 0);  // recurring จาก GAS
+
+      const safeDetail = {
+        workDays:   num(d.workDays,   base.workDays),
+        workHours:  num(d.workHours,  base.workHours),
+        lateHours:  num(d.lateHours,  base.lateHours),
+        basePay:    num(d.basePay,    base.basePay),
+        lateDeduct: num(d.lateDeduct, base.lateDeduct),
+        // FIX: ถ้า client ไม่ส่ง netPay มา ให้รวม recurring เดิมเสมอ
+        // ใช้ค่าจาก client เป็นหลัก แล้วค่อย fallback ไป base
+        netPay: num(
+          d.netPay,
+          ( num(d.basePay,    base.basePay)
+            - num(d.lateDeduct, base.lateDeduct)
+            + baseAllow - baseDed )
+        ),
+        payType:    String(d.payType ?? base.payType ?? ''),
+        payRate:    num(d.payRate,    base.payRate),
+        dailyHours: num(d.dailyHours, base.dailyHours),
+        payEveryN:  num(d.payEveryN,  base.payEveryN),
+      };
+
+      const minus = num(job?.adjustments?.minus);
+      const plus  = num(job?.adjustments?.plus);
+      const note  = String(job?.adjustments?.note || '');
+
+      // FIX: สุทธิสุดท้าย = สุทธิฐาน(GAS) + ปรับ(+/–)
+      const netAdj = Math.max(0, safeDetail.netPay - minus + plus);
+
+      // ✅ บันทึกสถานะจ่าย (ต่อคน) ด้วย pay_status_save (upsert by month,lineUserId)
+      await callTA(tenantId, 'pay_status_save', {
+        month: monthKey,
+        lineUserId: uid,
+        status: statusNorm,
+        note,
+        actor: { lineUserId: actor.lineUserId },
+        overwrite
+      });
+      committed++;
+
+      // FIX: เขียนกลับชีตโดย "รวม recurring เดิม + adjustments" แทนที่เคยทับค่าเดิม
+      await callTA(tenantId, 'pay_item_patch', {
+        runId,
+        lineUserId: uid,
+        status: statusNorm,      // ✅ บันทึกสถานะลงรายการด้วย
+        periodStart: ps,                        // ✅ เผื่อ endpoint ฝั่ง GAS ต้องใช้
+        periodEnd:   pe,
+
+        basePay:    safeDetail.basePay,
+        lateDeduct: safeDetail.lateDeduct,
+        allowances: baseAllow + plus,   // FIX
+        deductions: baseDed   + minus,  // FIX
+        netPay:     netAdj,
+
+        detail: {
+          ...safeDetail,
+          recurring: { allowances: baseAllow, deductions: baseDed }, // FIX: เก็บ recurring แยก
+          adjustments: { plus, minus, note }
+        }
+      });
+
+      if (notify) {
+        selectedForNotify.push({
+          lineUserId: uid,
+          fullName: base.fullName || job.fullName || uid,
+          monthLabel,
+          periodStart: ps,
+          periodEnd: pe,
+          basePay: safeDetail.basePay,
+          lateDeduct: safeDetail.lateDeduct,
+          adjPlus: plus,
+          adjMinus: minus,
+          netPay: netAdj,
+          note
+        });
+      }
+    }
+
+    // ---- notify (เหมือนของเดิม) ----
+    let notifiedEmployees = 0;
+    let notifiedOwnerCopies = 0;
+    let notifiedOwnerSummaries = 0;
+
+    if (notify && selectedForNotify.length) {
+      const tenantRef = db.collection('tenants').doc(tenantId);
+
+      let ownerIds = [];
+      try {
+        const r = await callTA(tenantId, 'list_admins', {});
+        ownerIds = Array.isArray(r?.ids) ? r.ids.filter(Boolean) : [];
+      } catch {}
+
+      for (const it of selectedForNotify) {
+        const empCard = buildEmployeePayrollCard({
+          monthLabel: it.monthLabel,
+          periodStart: it.periodStart,
+          periodEnd: it.periodEnd,
+          empName: it.fullName,
+          net: it.netPay,
+          basePay: it.basePay,
+          lateDeduct: it.lateDeduct,
+          adjPlus: it.adjPlus,
+          adjMinus: it.adjMinus,
+          note: it.note
+        });
+        try {
+          await pushFlex(tenantRef, it.lineUserId, empCard.contents, empCard.altText);
+          notifiedEmployees++;
+        } catch (err) {
+          console.error('[payroll notify employee] push failed', it.lineUserId, err);
+        }
+        for (const oid of ownerIds) {
+          try {
+            await pushFlex(tenantRef, oid, empCard.contents, `[สำเนารายคน] ${empCard.altText}`);
+            notifiedOwnerCopies++;
+          } catch (err) {
+            console.error('[payroll notify owner copy] push failed', oid, err);
+          }
+        }
+      }
+
+      if (ownerIds.length) {
+        const total = selectedForNotify.reduce((s,x)=> s + Number(x.netPay||0), 0);
+        const ownerCard = buildOwnerPayrollCard({
+          title: `งวด ${monthLabel}`,
+          periodStart: ps,
+          periodEnd: pe,
+          items: selectedForNotify.map(x => ({ name: x.fullName, net: x.netPay })),
+          total,
+          actorName: actor.fullName || actor.lineUserId
+        });
+        for (const oid of ownerIds) {
+          try {
+            await pushFlex(tenantRef, oid, ownerCard.contents, ownerCard.altText);
+            notifiedOwnerSummaries++;
+          } catch (err) {
+            console.error('[payroll notify owner] push failed', oid, err);
+          }
+        }
+      }
+    }
+
+    const out = {
+      ok: true,
+      runId,
+      committed,
+      notifiedEmployees,
+      notifiedOwnerCopies,
+      notifiedOwnerSummaries,
+      at: new Date().toISOString(),
+      ms: Date.now() - t0
+    };
+    _idemSet(key, out);
+    console.log('[payroll/commit] ok runId=%s n=%d in %dms', runId, committed, out.ms);
+    return res.json(out);
+
+  } catch (e) {
+    console.error('[commit payroll] error', e);
+    return res.status(500).json({ ok:false, error: String(e?.message || e) });
+  }
+});
+
+
+
+
+// list groups
+app.get('/api/tenants/:id/admin/paygroups', async (req, res) => {
+  try {
+    const tenantId = req.params.id;
+    // (ออปชัน) ตรวจสิทธิ์ admin/owner ถ้าต้องการเข้ม
+    // await ensureAdminOrOwner(tenantId, { lineUserId: req.query.actorLineUserId });
+
+    const r = await callTA(tenantId, 'pg_list', {});
+    if (!r || r.ok === false) throw new Error(r?.error || 'gas_failed');
+    res.json({ ok:true, data: r.data || [] });
+  } catch (e) {
+    res.status(500).json({ ok:false, error:String(e?.message||e) });
+  }
+});
+
+// create/update group
+app.post('/api/tenants/:id/admin/paygroups', express.json(), async (req, res) => {
+  try {
+    const tenantId = req.params.id;
+    const { actor, groupId, name, type, n, startDate } = req.body || {};
+    if (!actor?.lineUserId) return res.status(400).json({ ok:false, error:'actor required' });
+
+    const r = await callTA(tenantId, 'pg_save', { actor, groupId, name, type, n, startDate });
+    if (!r || r.ok === false) throw new Error(r?.error || 'gas_failed');
+    res.json({ ok:true, data: r.data || null });
+  } catch (e) {
+    res.status(500).json({ ok:false, error:String(e?.message||e) });
+  }
+});
+
+// update group (PUT)
+app.put('/api/tenants/:id/admin/paygroups/:groupId', express.json(), async (req, res) => {
+  try {
+    const tenantId = req.params.id;
+    const groupId  = req.params.groupId; // <-- มาจาก URL
+    const { actor, name, type } = req.body || {};
+    if (!actor?.lineUserId) return res.status(400).json({ ok:false, error:'actor required' });
+    if (!name) return res.status(400).json({ ok:false, error:'name required' });
+    if (!['monthly','every_n_days'].includes(String(type))) {
+      return res.status(400).json({ ok:false, error:'type invalid' });
+    }
+
+    // ทำความสะอาดค่าให้ตรงรูปแบบใหม่
+    let n = null, startDate = null;
+    if (type === 'every_n_days') {
+      const rawN = Number.parseInt(req.body?.n, 10);
+      if (!(rawN >= 1)) return res.status(400).json({ ok:false, error:'n must be >= 1' });
+      n = rawN;
+      startDate = (req.body?.startDate || '').trim();
+      if (!startDate) return res.status(400).json({ ok:false, error:'startDate required' });
+    }
+
+    const r = await callTA(tenantId, 'pg_save', { actor, groupId, name, type, n, startDate });
+    if (!r || r.ok === false) throw new Error(r?.error || 'gas_failed');
+
+    // ให้รูปแบบตอบกลับคงที่
+    res.json({ ok:true, data: r.data || { groupId } });
+  } catch (e) {
+    res.status(500).json({ ok:false, error:String(e?.message||e) });
+  }
+});
+
+
+// set members of a group
+app.post('/api/tenants/:id/admin/paygroups/members', express.json(), async (req, res) => {
+  try {
+    const tenantId = req.params.id;
+    const { actor, groupId, memberIds } = req.body || {};
+    if (!actor?.lineUserId) return res.status(400).json({ ok:false, error:'actor required' });
+    if (!groupId) return res.status(400).json({ ok:false, error:'groupId required' });
+
+    const r = await callTA(tenantId, 'pg_members_save', {
+      actor, groupId, memberIds: Array.from(new Set(memberIds||[])).filter(Boolean)
+    });
+    if (!r || r.ok === false) throw new Error(r?.error || 'gas_failed');
+    res.json({ ok:true });
+  } catch (e) {
+    res.status(500).json({ ok:false, error:String(e?.message||e) });
+  }
+});
+
+// อ่านรายละเอียดกลุ่ม + สมาชิก
+// get detail (group + members)
+app.get('/api/tenants/:id/admin/paygroups/:groupId', async (req, res) => {
+  try {
+    const tenantId = req.params.id;
+    const groupId  = req.params.groupId;
+    const r = await callTA(tenantId, 'pg_get', { groupId });
+    if (!r || r.ok === false) throw new Error(r?.error || 'gas_failed');
+    // standardize output ให้ตรงกับ ta-admin.html เดิม
+    const d = r.data || {};
+    res.json({ ok:true, data:{ ...d, members: d.memberIds || [], memberIds: d.memberIds || [] } });
+  } catch (e) {
+    res.status(500).json({ ok:false, error:String(e?.message||e) });
+  }
+});
+
+
+
+// ==== TA Payroll Reminder Helpers (place near schedule-preview helpers) ====
+function isWeekend(d){ const w=d.getDay(); return w===0 || w===6; }
+function addWorkdays(base, n){
+  const d=new Date(base); let left=n;
+  while(left>0){ d.setDate(d.getDate()+1); if(!isWeekend(d)) left--; }
+  return d;
+}
+function subWorkdays(base, n){
+  const d=new Date(base); let left=n;
+  while(left>0){ d.setDate(d.getDate()-1); if(!isWeekend(d)) left--; }
+  return d;
+}
+
+// คืนวัน "แจ้งเตือน" ถัดไปของกลุ่ม (อิงสเปคที่คุยกัน)
+function computeNextNotifyDateForGroup(g, today=new Date()){
+  const type = String(g.type||'every_n_days');
+  const n    = Number(g.n||0);
+  const startYMD = String(g.startDate||'').slice(0,10);
+  if(!startYMD) return null;
+  const start = new Date(startYMD+'T00:00:00');
+
+  const t0 = new Date(today.getFullYear(), today.getMonth(), today.getDate()); // ตัดเวลา
+  const ymd = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+
+  if (type === 'monthly'){
+    // รอบ = 1..สิ้นเดือนของ "เดือนปัจจุบัน"
+    // แจ้ง N วันก่อนวันแรกของเดือนถัดไป (N จาก g.n, default = 3)
+    const warnN = n > 0 ? n : 3;
+    const firstNextMonth = new Date(t0.getFullYear(), t0.getMonth()+1, 1);
+    const notify = new Date(firstNextMonth);
+    notify.setDate(notify.getDate()-warnN);
+    return ymd(notify);
+  }
+
+  // every_n_days — เดินรอบจาก start ทีละ n วัน
+  if (n <= 0) return null;
+  let end = new Date(start);
+  while (end <= t0) { end.setDate(end.getDate()+n); }
+  // วันแจ้งเตือน = 1 วันก่อนวันสิ้นรอบ (ทำงานล้วน? ปรับที่นี่)
+  const notify = new Date(end); notify.setDate(notify.getDate()-1);
+  return ymd(notify);
+}
+
+// ใช้ pushText อยู่แล้วในไฟล์นี้
+async function sendPayrollRemindersForTenant(tenantId){
+  try{
+    // ดึงรายชื่อกลุ่ม
+    const r1 = await callTA(tenantId, 'pg_list', {});
+    if(!r1 || r1.ok===false) throw new Error(r1?.error || 'pg_list_failed');
+    const groups = Array.isArray(r1.data) ? r1.data : [];
+
+    // คำนวณว่า "วันนี้" ตรงวันแจ้งของกลุ่มไหนบ้าง
+    const today = new Date();
+    const todayYMD = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+    const dueGroups = groups.filter(g => computeNextNotifyDateForGroup(g, today) === todayYMD);
+    if (dueGroups.length === 0) return { ok:true, sent:0 };
+
+    // ดึง admin/owner จาก GAS
+    const r2 = await callTA(tenantId, 'list_admins', {});
+    if(!r2 || r2.ok===false) throw new Error(r2?.error || 'list_admins_failed');
+    const adminIds = (r2.ids || []).filter(Boolean);
+
+    if (adminIds.length === 0) return { ok:true, sent:0, note:'no_admins' };
+
+    // สร้างข้อความรวมสั้นๆ
+    const lines = dueGroups.map(g=>{
+      const t = (g.type==='monthly') ? 'รายเดือน' : `ทุก ${g.n} วัน`;
+      return `• ${g.name || '(ไม่ระบุชื่อ)'} (${t})`;
+    });
+    const msg =
+      '🔔 เตือนทำเงินเดือน\n' +
+      `วันนี้ถึงรอบเตรียมทำเงินเดือนของ ${dueGroups.length} กลุ่ม:\n` +
+      lines.join('\n');
+
+    // ส่งให้ admin/owner ทุกคน
+    let sent = 0;
+    for (const uid of adminIds){
+      try { await pushText(tenantId, uid, msg); sent++; } catch(e) { /* log แล้วไปต่อ */ }
+    }
+    return { ok:true, sent, groups: dueGroups.length };
+  }catch(e){
+    console.error('[TA_NOTIFY]', tenantId, e);
+    return { ok:false, error:String(e) };
+  }
+}
+
+// ==== TA Payroll Auto Scheduler (separate from other jobs) ====
+const TA_REMIND_CRON = process.env.TA_REMIND_CRON || '0 9 * * 1-5'; // 09:00 จันทร์–ศุกร์ (เวลาไทย)
+const TA_REMIND_ENABLED = (process.env.TA_REMIND_ENABLED ?? 'true') !== 'false';
+
+// ถ้าคุณใช้ node-cron ให้ใส่ { timezone: 'Asia/Bangkok' } ด้วย
+if (TA_REMIND_ENABLED) {
+  schedule(TA_REMIND_CRON, async () => {
+    const runAt = new Date().toISOString();
+    console.log(`[TA-REMINDER] tick ${runAt} spec=${TA_REMIND_CRON}`);
+    try {
+      const snap = await db.collection('tenants').get();
+      for (const doc of snap.docs) {
+        const tId = doc.id;
+        const r = await sendPayrollRemindersForTenant(tId);
+        console.log(`[TA-REMINDER] tenant=${tId} ->`, r);
+      }
+    } catch (e) {
+      console.error('[TA-REMINDER] error', e);
+    }
+  }/* , { timezone: 'Asia/Bangkok' } */);
+
+  console.log(`[TA-REMINDER] scheduled ${TA_REMIND_CRON} (Asia/Bangkok)`);
+}
+
+
+
+
+// === Paygroups: schedule preview (next period & notify dates) ===
+app.get('/api/tenants/:id/admin/paygroups/schedule-preview', async (req, res) => {
+  try {
+    const tenantId = req.params.id;
+    const today = req.query.today || undefined;  // (ออปชัน) YYYY-MM-DD
+    const r = await callTA(tenantId, 'pg_schedule_preview', { today });
+    if (!r || r.ok === false) throw new Error(r?.error || 'gas_failed');
+    res.json({ ok:true, data: r.data || [] });
+  } catch (e) {
+    res.status(500).json({ ok:false, error:String(e?.message||e) });
+  }
+});
+
+
+
+// ==== TA Admin – Manual cron endpoints ====
+// 3.1 เรียกเฉพาะ tenant
+app.post('/api/tenants/:id/admin/paygroups/notify-run', async (req, res)=>{
+  try{
+    const { id } = req.params;
+    const r = await sendPayrollRemindersForTenant(id);
+    if (r.ok === false) throw new Error(r.error || 'notify_failed');
+    res.json({ ok:true, ...r });
+  }catch(e){
+    res.status(500).json({ ok:false, error:String(e?.message||e) });
+  }
+});
+
+// 3.2 เรียกแบบ all tenants (ป้องกันด้วย CRON_KEY)
+app.post('/api/cron/ta/payroll-reminders', express.json(), async (req, res)=>{
+  try{
+    const key = String(req.query.key || req.body?.key || '').trim();
+    if (!key || key !== String(process.env.CRON_KEY||'')) {
+      return res.status(403).json({ ok:false, error:'forbidden' });
+    }
+    const snap = await db.collection('tenants').get();
+    let totalSent = 0, totalGroups = 0;
+    for (const doc of snap.docs){
+      const tId = doc.id;
+      const r = await sendPayrollRemindersForTenant(tId);
+      if (r && r.ok) { totalSent += (r.sent||0); totalGroups += (r.groups||0); }
+    }
+    res.json({ ok:true, totalSent, totalGroups });
+  }catch(e){
+    res.status(500).json({ ok:false, error:String(e?.message||e) });
+  }
+});
+
+
+
+
+app.get('/api/tmp/:token', async (req, res) => {
+  const rec = TMP_FILES.get(req.params.token);
+  if (!rec) return res.status(404).end('expired');
+  res.setHeader('Content-Type', rec.ctype || 'application/octet-stream');
+  res.setHeader('Content-Disposition', `attachment; filename="${rec.name || 'file'}"`);
+  res.end(rec.buf);
+});
+
+
+// ================== [P0] LEAVE REQUEST ==================
+app.post('/api/tenants/:id/leave/request', express.json(), async (req, res) => {
+  try {
+    const { id } = req.params;
+    let { lineUserId, date, hours, reason, note, lat, lng, address } = req.body || {};
+    if (!lineUserId || !date) {
+      return res.status(400).json({ ok:false, error:'missing params' });
+    }
+
+    // normalize
+    hours = (hours === '' || hours == null) ? undefined : Number(hours);
+    if (Number.isNaN(hours)) hours = undefined;
+    lat   = (lat   === '' || lat   == null) ? undefined : Number(lat);
+    lng   = (lng   === '' || lng   == null) ? undefined : Number(lng);
+    if (Number.isNaN(lat)) lat = undefined;
+    if (Number.isNaN(lng)) lng = undefined;
+    reason = String(reason || '').trim();
+    note   = String(note || '').trim();
+    address= String(address || '').trim();
+
+    // reverse geocode (optional cache)
+    if (!address && typeof lat==='number' && typeof lng==='number') {
+      try {
+        const geo = await callTA(id, 'reverse_geocode', { lat, lng });
+        address = String(geo?.address || '').trim();
+      } catch {}
+    }
+
+    // 1) call GAS → leave_request
+    const gasRes = await callTA(id, 'leave_request', {
+      lineUserId, date, hours, reason, note
+    });
+    if (!gasRes || gasRes.ok === false) {
+      throw new Error(gasRes?.error || 'gas_failed');
+    }
+
+    // 2) สร้าง Flex ใบคำขอ + แจ้งเตือน
+    const tRef = db.collection('tenants').doc(id);
+    const fullName = (await getDisplayName(tRef, lineUserId)) || 'พนักงาน';
+    const profile  = await callTA(id, 'get_profile', { lineUserId }).catch(()=>null);
+    const jobTitle = profile?.ok ? (profile.data?.jobTitle || '-') : '-';
+
+    const thTZ   = { timeZone:'Asia/Bangkok' };
+    const dateTh = new Date(date).toLocaleDateString('th-TH', thTZ);
+    const when   = new Date().toLocaleString('th-TH', thTZ);
+
+    const bubble = {
+      type:'bubble',
+      hero: { // แถบสีหัวเรื่อง
+        type:'box', layout:'vertical', height:'64px',
+        contents:[
+          { type:'text', text:'คำขอลางาน', weight:'bold', size:'lg', color:'#ffffff' },
+          { type:'text', text:when, size:'xs', color:'#e6e6e6' }
+        ],
+        backgroundColor:'#F59E0B'
+      },
+      body:{ type:'box', layout:'vertical', spacing:'sm', contents:[
+        { type:'text', text:fullName, size:'md', weight:'bold', wrap:true },
+        { type:'text', text:`ตำแหน่ง: ${jobTitle}`, size:'sm', color:'#666666', wrap:true },
+        { type:'separator', margin:'md' },
+
+        { type:'box', layout:'baseline', spacing:'sm', contents:[
+          { type:'text', text:'วันลา:', size:'sm', color:'#888888', flex:2 },
+          { type:'text', text:dateTh,  size:'sm', color:'#111111', flex:5 }
+        ]},
+        { type:'box', layout:'baseline', spacing:'sm', contents:[
+          { type:'text', text:'ชั่วโมง:', size:'sm', color:'#888888', flex:2 },
+          { type:'text', text:String(hours ?? 0), size:'sm', color:'#111111', flex:5 }
+        ]},
+        ...(reason ? [{
+          type:'box', layout:'baseline', spacing:'sm', contents:[
+            { type:'text', text:'เหตุผล:', size:'sm', color:'#888888', flex:2 },
+            { type:'text', text:reason,  size:'sm', color:'#111111', flex:5, wrap:true }
+          ]
+        }] : []),
+        ...(note ? [{
+          type:'box', layout:'baseline', spacing:'sm', contents:[
+            { type:'text', text:'หมายเหตุ:', size:'sm', color:'#888888', flex:2 },
+            { type:'text', text:note,    size:'sm', color:'#111111', flex:5, wrap:true }
+          ]
+        }] : []),
+        ...(address ? [{
+          type:'box', layout:'baseline', spacing:'sm', contents:[
+            { type:'text', text:'สถานที่:', size:'sm', color:'#888888', flex:2 },
+            { type:'text', text:address, size:'sm', color:'#111111', flex:5, wrap:true }
+          ]
+        }] : [])
+      ]}
+    };
+
+    // 3) ส่งใบเสร็จให้คนยื่นลา
+    try {
+      await callLineAPITenant(tRef, '/v2/bot/message/push', {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({ to: lineUserId, messages:[{ type:'flex', altText:'คำขอลางานของคุณ', contents:bubble }] })
+      });
+    } catch (e) { console.warn('[leave][push self] fail', e?.status || e?.message); }
+
+    // 4) แจ้ง owner/admin
+    try {
+      const recipients = await resolveClockRecipientsFromSheet(id, lineUserId, { excludeSelfIfAdmin:false });
+      if (recipients.length) {
+        for (const to of recipients) {
+          await callLineAPITenant(tRef, '/v2/bot/message/push', {
+            method:'POST',
+            headers:{ 'Content-Type':'application/json' },
+            body: JSON.stringify({ to, messages:[{ type:'flex', altText:'แจ้งขอลางาน', contents:bubble }] })
+          }).catch(async (e)=> {
+            const txt = await e?.text?.() || ''; console.warn('[leave][push admin] fail', to, e?.status || e?.message || txt);
+          });
+          await new Promise(r=>setTimeout(r,60));
+        }
+      }
+    } catch (e) { console.warn('[leave][notify] failed:', e?.message || e); }
+
+    return res.json({ ok:true, data:gasRes });
+  } catch (e) {
+    console.error('[leave/request]', e);
+    return res.status(500).json({ ok:false, error:String(e?.message || e || 'server_error') });
+  }
+});
+
+
+//  ================== [P0] SETTING ADMIN ==================
+
+
+// รายชื่อพนักงานทั้งหมด (ซ่อน owner) — ต้องเป็น admin/owner
+app.post('/api/tenants/:id/admin/employees', express.json(), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const actor = req.body?.actor || {};
+    console.log('[ADMIN][employees] actor=', actor, 'tenant=', id);
+
+    const roleObj = await getRoleViaGAS(id, actor.lineUserId);
+    if (!roleObj || (roleObj.role !== 'admin' && roleObj.role !== 'owner')) {
+      return res.status(403).json({ ok:false, error:'forbidden' });
+    }
+
+    const r = await callTA(id, 'list_employees', { actor, excludeOwner:true });
+    if (!r || r.ok === false) throw new Error(r?.error || 'gas_failed');
+    return res.json({ ok:true, data: r.data || [] });
+  } catch (e) {
+    console.error('[ADMIN][employees] error:', e);
+    return res.status(500).json({ ok:false, error:String(e?.message || e) });
+  }
+});
+
+
+// บันทึกข้อมูลพนักงาน (โปรไฟล์ + บทบาท + ค่าจ้าง)
+
+app.post('/api/tenants/:id/admin/employee/save', express.json(), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { actor, profile = {}, settings = {}, role } = req.body || {};
+
+    // (ออปชัน) เติมค่าป้องกันกรณีฟอร์มยังไม่ส่งฟิลด์ใหม่มา
+    profile.registerDate   = profile.registerDate   || '';
+    profile.employmentType = profile.employmentType || '';
+
+    const r = await callTA(id, 'save_employee', { actor, profile, settings, role });
+    if (!r || r.ok === false) throw new Error(r?.error || 'gas_failed');
+    return res.json({ ok:true });
+  } catch (e) {
+    return res.status(500).json({ ok:false, error:String(e?.message || e) });
+  }
+});
+
+
+// ตั้งค่าการจ่าย (กรณีอยากแยก)
+app.post('/api/tenants/:id/admin/pay_settings', express.json(), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { actor, lineUserId, settings } = req.body || {};
+    const r = await callTA(id, 'save_pay_settings', { actor, lineUserId, settings });
+    if (!r || r.ok === false) throw new Error(r?.error || 'gas_failed');
+    return res.json({ ok:true });
+  } catch (e) {
+    return res.status(500).json({ ok:false, error:String(e?.message || e) });
+  }
+});
+
+// กำหนดบทบาท (owner/admin/user/ตำแหน่งอื่น ๆ)
+app.post('/api/tenants/:id/admin/set_role', express.json(), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { actor, target, role } = req.body || {};
+    const r = await callTA(id, 'set_role', { actor, target, role });
+    if (!r || r.ok === false) throw new Error(r?.error || 'gas_failed');
+    return res.json({ ok:true, role:r.role });
+  } catch (e) {
+    return res.status(500).json({ ok:false, error:String(e?.message || e) });
+  }
+});
+
+// รันงวดเงินเดือน (เขียน ITEM จากช่วงวันที่)
+app.post('/api/tenants/:id/admin/payroll/run', express.json(), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { actor, periodStart, periodEnd, onlyLineUserIds = [], groupId } = req.body || {};
+    if (!actor?.lineUserId) return res.status(400).json({ ok:false, error:'actor required' });
+    if (!periodStart || !periodEnd) return res.status(400).json({ ok:false, error:'periodStart/periodEnd required (YYYY-MM-DD)' });
+
+    await ensureAdminOrOwner(id, actor);
+    const r = await callTA(id, 'run_payroll', {
+      actor, periodStart, periodEnd,
+      onlyLineUserIds: Array.from(new Set((onlyLineUserIds||[]).filter(Boolean))),
+      ...(groupId ? { groupId } : {})
+    });
+
+    if (!r || r.ok === false) throw new Error(r?.error || 'gas_failed');
+    return res.json({ ok:true, runId: r.runId || null });
+  } catch (e) {
+    return res.status(500).json({ ok:false, error:String(e?.message||e) });
+  }
+});
+
+
+// ===== Simple payroll notifications (no PDF/URL) – via callLineAPITenant =====
+function thb(n){
+  const x = Number(n || 0);
+  return x.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/**
+ * notifyPaySimple({
+ *   tenantRef,             // Firestore doc ref ของ tenant
+ *   monthLabel,            // เช่น 'ต.ค. 2568' หรือ '2025-10'
+ *   actorLineUserId,       // คนกดจ่าย
+ *   items,                 // [{ lineUserId, fullName, netPay, note? }, ...] เฉพาะ "ที่เลือกจ่าย"
+ *   ownerIds = []          // รายการ owner/admin ที่ให้แจ้งเพิ่ม
+ * })
+ */
+async function notifyPaySimple({ tenantRef, monthLabel, actorLineUserId, items, ownerIds = [] }) {
+  const total = (items || []).reduce((s, it) => s + Number(it.netPay || 0), 0);
+
+  // ส่งข้อความล้วน (push) ด้วย callLineAPITenant
+  async function pushText(to, text){
+    await callLineAPITenant(tenantRef, '/v2/bot/message/push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to, messages: [{ type:'text', text }] })
+    });
+  }
+
+  // 1) แจ้งพนักงานแต่ละคน
+  for (const it of (items || [])){
+    const text =
+      `แจ้งผลการจ่ายเงินเดือน ${monthLabel}\n` +
+      `ยอดสุทธิของคุณ: ${thb(it.netPay)} บาท` +
+      (it.note ? `\nหมายเหตุ: ${String(it.note)}` : '');
+    await pushText(it.lineUserId, text);
+    await new Promise(r=>setTimeout(r,60)); // กัน rate limit
+  }
+
+  // 2) แจ้ง owner/admin สรุปยอด
+  const lines = (items || []).map(it => `• ${it.fullName || it.lineUserId}: ${thb(it.netPay)} บาท`);
+  const summary =
+    `สรุปการจ่ายเงินเดือน ${monthLabel}\n` +
+    (lines.length ? lines.join('\n') + '\n' : '') +
+    `รวมทั้งสิ้น: ${thb(total)} บาท\n` +
+    (actorLineUserId ? `ผู้ดำเนินการ: ${actorLineUserId}` : '');
+
+  const uniqOwners = Array.from(new Set((ownerIds || []).filter(Boolean)));
+  for (const id of uniqOwners){
+    await pushText(id, summary);
+    await new Promise(r=>setTimeout(r,60));
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -5069,6 +7616,33 @@ app.post('/webhook/:tenantId', async (req, res) => {
 });
 
 
+
+// จำสถานะชั่วคราว 5 นาที
+const pendingClock = new Map(); // userId -> { type: 'in' | 'out', expire: ms }
+
+function setPending(userId, type, ttlMs = 5 * 60 * 1000) {
+  pendingClock.set(userId, { type, expire: Date.now() + ttlMs });
+}
+
+function takePending(userId) {
+  const rec = pendingClock.get(userId);
+  if (!rec) return null;
+  if (Date.now() > rec.expire) { pendingClock.delete(userId); return null; }
+  pendingClock.delete(userId);
+  return rec.type;
+}
+
+// ---------- Time Attendance (Magic Link) ----------
+    // เปิด/ปิดฟีเจอร์ TA ของ tenant
+async function isAttendanceEnabled(tenantRef) {
+  try {
+    const snap = await tenantRef.collection('integrations').doc('attendance').get();
+    return !!(snap.exists && snap.data()?.enabled);
+  } catch {
+    return false;
+  }
+}
+
 // เพิ่มเมนู/คำสั่งงานแบบภาษาพูดเข้าไปครบ ชนกับของเดิมน้อยที่สุด
 async function handleLineEvent(ev, tenantRef, accessToken) {
   const replyToken = ev.replyToken;
@@ -5194,85 +7768,352 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
     }
 
 
-    // ---------- Time Attendance (Magic Link) ----------
-    async function isAttendanceEnabled(tenantRef) {
-      const snap = await tenantRef.collection('integrations').doc('attendance').get();
-      return !!(snap.exists && snap.data()?.enabled);
-    }
+    
 
-    const jwt = require('jsonwebtoken');
+    // (ถ้าไฟล์นี้ require('jsonwebtoken') ด้านบนอยู่แล้ว ให้ลบบรรทัดนี้ทิ้งได้)
+    const _jwt = (typeof jwt !== 'undefined') ? jwt : require('jsonwebtoken');
+
     function issueMagicToken(payload, ttl) {
       const exp = process.env.MAGIC_TTL || ttl || '2h';
       if (!APP_JWT_SECRET) throw new Error('APP_JWT_SECRET is missing');
-      return jwt.sign(payload, APP_JWT_SECRET, { expiresIn: exp });
+      return _jwt.sign(payload, APP_JWT_SECRET, { expiresIn: exp }); // HS256 by default
     }
 
+
+    // helper ทำ URL /auth/magic แบบ sanitize
+    function makeMagicUrl({ base, token, tenant, next, uid }) {
+      const origin = (base || BASE_APP_URL || '').replace(/\/+$/, '');
+      const u = new URL('/auth/magic', origin);
+      const nextPath = String(next || '/app').trim();
+
+      // อนุญาตเฉพาะ path ที่ขึ้นต้นด้วย /app/ (กัน open redirect)
+      const safeNext = nextPath.startsWith('/app/') ? nextPath : '/app';
+
+      u.searchParams.set('t', token);      // /auth/magic รองรับพารามนี้อยู่แล้ว
+      u.searchParams.set('tenant', tenant);
+      u.searchParams.set('next', safeNext);
+      u.searchParams.set('uid', uid);
+      u.searchParams.set('v', String(Date.now())); // bust cache
+      return u.toString();
+    }
+
+    async function buildAdminLiffUrl(tenantRef, userId, extra = {}) {
+      if (!(await isAttendanceEnabled(tenantRef))) {
+        throw new Error('ยังไม่ได้เปิดใช้ระบบใน OA นี้');
+      }
+
+      let role = String(extra?.role || '').trim().toLowerCase();
+      if (!role) {
+        try {
+          const r = await getRoleSafe(tenantRef.id, userId, { timeoutMs: 3500 });
+          role = String(r?.role || 'user').trim().toLowerCase();
+        } catch (e) {
+          throw new Error('ดึงสิทธิ์ผู้ใช้ไม่สำเร็จ ลองใหม่อีกครั้ง');
+        }
+      }
+      const allowed = new Set(['owner','admin','developer']);
+      if (!allowed.has(role)) {
+        throw new Error('คุณไม่มีสิทธิ์เข้าหน้านี้ (admin/owner เท่านั้น)');
+      }
+
+      // หา liffId (Firestore → env)
+      let liffId = '';
+      try {
+        const cfgSnap = await tenantRef.collection('integrations').doc('attendance').get();
+        liffId = String(cfgSnap.get('adminLiffId') || cfgSnap.get('liffAdminId') || '').trim();
+      } catch {}
+      if (!liffId) {
+        liffId = String(process.env.LIFF_TA_ADMIN_ID || process.env.LIFF_TA_ID || process.env.LIFF_ADMIN_ID || '').trim();
+      }
+      if (!liffId) throw new Error('ยังไม่ได้ตั้งค่า LIFF ID สำหรับหน้าผู้ดูแล');
+
+      // ✅ ใส่ liffId ลง query เพื่อให้หน้าใช้ค่าตรงกับตัวที่ถูกเปิด
+      const qs = new URLSearchParams({
+        tenant: tenantRef.id,
+        actor: userId,
+        role,
+        liffId,               // ✅ เพิ่มบรรทัดนี้
+        ts: String(Date.now()),
+        ...(extra.view ? { view: String(extra.view) } : {}),
+        ...(extra.report ? { report: String(extra.report) } : {}),
+        ...(extra.payroll ? { payroll: String(extra.payroll) } : {}),
+      }).toString();
+
+      return `https://liff.line.me/${liffId}?${qs}`;
+    }
+
+
+
     // ผู้ใช้ทั่วไป: เริ่มลงทะเบียนโปรไฟล์
-    if (/^ลงทะเบียนเข้าใช้งาน$/i.test(text)) {
-      if (!(await isAttendanceEnabled(tenantRef))) return;
+    if (/^(ลงทะเบียนเข้าใช้งาน)$/i.test(text)) {
+      if (!(await isAttendanceEnabled(tenantRef))) {
+        return reply(replyToken, 'ยังไม่ได้เปิดใช้ระบบลงเวลาใน OA นี้', null, tenantRef);
+      }
+
       let name = (await getDisplayName(tenantRef, userId)) || 'User';
       try {
-        const gu = await callAppsScriptForTenant(tenantRef, 'get_user', { user_id: userId }, { sheetFrom: 'attendance' }).catch(()=>({}));
+        const gu = await callAppsScriptForTenant(
+          tenantRef, 'get_user', { user_id: userId }, { sheetFrom: 'attendance' }
+        ).catch(() => ({}));
         name = gu?.user?.username || gu?.user?.real_name || name;
       } catch {}
+
       const token = issueMagicToken({ uid: userId, name, role: 'user', tenant: tenantRef.id }, '2h');
-      const base = (process.env.PUBLIC_APP_URL || BASE_APP_URL).replace(/\/$/, '');
-      const u = new URL('/auth/magic', base);
-      u.searchParams.set('t', token);
-      u.searchParams.set('tenant', tenantRef.id);
-      u.searchParams.set('next', '/app/attendance/register'); // ✅ ผู้ใช้
-      u.searchParams.set('uid', userId);
-      u.searchParams.set('v', String(Date.now()));
+      const url = makeMagicUrl({
+        base: process.env.PUBLIC_APP_URL || BASE_APP_URL,
+        token, tenant: tenantRef.id,
+        next: '/app/attendance/register',
+        uid: userId
+      });
 
       const bubble = {
         type: 'bubble',
-        body: { type:'box', layout:'vertical', spacing:'sm', contents:[
-          { type:'text', text:'ลงทะเบียนเข้าใช้งาน', weight:'bold', size:'lg' },
-          { type:'text', text:`@${name}`, size:'md', wrap:true }
-        ]},
-        footer:{ type:'box', layout:'vertical', spacing:'sm', contents:[
-          { type:'button', style:'primary', height:'sm',
-            action:{ type:'uri', label:'เริ่มลงทะเบียน', uri:u.toString() } }
-        ], flex:0 }
+        body: {
+          type: 'box', layout: 'vertical', spacing: 'sm',
+          contents: [
+            { type: 'text', text: 'ลงทะเบียนเข้าใช้งาน', weight: 'bold', size: 'lg' },
+            { type: 'text', text: `@${name}`, size: 'md', wrap: true }
+          ]
+        },
+        footer: {
+          type: 'box', layout: 'vertical', spacing: 'sm', flex: 0,
+          contents: [
+            {
+              type: 'button', style: 'primary', height: 'sm',
+              action: { type: 'uri', label: 'เริ่มลงทะเบียน', uri: url }
+            }
+          ]
+        }
       };
-      return replyFlex(replyToken, bubble, null, tenantRef);
+
+      return replyFlex(replyToken, bubble, 'เริ่มลงทะเบียนเข้าใช้งาน', tenantRef);
+      
     }
 
-    // แอดมิน/เจ้าของ: เปิดหน้าตั้งค่า (จับ "ตั้งค่า" ด้วย)
-    if (/^(ตั้งค่า|ตั้งค่า\s*TA|ตั้งค่า\s*Attendance)$/i.test(text)) {
-      if (!(await isAttendanceEnabled(tenantRef))) return;
-      let role = 'user', name = (await getDisplayName(tenantRef, userId)) || 'User';
-      try {
-        const gu = await callAppsScriptForTenant(tenantRef, 'get_user', { user_id: userId }, { sheetFrom: 'attendance' }).catch(()=>({}));
-        role = String(gu?.user?.role || 'user').toLowerCase();
-        name = gu?.user?.username || gu?.user?.real_name || name;
-      } catch {}
-      if (!['developer','admin','supervisor','owner','payroll'].includes(role)) {
-        return reply(replyToken, 'ขออภัย คุณไม่มีสิทธิ์เปิดหน้าตั้งค่า', null, tenantRef);
+    async function requireAdminRole(tenantRef, userId) {
+      const r = await getRoleViaGAS(tenantRef.id, userId).catch(() => null);
+      const role = String(r?.role || '').trim().toLowerCase();
+      if (!['owner', 'admin', 'developer'].includes(role)) {
+        throw new Error('คุณไม่มีสิทธิ์เข้าหน้านี้ (admin/owner เท่านั้น)');
       }
-      const token = issueMagicToken({ uid: userId, name, role, tenant: tenantRef.id }, '2h');
-      const base = (process.env.PUBLIC_APP_URL || BASE_APP_URL).replace(/\/$/, '');
-      const u = new URL('/auth/magic', base);
-      u.searchParams.set('t', token);
-      u.searchParams.set('tenant', tenantRef.id);
-      u.searchParams.set('next', '/app/attendance/settings'); // ✅ แอดมิน
-      u.searchParams.set('uid', userId);
-      u.searchParams.set('v', String(Date.now()));
+      return role;
+    }
 
+
+    // ===== Admin Settings =====
+    
+    if (/^ตั้งค่า$/i.test(text)) {
+      const t0 = Date.now();
+      const dbgOn = String(process.env.DEBUG_WEBHOOK || '').trim() !== '';
+      const dbg = (msg, extra={}) => { if (dbgOn) console.log(`[ADMIN][SETUP] ${msg}`, extra); };
+
+      try {
+        dbg('incoming', { tenant: tenantRef.id, userId, text });
+
+        // 1) เปิดใช้ระบบหรือยัง
+        const enabled = await isAttendanceEnabled(tenantRef);
+        dbg('attendance enabled?', { enabled });
+        if (!enabled) {
+          return reply(replyToken, 'ยังไม่ได้เปิดใช้ระบบใน OA นี้', null, tenantRef);
+        }
+
+        // 2) ต้องมีสิทธิ์จากชีต
+        let role;
+        try {
+          role = await requireAdminRole(tenantRef, userId);
+          dbg('role via GAS', { role });
+        } catch (e) {
+          dbg('forbidden', { reason: e?.message || e });
+          return reply(replyToken, 'คุณไม่มีสิทธิ์เข้าหน้าตั้งค่า (admin/owner เท่านั้น)', null, tenantRef);
+        }
+
+        // 3) สร้าง URL (ส่ง role เข้าไปด้วย)
+        const url = await buildAdminLiffUrl(tenantRef, userId, { view: 'menu', role });
+        dbg('final LIFF url', { url });
+
+        // 4) ส่ง Flex
+        const bubble = {
+          type: 'bubble',
+          body: { type: 'box', layout: 'vertical', contents: [
+            { type: 'text', text: 'หน้าตั้งค่า (ผู้ดูแล)', weight: 'bold', size: 'lg' },
+            { type: 'text', text: 'จัดการผู้ใช้งาน / การจ่าย / สิทธิ์', size: 'sm', color: '#666666' }
+          ]},
+          footer: { type: 'box', layout: 'vertical', contents: [
+            { type: 'button', style: 'primary',
+              action: { type: 'uri', label: 'เปิดหน้าตั้งค่า', uri: url } }
+          ]}
+        };
+
+        const r = await replyFlex(replyToken, bubble, 'เปิดหน้าตั้งค่า', tenantRef);
+        dbg('replied flex', { ms: Date.now() - t0, ok: !!r });
+        return r;
+
+      } catch (err) {
+        console.error('[ADMIN][SETUP] unexpected error:', err?.stack || err);
+        return reply(replyToken, 'เกิดข้อผิดพลาดภายใน (ADMIN/LIFF)', null, tenantRef);
+      }
+    }
+
+
+    // บันทึกการทำงาน → เปิดแท็บ logs
+    if (/^บันทึกการทำงาน$/i.test(text)) {
+      try {
+        const role = await requireAdminRole(tenantRef, userId);
+        const url = await buildAdminLiffUrl(tenantRef, userId, { view: 'logs', role });
+        const bubble = {
+          type: 'bubble',
+          body: { type:'box', layout:'vertical', contents:[
+            { type:'text', text:'บันทึกการทำงาน', weight:'bold', size:'lg' },
+            { type:'text', text:'ดูเข้า-ออกงาน + สรุปเดือน', size:'sm', color:'#666666' }
+          ]},
+          footer: { type:'box', layout:'vertical', contents:[
+            { type:'button', style:'primary', action:{ type:'uri', label:'เปิดรายการลงเวลา', uri: url } }
+          ]}
+        };
+        return replyFlex(replyToken, bubble, 'เปิดรายการลงเวลา', tenantRef);
+      } catch (e) {
+        return reply(replyToken, String(e.message || e), null, tenantRef);
+      }
+    }
+
+
+    // ทำเงินเดือน → ใช้หน้าสรุปเดือนก่อน (ส่ง flag payroll=1 เผื่อใช้ในหน้า)
+    if (/^ทำเงินเดือน$/i.test(text)) {
+      try {
+        const role = await requireAdminRole(tenantRef, userId);
+        const url = await buildAdminLiffUrl(tenantRef, userId, { view: 'logs', payroll: 1, role });
+        const bubble = {
+          type: 'bubble',
+          body: { type:'box', layout:'vertical', contents:[
+            { type:'text', text:'ทำเงินเดือน', weight:'bold', size:'lg' },
+            { type:'text', text:'สรุปชั่วโมง/วัน หักสาย แล้วคำนวณเบื้องต้น', size:'sm', color:'#666666' }
+          ]},
+          footer: { type:'box', layout:'vertical', contents:[
+            { type:'button', style:'primary', action:{ type:'uri', label:'เปิดสรุปเดือน', uri: url } }
+          ]}
+        };
+        return replyFlex(replyToken, bubble, 'เปิดสรุปเดือน', tenantRef);
+      } catch (e) {
+        return reply(replyToken, String(e.message || e), null, tenantRef);
+      }
+    }
+
+
+    // รายงาน → เปิด logs พร้อมโหมดรายงาน (report=1)
+    if (/^รายงาน$/i.test(text)) {
+      try {
+        const role = await requireAdminRole(tenantRef, userId);
+        const url = await buildAdminLiffUrl(tenantRef, userId, { view: 'logs', report: 1, role });
+        const bubble = {
+          type: 'bubble',
+          body: { type:'box', layout:'vertical', contents:[
+            { type:'text', text:'รายงาน', weight:'bold', size:'lg' },
+            { type:'text', text:'ดูรายงานการทำงาน/เงินเดือน', size:'sm', color:'#666666' }
+          ]},
+          footer: { type:'box', layout:'vertical', contents:[
+            { type:'button', style:'primary', action:{ type:'uri', label:'เปิดรายงาน', uri: url } }
+          ]}
+        };
+        return replyFlex(replyToken, bubble, 'เปิดรายงาน', tenantRef);
+      } catch (e) {
+        return reply(replyToken, String(e.message || e), null, tenantRef);
+      }
+    }
+
+
+
+
+    
+    if (/^(ลงเวลา|ออกงาน)$/i.test(text)) {
+      if (!(await isAttendanceEnabled(tenantRef))) {
+        return reply(replyToken, 'ยังไม่ได้เปิดใช้ระบบลงเวลาใน OA นี้', null, tenantRef);
+      }
+
+      const kind = /^ลงเวลา$/i.test(text) ? 'in' : 'out'; // in | out
+
+      // 1) หา LIFF ID: ให้ค่าใน Firestore override ได้, ถ้าไม่มีก็ใช้ .env
+      let liffId = '';
+      try {
+        const cfgSnap = await tenantRef.collection('integrations').doc('attendance').get();
+        liffId = String(cfgSnap.get('liffId') || '').trim();
+      } catch {}
+      if (!liffId) liffId = String(process.env.LIFF_TA_CLOCK_ID || '').trim();
+
+      if (!liffId) {
+        return reply(
+          replyToken,
+          'ยังไม่ได้ตั้งค่า LIFF ID (กรุณาตั้งค่า .env: LIFF_TA_CLOCK_ID หรือ integrations.attendance.liffId)',
+          null,
+          tenantRef
+        );
+      }
+
+      // 2) ลิงก์ไปหน้า /public/ta-clock.html ผ่าน LIFF และ "ส่ง liffId ไปใน query"
+      const liffUrl = `https://liff.line.me/${encodeURIComponent(liffId)}?tenant=${tenantRef.id}&type=${kind}&liffId=${encodeURIComponent(liffId)}`;
+      
+      console.log('[TA][LIFF] using', { liffId, liffUrl });   // <--- เพิ่มบรรทัดนี้
+
+      const name = (await getDisplayName(tenantRef, userId)) || 'User';
       const bubble = {
-        type:'bubble',
-        body:{ type:'box', layout:'vertical', spacing:'sm', contents:[
-          { type:'text', text:'ตั้งค่า Time Attendance', weight:'bold', size:'lg' },
+        type: 'bubble',
+        body: { type: 'box', layout: 'vertical', spacing: 'sm', contents: [
+          { type: 'text', text: kind === 'in' ? 'ลงเวลาเข้า' : 'ลงเวลาออก', weight: 'bold', size: 'lg' },
+          { type: 'text', text: `@${name}`, size: 'md', wrap: true }
+        ]},
+        footer: { type: 'box', layout: 'vertical', spacing: 'sm', flex: 0, contents: [
+          { type: 'button', style: 'primary', height: 'sm',
+            action: { type: 'uri', label: 'เปิดหน้าลงเวลา', uri: liffUrl } }
+        ]}
+      };
+
+      return replyFlex(replyToken, bubble, 'เปิดหน้าลงเวลา', tenantRef);
+    }
+
+
+    if (/^ลางาน$/i.test(text)) {
+      // เปิดใช้ฟีเจอร์?
+      if (!(await isAttendanceEnabled(tenantRef))) {
+        return reply(replyToken, 'ยังไม่ได้เปิดใช้ระบบลางานใน OA นี้', null, tenantRef);
+      }
+
+      // 1) หา LIFF ID: Firestore override ได้, ไม่มีก็ใช้ .env (LIFF_TA_LEAVE_ID)
+      let liffId = '';
+      try {
+        const cfgSnap = await tenantRef.collection('integrations').doc('attendance').get();
+        liffId = String(cfgSnap.get('leaveLiffId') || cfgSnap.get('liffLeaveId') || '').trim();
+      } catch {}
+      if (!liffId) liffId = String(process.env.LIFF_TA_LEAVE_ID || '').trim();
+
+      if (!liffId) {
+        return reply(
+          replyToken,
+          'ยังไม่ได้ตั้งค่า LIFF ID สำหรับลางาน (ตั้งค่า .env: LIFF_TA_LEAVE_ID หรือ integrations.attendance.leaveLiffId)',
+          null,
+          tenantRef
+        );
+      }
+
+      // 2) ส่งลิงก์ LIFF ไปหน้า ta-leave.html (เผื่อคุณอยากดู query ในหน้า)
+      const liffUrl = `https://liff.line.me/${encodeURIComponent(liffId)}?tenant=${tenantRef.id}&liffId=${encodeURIComponent(liffId)}`;
+      console.log('[LEAVE][LIFF] using', { liffId, liffUrl });
+
+      const name = (await getDisplayName(tenantRef, userId)) || 'User';
+      const bubble = {
+        type: 'bubble',
+        body: { type:'box', layout:'vertical', spacing:'sm', contents:[
+          { type:'text', text:'ขอลางาน', weight:'bold', size:'lg' },
           { type:'text', text:`@${name}`, size:'md', wrap:true }
         ]},
-        footer:{ type:'box', layout:'vertical', spacing:'sm', contents:[
+        footer: { type:'box', layout:'vertical', spacing:'sm', flex:0, contents:[
           { type:'button', style:'primary', height:'sm',
-            action:{ type:'uri', label:'เปิดหน้าตั้งค่า', uri:u.toString() } }
-        ], flex:0 }
+            action:{ type:'uri', label:'เปิดหน้าลางาน', uri:liffUrl } }
+        ]}
       };
-      return replyFlex(replyToken, bubble, null, tenantRef);
+      return replyFlex(replyToken, bubble, 'เปิดหน้าลางาน', tenantRef);
     }
+
     // ---------- /Time Attendance ----------
+
 
 
 
@@ -6873,43 +9714,6 @@ function toAbsoluteAssetUrl(p) {
 
 // ==== [ATTENDANCE] Rich Menu Helpers ====
 
-async function lineAPI(tenantRef, path, init) {
-  const token = await getTenantSecretAccessToken(tenantRef);
-  const res = await fetch(`https://api.line.me${path}`, {
-    method: init?.method || 'GET',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      ...(init?.headers||{})
-    },
-    body: init?.body
-  });
-  if (!res.ok) {
-    const t = await res.text().catch(()=> '');
-    throw new Error(`LINE API ${path} ${res.status} ${t}`);
-  }
-  return res;
-}
-
-// ==== [ATTENDANCE] Rich Menu Helpers ====
-
-// (ของเดิม)
-async function lineAPI(tenantRef, path, init) {
-  const token = await getTenantSecretAccessToken(tenantRef);
-  const res = await fetch(`https://api.line.me${path}`, {
-    method: init?.method || 'GET',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      ...(init?.headers||{})
-    },
-    body: init?.body
-  });
-  if (!res.ok) {
-    const t = await res.text().catch(()=> '');
-    throw new Error(`LINE API ${path} ${res.status} ${t}`);
-  }
-  return res;
-}
-
 // ⬇️ วาง helper นี้ต่อจาก lineAPI
 async function deleteRichMenuSafe(tenantRef, richMenuId) {
   if (!richMenuId) return;
@@ -6950,7 +9754,7 @@ async function disableAttendanceRichMenus(tenantRef, {
   if (Array.isArray(unlinkUserIds) && unlinkUserIds.length) {
     for (const uid of unlinkUserIds) {
       try {
-        await unlinkRichMenuFromUser(accessToken, uid);
+        await unlinkRichMenuFromUserByToken(accessToken, uid);
         await new Promise(r => setTimeout(r, 60)); // กัน rate limit
       } catch (e) {
         console.warn('[ATTEND/DISABLE] unlink user failed', uid, e?.status || e?.message || e);
@@ -6960,11 +9764,11 @@ async function disableAttendanceRichMenus(tenantRef, {
 
   // 4) ถ้าต้องการลบทิ้งจริง ๆ → ลบเมนู ADMIN_TA / USER_TA (ถ้ามีเก็บไว้)
   if (deleteMenus) {
-    const kinds = ['ADMIN_TA', 'USER_TA'];
+    const kinds = ['ADMIN_TA', 'USER_TA', 'ATTEND_MAIN_ADMIN', 'ATTEND_MAIN_USER'];
     for (const k of kinds) {
       try {
         const snap = await tenantRef.collection('richmenus').doc(k).get();
-        const id = snap.exists ? (snap.get('lineId') || snap.get('richMenuId')) : '';
+        const id = snap.exists ? (snap.get('lineId') || snap.get('richMenuId') || snap.get('lineRichMenuId')) : '';
         if (id) await deleteRichMenuSafe(tenantRef, id);
       } catch (e) {
         console.warn('[ATTEND/DISABLE] delete menu failed', k, e?.status || e?.message || e);
@@ -6983,260 +9787,7 @@ async function disableAttendanceRichMenus(tenantRef, {
 
 
 
-// ==== [ATTENDANCE] Rich Menu Helpers (safe ensure) ====
 
-
-async function ensureRichMenu(tenantRef, kind, imageUrl, areasPx) {
-  const kindDoc = tenantRef.collection('richmenus').doc(kind);
-  const old = await kindDoc.get();
-  let richMenuId = old.exists ? (old.data().lineId || old.data().richMenuId) : '';
-
-  // ✅ คำนวณ / ทำความสะอาดพิกัดปุ่มล่วงหน้า
-  const SAFE_MIN_X = 900; // ✅ เว้นฝั่งซ้ายทั้งแผง
-  let areas = (typeof normalizeAreas === 'function')
-    ? normalizeAreas(areasPx || [])
-    : (areasPx || []).map(a => ({
-        bounds: {
-          x: Math.round(a.bounds?.x || 0),
-          y: Math.round(a.bounds?.y || 0),
-          width:  Math.round(a.bounds?.width  || 0),
-          height: Math.round(a.bounds?.height || 0),
-        },
-        action: a.action,
-      }));
-
-  // ✅ ดันทุกปุ่มไปอยู่ครึ่งขวา (เริ่มอย่างน้อย x=1260)
-  areas = forceRightHalf(areas, { minX: 1260, maxW: 2500, canvasH: 1686 });
-
-  // helper สำหรับสร้างใหม่
-  const createNew = async () => {
-    const payload = {
-      size: { width: 2500, height: 1686 },
-      selected: false,
-      name: kind,
-      chatBarText: 'เมนูลัด',
-      areas, // ✅ ใช้พิกัดที่ normalize แล้วเสมอ
-    };
-    const res = await callLineAPITenant(tenantRef, '/v2/bot/richmenu', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    const j = await res.json().catch(()=> ({}));
-    if (!res.ok || !j.richMenuId) {
-      console.error('[richmenu/create] fail', res.status, j);
-      throw new Error('richmenu_create_failed');
-    }
-    richMenuId = j.richMenuId;
-    await kindDoc.set({ kind, richMenuId, lineId: richMenuId, updatedAt: Date.now() }, { merge: true });
-    return richMenuId;
-  };
-
-  // ถ้าไม่มี id → สร้างใหม่
-  if (!richMenuId) await createNew();
-
-  // อัปโหลดรูป
-  if (imageUrl) {
-    const accessToken = await getTenantSecretAccessToken(tenantRef);
-    const absUrl = toAbsoluteAssetUrl(imageUrl);
-    try {
-      await uploadImageToLINE({ accessToken, richMenuId, imageUrl: absUrl, size: 'large' });
-    } catch (e) {
-      const msg = String(e?.message || e);
-
-      if (msg.includes('An image has already been uploaded')) {
-        console.warn(`[ensureRichMenu] image already exists → delete & recreate (${kind})`);
-        await deleteRichMenuSafe(tenantRef, richMenuId);
-        await createNew();
-        await uploadImageToLINE({ accessToken, richMenuId, imageUrl: absUrl, size: 'large' });
-
-      } else if (msg.includes('404')) {
-        console.warn(`[ensureRichMenu] stale richMenuId → recreate (${kind})`);
-        await createNew();
-        await uploadImageToLINE({ accessToken, richMenuId, imageUrl: absUrl, size: 'large' });
-
-      } else {
-        throw e;
-      }
-    }
-
-    // ✅ ตรวจสอบพิกัดจากฝั่ง LINE เทียบของเรา
-    try {
-      const d = await getRichMenuDetail(accessToken, richMenuId); // <-- แก้เป็น accessToken
-      const lineAreas = Array.isArray(d.areas) ? d.areas.length : 0;
-      console.log(`[VERIFY LINE AREAS][${kind}]`, {
-        sent: areas.length,
-        line: lineAreas,
-        size: `${d.size?.width}x${d.size?.height}`,
-      });
-      console.log(`[VERIFY LINE BOUNDS][${kind}]`, Array.isArray(d.areas) ? d.areas.map(a => a.bounds) : d.areas);
-    } catch (e) {
-      console.warn('[VERIFY LINE AREAS] skip', e?.message || e);
-    }
-  }
-
-  return richMenuId;
-}
-
-// ดันทุกปุ่มไปอยู่ฝั่งขวาให้หมด + กันเลยขอบ
-function forceRightHalf(areas, { minX = 1260, maxW = 2500, canvasH = 1686 } = {}) {
-  if (!Array.isArray(areas)) return [];
-
-  // ถ้าปุ่มใดๆ หลุดซ้ายกว่า minX ให้ "เลื่อนทั้งชุด" ไปทางขวาด้วย delta เดียวกัน
-  const minXNow = Math.min(...areas.map(a => Math.round(a?.bounds?.x || 0)));
-  const delta = minXNow < minX ? (minX - minXNow) : 0;
-
-  return areas.map(a => {
-    const bx = Math.round((a.bounds?.x || 0) + delta);
-    const by = Math.round(a.bounds?.y || 0);
-    const bw = Math.round(a.bounds?.width || 1);
-    const bh = Math.round(a.bounds?.height || 1);
-
-    // บังคับไม่ให้หลุดซ้าย และให้กว้างไม่เกินขอบขวา
-    const x = Math.max(minX, Math.min(maxW - 1, bx));
-    const width = Math.max(1, Math.min(bw, maxW - x));
-    const y = Math.max(0, Math.min(canvasH - 1, by));
-    const height = Math.max(1, Math.min(bh, canvasH - y));
-
-    return { bounds: { x, y, width, height }, action: a.action };
-  });
-}
-
-
-// GET /v2/bot/richmenu/{richMenuId}
-
-async function getRichMenuDetail(accessToken, richMenuId) {
-  if (!accessToken) throw new Error('missing_access_token');
-  if (!richMenuId) throw new Error('missing_rich_menu_id');
-
-  const res = await callLineAPI(
-    `/v2/bot/richmenu/${encodeURIComponent(richMenuId)}`,
-    { method: 'GET' },
-    accessToken
-  );
-  const txt = await res.text().catch(()=> '');
-  if (!res.ok) {
-    console.error('[richmenu/detail] fail', res.status, txt);
-    throw new Error(`line_richmenu_detail_error: ${txt || res.statusText}`);
-  }
-  return JSON.parse(txt || '{}'); // { size, areas, chatBarText, ... }
-}
-
-
-
-// 2x2 grid helper (ภาพ 2500x1686)
-function gridArea(x, y, w, h, action) {
-  return { bounds: { x, y, width: w, height: h }, action };
-}
-// แทนที่ฟังก์ชันเดิมสองตัวนี้ทั้งหมด
-
-function buildAdminAreas(liffId, tenantId) {
-  // ใช้เฉพาะฝั่งขวาของภาพ 2500x1686 (เว้นซ้าย 900px)
-  const CANVAS_W = 2500, CANVAS_H = 1686;
-  const LEFT_BANNER_W = 900;   // เว้นรูปคนด้านซ้าย
-  const G_X = 40, G_Y = 60;    // gutter
-
-  const RIGHT_W = CANVAS_W - LEFT_BANNER_W;                 // 1600
-  const TILE_W  = Math.floor((RIGHT_W - (3 * G_X)) / 2);    // 740
-  const TILE_H  = Math.floor((CANVAS_H - (3 * G_Y)) / 2);   // 753
-  const X1 = LEFT_BANNER_W + G_X;                           // 940
-  const X2 = X1 + TILE_W + G_X;                             // 1720
-  const Y1 = G_Y;                                           // 60
-  const Y2 = Y1 + TILE_H + G_Y;                             // 873
-
-  // ใช้ข้อความไทยเดิมที่บอทคุณจับอยู่
-  return [
-    { bounds:{ x:X1, y:Y1, width:TILE_W, height:TILE_H }, action:{ type:'message', text:'ลงเวลา' } },
-    { bounds:{ x:X2, y:Y1, width:TILE_W, height:TILE_H }, action:{ type:'message', text:'ทำเงินเดือน' } },
-    { bounds:{ x:X1, y:Y2, width:TILE_W, height:TILE_H }, action:{ type:'message', text:'รายงาน' } },
-    { bounds:{ x:X2, y:Y2, width:TILE_W, height:TILE_H },
-      action: liffId
-        ? { type:'uri',
-           uri:`https://liff.line.me/${liffId}?liff.state=${encodeURIComponent(`/liff/attendance/settings?tenant=${tenantId}`)}` }
-        : { type:'message', text:'ตั้งค่า' } },
-  ];
-}
-
-function buildUserAreas(liffId, tenantId) {
-  // ใช้เฉพาะฝั่งขวาของภาพ 2500x1686 (เว้นซ้าย 900px)
-  const CANVAS_W = 2500, CANVAS_H = 1686;
-  const LEFT_BANNER_W = 900;
-  const G_X = 40, G_Y = 60;
-
-  const RIGHT_W = CANVAS_W - LEFT_BANNER_W;                 // 1600
-  const TILE_W  = Math.floor((RIGHT_W - (3 * G_X)) / 2);    // 740
-  const TILE_H  = Math.floor((CANVAS_H - (3 * G_Y)) / 2);   // 753
-  const X1 = LEFT_BANNER_W + G_X;                           // 940
-  const X2 = X1 + TILE_W + G_X;                             // 1720
-  const Y1 = G_Y;                                           // 60
-  const Y2 = Y1 + TILE_H + G_Y;                             // 873
-
-  return [
-    { bounds:{ x:X1, y:Y1, width:TILE_W, height:TILE_H }, action:{ type:'message', text:'ลงเวลา' } },
-    { bounds:{ x:X2, y:Y1, width:TILE_W, height:TILE_H }, action:{ type:'message', text:'ออกงาน' } },
-    { bounds:{ x:X1, y:Y2, width:TILE_W, height:TILE_H }, action:{ type:'message', text:'ลางาน' } },
-    { bounds:{ x:X2, y:Y2, width:TILE_W, height:TILE_H },
-     action: liffId
-       ? { type:'uri',
-           uri:`https://liff.line.me/${liffId}?liff.state=${encodeURIComponent(`/liff/attendance/register?tenant=${tenantId}`)}` }
-       : { type:'message', text:'ลงทะเบียน' } },
-  ];
-}
-
-
-async function applyAttendanceRichMenus(tenant, cfg) {
-  const tenantRef = tenant.ref;
-  const tenantId = tenant?.id || tenantRef?.id;              // <<— id ของ tenant
-  const liffId   = cfg.liffId || process.env.LIFF_ID || '';  // <<— กันลืมกรอกในหน้าเว็บ
-
-  // 1) สร้าง/อัปโหลดรูป เมนู 2 แบบ
-  const adminRM = await ensureRichMenu(
-    tenantRef, 'ATTEND_MAIN_ADMIN', cfg.adminMenuImageUrl, buildAdminAreas(liffId, tenantId)
-  );
-  const userRM  = await ensureRichMenu(
-    tenantRef, 'ATTEND_MAIN_USER',  cfg.userMenuImageUrl,  buildUserAreas(liffId, tenantId)
-  );
-
-  console.log('[DEBUG AREA ADMIN]', JSON.stringify(buildAdminAreas(liffId, tenantId)));
-  console.log('[DEBUG AREA USER]',  JSON.stringify(buildUserAreas(liffId, tenantId)));
-
-  // 2) ดึงรายชื่อผู้ใช้ + role
-  // ใช้ GAS เดิม: list_users → { users: [{user_id, role}, ...] }
-  const gu = await callAppsScriptForTenant(tenantRef, 'list_users', {});
-  const users = Array.isArray(gu?.users) ? gu.users : [];
-
-  const ADMIN_ROLES = new Set(['owner','admin','payroll','supervisor','developer']);
-  const admins = users.filter(u => ADMIN_ROLES.has(String(u.role||'').toLowerCase()));
-  const normals= users.filter(u => !ADMIN_ROLES.has(String(u.role||'').toLowerCase()));
-
-  // 3) ผูกเมนูให้ผู้ใช้ตาม role
-  await linkRichMenuMany(tenantRef, adminRM, admins.map(u => u.user_id));
-  await linkRichMenuMany(tenantRef, userRM,  normals.map(u => u.user_id));
-
-  // (ออปชัน) ตั้ง default ให้ผู้ใช้ใหม่
-  await tenantRef.collection('richmenus').doc('ATTEND_DEFAULTS').set({
-    adminRichMenuId: adminRM,
-    userRichMenuId: userRM,
-    updatedAt: Date.now()
-  }, { merge:true });
-
-  return { ok:true, adminRM, userRM };
-}
-// ---- batch link by reusing your linkRichMenuToUser ----
-function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
-
-async function linkRichMenuMany(tenantRef, richMenuId, userIds, { delayMs = 60 } = {}) {
-  if (!Array.isArray(userIds) || !userIds.length) return;
-  for (const uid of userIds) {
-    try {
-      await linkRichMenuToUser(tenantRef, uid, richMenuId); // <<— ใช้ของเดิม
-      // หน่วงนิดนึงกัน 429 (ปรับได้ตามจำนวนผู้ใช้)
-      if (delayMs) await sleep(delayMs);
-    } catch (e) {
-      console.error('[richmenu link][uid=' + uid + ']', e?.status || e);
-    }
-  }
-}
 
 // ========== Time Attendance: Preset Areas (2x2) ==========
 // ขนาด large = 2500×1686 → แบ่ง 2 คอลัมน์ × 2 แถว
@@ -7262,7 +9813,7 @@ const area = (x, y, w, h, action) => ({ bounds: { x, y, width: w, height: h }, a
 
 // ✅ SHARED TA PRESETS (Thai, right-half only)
 const ATTEND_ADMIN_AREAS_TH = [
-  area(X1, Y1, TILE_W, TILE_H, { type: 'message', text: 'ลงเวลา' }),
+  area(X1, Y1, TILE_W, TILE_H, { type: 'message', text: 'บันทึกการทำงาน' }),
   area(X2, Y1, TILE_W, TILE_H, { type: 'message', text: 'ทำเงินเดือน' }),
   area(X1, Y2, TILE_W, TILE_H, { type: 'message', text: 'รายงาน' }),
   area(X2, Y2, TILE_W, TILE_H, { type: 'message', text: 'ตั้งค่า' }),
@@ -7271,7 +9822,7 @@ const ATTEND_USER_AREAS_TH = [
   area(X1, Y1, TILE_W, TILE_H, { type: 'message', text: 'ลงเวลา' }),
   area(X2, Y1, TILE_W, TILE_H, { type: 'message', text: 'ออกงาน' }),
   area(X1, Y2, TILE_W, TILE_H, { type: 'message', text: 'ลางาน' }),
-  area(X2, Y2, TILE_W, TILE_H, { type: 'message', text: 'ลงทะเบียน' }),
+  area(X2, Y2, TILE_W, TILE_H, { type: 'message', text: 'ลงทะเบียนเข้าใช้งาน' }),
 ];
 
 // รูป preset (เสิร์ฟจาก /public/static)
@@ -7279,51 +9830,51 @@ const ATTEND_ADMIN_IMG = `${BASE_APP_URL}/static/hr_menu_admin.png`;
 const ATTEND_USER_IMG  = `${BASE_APP_URL}/static/ta_menu_user.png`;
 
 
-// ช่วยเลือกว่าบทบาทไหนจัดเป็น admin-like
-function isAdminLikeRole(role) {
-  const r = String(role || '').toLowerCase();
-  return ['developer','admin','supervisor'].includes(r);
-}
+// // ช่วยเลือกว่าบทบาทไหนจัดเป็น admin-like
+// function isAdminLikeRole(role) {
+//   const r = String(role || '').toLowerCase();
+//   return ['developer','admin','supervisor'].includes(r);
+// }
 
-async function ensureAttendanceRichMenu(tenantRef, kind /* 'ADMIN_TA' | 'USER_TA' | 'ATTEND_MAIN_ADMIN' | 'ATTEND_MAIN_USER' */) {
-  const ref  = tenantRef.collection('richmenus').doc(kind);
-  const snap = await ref.get();
-  const data = snap.exists ? (snap.data() || {}) : {};
+// async function ensureAttendanceRichMenu(tenantRef, kind /* 'ADMIN_TA' | 'USER_TA' | 'ATTEND_MAIN_ADMIN' | 'ATTEND_MAIN_USER' */) {
+//   const ref  = tenantRef.collection('richmenus').doc(kind);
+//   const snap = await ref.get();
+//   const data = snap.exists ? (snap.data() || {}) : {};
 
-  // รองรับชื่อเก่า/ใหม่ แต่ใช้ preset ไทยชุดเดียวกัน
-  const adminLike = (kind === 'ADMIN_TA' || kind === 'ATTEND_MAIN_ADMIN');
-  const title     = adminLike ? 'ATTEND_MAIN_ADMIN' : 'ATTEND_MAIN_USER';
-  const imageUrl  = adminLike ? ATTEND_ADMIN_IMG : ATTEND_USER_IMG;
-  const areasPx   = adminLike ? ATTEND_ADMIN_AREAS_TH : ATTEND_USER_AREAS_TH;
+//   // รองรับชื่อเก่า/ใหม่ แต่ใช้ preset ไทยชุดเดียวกัน
+//   const adminLike = (kind === 'ADMIN_TA' || kind === 'ATTEND_MAIN_ADMIN');
+//   const title     = adminLike ? 'ATTEND_MAIN_ADMIN' : 'ATTEND_MAIN_USER';
+//   const imageUrl  = adminLike ? ATTEND_ADMIN_IMG : ATTEND_USER_IMG;
+//   const areasPx   = adminLike ? ATTEND_ADMIN_AREAS_TH : ATTEND_USER_AREAS_TH;
 
-  if (data.lineRichMenuId && data.imageUrl && Array.isArray(data.areas) && data.areas.length) {
-    return data.lineRichMenuId;
-  }
+//   if (data.lineRichMenuId && data.imageUrl && Array.isArray(data.areas) && data.areas.length) {
+//     return data.lineRichMenuId;
+//   }
 
-  const accessToken = await getTenantSecretAccessToken(tenantRef);
-  const { richMenuId } = await createAndUploadRichMenuOnLINE({
-    accessToken,
-    title,
-    chatBarText: 'เมนู',
-    size: 'large',
-    areasPx,
-    imageUrl: toAbsoluteAssetUrl(imageUrl),
-  });
+//   const accessToken = await getTenantSecretAccessToken(tenantRef);
+//   const { richMenuId } = await createAndUploadRichMenuOnLINE({
+//     accessToken,
+//     title,
+//     chatBarText: 'เมนู',
+//     size: 'large',
+//     areasPx,
+//     imageUrl: toAbsoluteAssetUrl(imageUrl),
+//   });
 
-  await ref.set({
-    kind,
-    title,
-    size: 'large',
-    chatBarText: 'เมนู',
-    imageUrl,
-    areas: areasPx,
-    lineRichMenuId: richMenuId,
-    status: 'ready',
-    updatedAt: new Date(),
-  }, { merge: true });
+//   await ref.set({
+//     kind,
+//     title,
+//     size: 'large',
+//     chatBarText: 'เมนู',
+//     imageUrl,
+//     areas: areasPx,
+//     lineRichMenuId: richMenuId,
+//     status: 'ready',
+//     updatedAt: new Date(),
+//   }, { merge: true });
 
-  return richMenuId;
-}
+//   return richMenuId;
+// }
 
 
 
@@ -7360,27 +9911,22 @@ app.post('/api/tenants/:tid/integrations/attendance', express.json(), async (req
     ];
     const data = {};
     for (const k of allowed) if (req.body[k] !== undefined) data[k] = req.body[k];
-
+    
+    // ถ้า user เซ็ต enabled=true แต่ยังไม่มี sheet → ปัดตกตั้งแต่ save (กันพลาด)
+    if (data.enabled === true) {
+      const appsSheetId = String(data.appsSheetId || '').trim();
+      if (!appsSheetId) {
+        return res.status(400).json({ ok:false, error:'appsSheetId_required_before_enable' });
+      }
+    }
     await tenant.ref.collection('integrations').doc('attendance').set({
       ...data,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedBy: req.user.uid,
     }, { merge: true });
-    try {
-      // ถ้าเปิดใช้งาน + เปิด auto apply + มีรูปครบ → สร้าง/ผูก Rich Menu
-      if (data.enabled && data.autoApplyRichMenu !== false) {
-        const cfgSnap = await tenant.ref.collection('integrations').doc('attendance').get();
-        const cfg = { ...(cfgSnap.exists ? cfgSnap.data() : {}), ...data };
-
-        if (!cfg.adminMenuImageUrl || !cfg.userMenuImageUrl) {
-          console.warn('[attendance] skip apply rich menu: missing image url');
-        } else {
-          await applyAttendanceRichMenus(tenant, cfg);
-        }
-      }
-    } catch (e) {
-      console.error('[attendance] auto apply rich menu failed', e);
-    }
+    
+    // ❌ ไม่ auto-apply ที่นี่อีกต่อไป — ให้ไปกด /enable เท่านั้น
+    // เหตุผล: ลดโอกาสชน rid เก่า/รูปไม่ครบ แล้วเด้ง 404
     return res.json({ ok:true });
   } catch (e) {
     console.error('[attendance:post]', e);
@@ -7389,8 +9935,40 @@ app.post('/api/tenants/:tid/integrations/attendance', express.json(), async (req
 });
 
 
+app.get('/debug/attendance/richmenus/:tenantId', async (req, res) => {
+  try {
+    const { tenantId } = req.params;
+    const tRef = db.collection('tenants').doc(tenantId);
+    const accessToken = await getTenantSecretAccessToken(tRef);
+
+    const adminSnap = await tRef.collection('richmenus').doc('ATTEND_MAIN_ADMIN').get();
+    const userSnap  = await tRef.collection('richmenus').doc('ATTEND_MAIN_USER').get();
+    const adminId = (adminSnap.data()||{}).lineRichMenuId || (adminSnap.data()||{}).richMenuId || '';
+    const userId  = (userSnap.data()||{}).lineRichMenuId  || (userSnap.data()||{}).richMenuId  || '';
+
+    const list = await listRichMenus(accessToken).catch(()=>[]);
+    const byId = Object.fromEntries(list.map(x => [x.richMenuId, { name:x.name, areas:(x.areas||[]).length }]));
+
+    res.json({
+      ok:true,
+      firestore:{ adminId, userId, same: adminId === userId },
+      line:{
+        admin: { id: adminId, ...byId[adminId] },
+        user:  { id: userId,  ...byId[userId]  }
+      }
+    });
+  } catch (e) {
+    res.status(500).json({ ok:false, error:String(e?.message||e) });
+  }
+});
 
 
+// ===== expose LIFF ID to client (fallback) =====
+app.get('/__boot/liff-id.js', (_req, res) => {
+  res.type('js').send(
+    `window.DEFAULT_LIFF_ID = ${JSON.stringify(process.env.LIFF_TA_CLOCK_ID || '')};`
+  );
+});
 
 
 

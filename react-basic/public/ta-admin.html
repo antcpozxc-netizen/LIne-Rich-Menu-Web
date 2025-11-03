@@ -35,7 +35,7 @@
   .back{color:#e2e8f0;text-decoration:none}
   .hidden{display:none!important}
 
-  /* --- Employee list (horizontal) --- */
+  /* Employee list */
   .cards-h{display:flex; gap:12px; overflow-x:auto; padding-bottom:6px; scroll-snap-type:x proximity}
   .cards-h::-webkit-scrollbar{height:8px}
   .cards-h::-webkit-scrollbar-thumb{background:#c7d2fe;border-radius:999px}
@@ -47,10 +47,10 @@
   .kv{display:grid;grid-template-columns:112px 1fr;gap:4px;font-size:13px;color:#334155;margin-top:8px}
   .kv b{color:#64748b;font-weight:500}
 
-  /* ----- Tables ----- */
+  /* Tables */
   .table-wrap{overflow:auto;border:1px solid #e9eefc;border-radius:12px;background:#fff}
   table.log{border-collapse:separate;border-spacing:0;width:100%}
-  table.log th, table.log td{padding:10px 12px;font-size:13px;border-bottom:1px solid #eef2ff;white-space:nowrap}
+  table.log th, table.log td{padding:10px 12px;font-size:13px;border-bottom:1px solid #eef2ff;white-space:nowrap;vertical-align:top}
   table.log th{position:sticky;top:0;background:#f8fafc;font-weight:700;color:#334155;z-index:1}
   table.log tr:last-child td{border-bottom:none}
   .sum{background:#f8fafc;border:1px dashed #e2e8f0;border-radius:12px;padding:12px;margin-top:8px}
@@ -58,7 +58,9 @@
   .seg button{padding:8px 12px;border-radius:999px;border:1px solid var(--ring);background:#fff;color:#1e293b;cursor:pointer}
   .seg button.on{background:var(--pri);color:#fff;border-color:transparent}
 
-  /* payroll table */
+  /* payroll tabs */
+  .seg-btn{padding:8px 14px;border-radius:999px;border:1px solid var(--ring);background:#fff;cursor:pointer}
+  .seg-btn.on{background:var(--pri);color:#fff;border-color:transparent}
   #pr-table th, #pr-table td { white-space:nowrap; }
   #pr-table tfoot td{font-weight:700;background:#f8fafc}
   .status-col{min-width:180px}
@@ -70,7 +72,7 @@
   .kpi .box .lbl{font-size:12px;color:#64748b}
   .kpi .box .val{font-size:20px;font-weight:700}
 
-  /* === Run Detail Modal === */
+  /* modal */
   .modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:16px;z-index:50}
   .modal.hidden{display:none!important}
   .modal .backdrop{position:absolute;inset:0;background:rgba(15,23,42,.45)}
@@ -82,6 +84,12 @@
   .run-kpi .box{background:#fbfdff;border:1px dashed #e2e8f0;border-radius:12px;padding:12px}
   .run-kpi .box .lbl{font-size:12px;color:#64748b}
   .run-kpi .box .val{font-size:18px;font-weight:700}
+
+  /* preloader/skeleton */
+  #app-preload{position:fixed;inset:0;background:rgba(248,250,252,.85);backdrop-filter:saturate(160%) blur(2px);display:flex;align-items:center;justify-content:center;z-index:70}
+  #app-preload .box{background:#fff;border:1px solid #eef2ff;border-radius:16px;padding:16px 18px;box-shadow:0 20px 60px rgba(2,6,23,.1)}
+  .loader{width:24px;height:24px;border-radius:50%;border:3px solid #c7d2fe;border-top-color:#3b82f6;animation:spin 1s linear infinite;margin-right:10px}
+  @keyframes spin{to{transform:rotate(360deg)}}
 </style>
 </head>
 <body>
@@ -106,7 +114,7 @@
       </div>
     </div>
 
-    <!-- ====== MENU ====== -->
+    <!-- MENU -->
     <section id="view-menu" class="card hidden">
       <h3>เมนู</h3>
       <div class="grid">
@@ -116,27 +124,30 @@
         </a>
         <a class="tile" href="#logs">
           <h3>2) บันทึกการทำงาน</h3>
-          <div class="muted">ดูเข้า-ออกงาน + ลา + สรุปเดือน (ไม่มี badge)</div>
+          <div class="muted">ดูเข้า-ออกงาน + ลา + สรุปเดือน</div>
         </a>
         <a class="tile" href="#payroll">
           <h3>3) ทำเงินเดือน</h3>
-          <div class="muted">คำนวณค่าจ้างทั้งเดือน หักสายแบบ HR เลือกจ่ายเป็นรายคน</div>
+          <div class="muted">คำนวณ/ปรับยอด และ “บันทึก & แจ้งพนักงาน”</div>
         </a>
         <a class="tile" href="#reports">
           <h3>4) รายงาน</h3>
-          <div class="muted">สรุปผลการจ่าย/ยอดรวมต่อเดือน และแชร์ไฟล์ CSV เข้า LINE</div>
+          <div class="muted">ดูประวัติงวด (runs) และรายละเอียด</div>
         </a>
       </div>
     </section>
 
-    <!-- ====== USERS (list + editor) ====== -->
+    <!-- USERS -->
     <section id="view-users" class="hidden">
       <div class="card">
         <div class="toolbar">
           <h3>ตั้งค่าผู้ใช้งาน</h3>
           <div class="row" style="align-items:end">
             <div class="col"><label>ค้นหา</label><input id="q" placeholder="ชื่อ/ตำแหน่ง"/></div>
-            <div><button id="reload" class="btn">รีโหลดรายชื่อ</button></div>
+            <div style="display:flex;gap:8px">
+              <button id="reload" class="btn">รีโหลดรายชื่อ</button>
+              <button id="users-refresh" class="btn-ghost">รีเฟรช</button>
+            </div>
           </div>
         </div>
         <div id="lazyNote" class="muted" style="margin:8px 0">รอสักครู่ กำลังโหลดข้อมูล…</div>
@@ -190,6 +201,7 @@
           <div class="col"><label>เลขบัญชี</label><input id="bankAccount" placeholder="2222222222"></div>
           <div class="col"><label>ช่องทางจ่าย</label>
             <select id="payoutChannel">
+              <option value="none">ยังไม่จัดการช่องทางการจ่าย</option>
               <option value="bank">bank</option>
               <option value="cash">cash</option>
               <option value="promptpay">promptpay</option>
@@ -220,10 +232,9 @@
           <div class="col"><label>หักสายตามสัดส่วน</label>
             <select id="prorateLate"><option value="true">หักตามชั่วโมงที่ขาด</option><option value="false">ไม่หัก</option></select>
           </div>
-          <div class="col"><label>Pay every N</label><input id="payEveryN" type="number" step="1" placeholder="ใช้กับโหมด every_n_* เท่านั้น"></div>
+          <div class="col" id="wrapPayEveryN"><label>Pay every N</label><input id="payEveryN" type="number" step="1" placeholder="ใช้กับโหมด every_n_* เท่านั้น"></div>
         </div>
 
-        <!-- Shift & grace -->
         <div class="row">
           <div class="col"><label>เข้า (HH:MM)</label><input id="shiftIn" placeholder="09:00"></div>
           <div class="col"><label>ออก (HH:MM)</label><input id="shiftOut" placeholder="18:00"></div>
@@ -243,7 +254,7 @@
       </div>
     </section>
 
-    <!-- ====== LOGS ====== -->
+    <!-- LOGS -->
     <section id="view-logs" class="hidden">
       <div class="card">
         <div class="toolbar">
@@ -251,6 +262,7 @@
           <div class="row" style="align-items:flex-end">
             <div class="col"><label>เดือน</label><input id="month" type="month"></div>
             <div class="col"><label>ค้นหาชื่อ/ตำแหน่ง</label><input id="q2" placeholder="พิมพ์เพื่อกรองรายชื่อ"></div>
+            <div style="flex:0 0 auto"><button id="logs-refresh" class="btn-ghost">รีเฟรช</button></div>
           </div>
         </div>
         <div id="lazyNote2" class="muted" style="margin:8px 0">รอสักครู่ กำลังโหลดรายชื่อ…</div>
@@ -281,90 +293,284 @@
       </div>
     </section>
 
-    <!-- ====== PAYROLL ====== -->
+    <!-- PAYROLL -->
     <section id="view-payroll" class="hidden">
       <div class="card">
         <div class="toolbar">
           <h3>ทำเงินเดือน</h3>
-          <div class="row" style="align-items:flex-end">
-            <div class="col"><label>เดือน</label><input id="pr-month" type="month"></div>
-            <div class="col"><label>ค้นหาชื่อ/ตำแหน่ง</label><input id="pr-q" placeholder="กรองรายชื่อ"></div>
-            <div class="col"><label>สถานะ</label>
-              <select id="pr-filter-status">
-                <option value="">ทั้งหมด</option>
-                <option value="Pending">Pending</option>
-                <option value="Approved">Approved</option>
-                <option value="Transferred">Transferred</option>
-              </select>
+        </div>
+        
+         <!-- ✅ Top toolbar: Global refresh -->
+        <div class="toolbar" id="payroll-topbar" style="margin:6px 0 8px">
+          <button id="pr-global-refresh" class="btn-ghost">รีเฟรชข้อมูล</button>
+          <span class="muted">รีเฟรชได้จากทุกแท็บ</span>
+        </div>
+
+        <!-- Tabs -->
+        <div style="display:flex;gap:8px;margin:8px 0">
+          <button id="tab-payrun"  class="seg-btn on">1) ทำเงินเดือน</button>
+          <button id="tab-cycles"  class="seg-btn">2) ตั้งค่างวดเงินเดือน</button>
+          <button id="tab-payments" class="seg-btn">3) จ่ายเงินพนักงาน</button>
+        </div>
+
+        <!-- DUE TODAY: แจ้งเตือนทำเงินเดือน -->
+        <div class="sum" id="pr-due" style="margin-top:8px">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <b style="margin-right:6px">Due Today</b>
+            <input id="dueTodayInput" type="date" />
+            <button id="btnLoadDue" class="btn-ghost">โหลดรายการวันนี้</button>
+            <button id="btnNotifyToday" class="btn">ส่งแจ้งเตือนวันนี้</button>
+            <span class="muted" id="dueStat"></span>
+          </div>
+          <div id="dueList" style="margin-top:8px"></div>
+        </div>
+
+        <!-- TAB 1: ทำเงินเดือน -->
+        <div id="pane-payrun">
+          <!-- กลุ่มงวด: ตารางอยู่บนสุด -->
+          <div class="sum" id="pr-groups-overview" style="margin-top:0">
+            <b>กลุ่มงวดที่ตั้งไว้</b>
+            <div class="muted">เลือกกลุ่มเพื่อใช้คำนวณ หรือดูสมาชิกของกลุ่มได้ทันที</div>
+            <div class="table-wrap" style="margin-top:6px">
+              <table class="log" id="pr-groups-table">
+                <thead>
+                  <tr>
+                    <th>เลือก</th>
+                    <th>ชื่อกลุ่ม</th>
+                    <th>ประเภท</th>
+                    <th>วันฐาน/วันจ่าย</th>
+                    <th>สมาชิก (ตัวอย่าง)</th>
+                  </tr>
+                </thead>
+                <tbody id="pr-groups-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- ตั้งวันที่ + คำนวณ -->
+          <div class="row" style="align-items:flex-end;margin-top:10px">
+            <div class="col">
+              <label>เลือกรอบจากกลุ่ม (ซิงค์กับตารางด้านบน)</label>
+              <select id="pr-group"><option value="">— เลือกกลุ่มงวด —</option></select>
+            </div>
+            <div class="col">
+              <label>ตั้งแต่วันที่</label>
+              <input id="pr-start" type="date">
+            </div>
+            <div class="col">
+              <label>ถึงวันที่</label>
+              <input id="pr-end" type="date">
+            </div>
+            <div class="col">
+              <label>กรองชื่อ/ตำแหน่ง</label>
+              <input id="pr-q" placeholder="พิมพ์เพื่อกรองรายชื่อ">
             </div>
             <div class="col" style="flex:0 0 auto">
-              <button id="pr-run" class="btn">คำนวณเงินเดือน</button>
+              <button id="pr-draft" class="btn">คำนวณ</button>
+            </div>
+          </div>
+
+          <div class="sum" id="pr-status" style="margin-top:10px">เลือกกลุ่ม/ช่วงวันที่ แล้วกด “คำนวณ”</div>
+
+          <!-- กล่องบอกโหมดแก้ไขงวดเดิม + สมาชิกจากงวด -->
+          <div class="sum hidden" id="pr-run-box" style="margin-top:8px">
+            <b>สมาชิกจากงวด:</b> <span id="pr-runid-chip" class="chip">—</span>
+            <div id="pr-run-members" style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap"></div>
+          </div>
+
+          <!-- Preview สมาชิกกลุ่ม -->
+          <div class="sum hidden" id="pr-members-box" style="margin-top:8px">
+            <b>สมาชิกกลุ่ม:</b> <span id="pr-members-count">0</span> คน
+            <div id="pr-members-list" style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap"></div>
+          </div>
+
+          <!-- ตารางค่าใช้จ่าย -->
+          <div class="table-wrap" style="margin-top:10px">
+            <table class="log" id="pr-table">
+              <thead>
+                <tr>
+                  <th><input type="checkbox" id="pr-checkall"></th>
+                  <th>พนักงาน</th>
+                  <th>ตำแหน่ง</th>
+                  <th>รูปแบบจ่าย</th>
+                  <th>อัตรา</th>
+                  <th>วันทำงาน</th>
+                  <th>ชม.ทำงาน</th>
+                  <th>ชม.สาย</th>
+                  <th>ฐานจ่าย</th>
+                  <th>หัก/ปรับ (-)</th>
+                  <th>บวกปรับ (+)</th>
+                  <th>รวมสุทธิ</th>
+                  <th>หมายเหตุ</th>
+                  <th class="status-col">สถานะ</th>
+                </tr>
+              </thead>
+              <tbody id="pr-body"></tbody>
+              <tfoot>
+                <tr>
+                  <td colspan="12" style="text-align:right">รวมสุทธิทั้งหมดที่เลือก</td>
+                  <td id="pr-total" style="font-weight:700">0.00</td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          <div class="row" style="margin-top:12px">
+            <button id="pr-commit-selected" class="btn">บันทึก & แจ้งพนักงาน (เฉพาะที่เลือก)</button>
+            <button id="pr-refresh" class="btn-ghost">คำนวณใหม่</button>
+            <button id="pr-hard-reload" class="btn-ghost">รีเฟรชข้อมูล</button>
+            <span class="muted" id="pr-msg"></span>
+          </div>
+        </div>
+
+        <!-- TAB 2: ตั้งค่างวดเงินเดือน (ใหม่หมด) -->
+        <div id="pane-cycles" class="hidden">
+          <div class="toolbar">
+            <div>
+              <h3 style="margin:0">ตั้งค่างวดเงินเดือน</h3>
+              <div class="muted">แสดงกลุ่มทั้งหมด · คลิกเพื่อแก้ไขชื่อ/ประเภท/วันเริ่ม/สมาชิก · ปุ่มสร้างกลุ่มใหม่</div>
+            </div>
+            <button id="pg-create" class="btn">สร้างกลุ่ม</button>
+          </div>
+
+          <!-- ตารางกลุ่มทั้งหมด -->
+          <div class="table-wrap" style="margin-top:10px">
+            <table class="log" id="pg-groups-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>ชื่อกลุ่ม</th>
+                  <th>ประเภท</th>
+                  <th>สมาชิก</th>
+                  <th>จัดการ</th>
+                </tr>
+              </thead>
+              <tbody id="pg-groups-body"></tbody>
+            </table>
+          </div>
+
+          <!-- กล่องแก้ไขกลุ่ม -->
+          <div class="card hidden" id="pg-editor" style="margin-top:12px">
+            <div class="toolbar">
+              <h3 id="pg-edit-title">แก้ไขกลุ่ม</h3>
+              <div>
+                <button id="pg-save" class="btn">บันทึก</button>
+                <button id="pg-cancel" class="btn-ghost" style="margin-left:8px">ยกเลิก</button>
+              </div>
+            </div>
+
+            <div class="row" style="margin-top:6px">
+              <div class="col"><label>ชื่อกลุ่ม</label><input id="pg-name"></div>
+              <div class="col">
+                <label>ประเภท</label>
+                <select id="pg-type">
+                  <option value="every_n_days">ทุก N วัน</option>
+                  <option value="monthly">รายเดือน</option>
+                </select>
+              </div>
+              <div class="col" id="pg-payday-wrap">
+                <label>วันจ่าย (1–31 หรือ last)</label>
+                <input id="pg-payday" placeholder="last">
+              </div>
+              <div class="col"><label>N (เมื่อเลือกทุก N วัน)</label><input id="pg-n" type="number" min="1" step="1"></div>
+              <div class="col"><label>วันเริ่มคำนวณ / วันฐาน</label><input id="pg-start" type="date"></div>
+            </div>
+
+            <div class="sum" style="margin-top:8px"><b>สมาชิกกลุ่ม</b> <span class="muted">(ติ๊กเพื่อเพิ่ม/เอาออก)</span></div>
+            <div class="row" style="align-items:flex-end;margin-top:8px">
+              <div class="col"><label>ค้นหาพนักงาน</label><input id="pg-member-q" placeholder="ชื่อ/ตำแหน่ง"></div>
+            </div>
+            <div class="table-wrap" style="margin-top:6px">
+              <table class="log">
+                <thead><tr><th>เลือก</th><th>พนักงาน</th><th>ตำแหน่ง</th></tr></thead>
+                <tbody id="pg-members"></tbody>
+              </table>
+            </div>
+
+            <div class="row" style="margin-top:10px">
+              <span class="muted" id="pg-msg"></span>
             </div>
           </div>
         </div>
-        <div class="sum" id="pr-status">เลือกเดือน แล้วกด “คำนวณเงินเดือน”</div>
+        
+        <!-- TAB 3: จ่ายเงินพนักงาน -->
+        <div id="pane-payments" class="hidden">
+          <div class="sum" style="margin-top:0">
+            <b>จ่ายเงินพนักงานตาม Pay Run</b>
+            <div class="muted">เลือกเดือน → เลือกงวด (run) → ทำเครื่องหมาย “จ่ายแล้ว” ทีละคน</div>
+            <div class="row" style="align-items:flex-end;margin-top:6px">
+            <div class="col"><label>เดือน</label><input id="py-month" type="month"></div>
+            <div class="col">
+                <label>เลือก Pay Run</label>
+                <select id="py-run"><option value="">— เลือก Pay Run ภายในเดือน —</option></select>
+            </div>
+            <div class="col"><label>ค้นหาชื่อ/ตำแหน่ง</label><input id="py-q" placeholder="พิมพ์เพื่อกรอง"></div>
+            <div style="flex:0 0 auto"><button id="py-refresh" class="btn-ghost">รีเฟรช</button></div>
+            </div>
+          </div>
 
-        <div class="table-wrap" style="margin-top:10px">
-          <table class="log" id="pr-table">
-            <thead>
-              <tr>
-                <th><input type="checkbox" id="pr-checkall"></th>
-                <th>พนักงาน</th>
-                <th>ตำแหน่ง</th>
-                <th>รูปแบบจ่าย</th>
-                <th>อัตรา</th>
-                <th>วันทำงาน</th>
-                <th>ชม.ทำงาน</th>
-                <th>ชม.สาย</th>
-                <th>ฐานจ่าย</th>
-                <th>หักสาย</th>
-                <th>รวมสุทธิ</th>
-                <th>ช่องทาง</th>
-                <th>ธนาคาร/บัญชี</th>
-                <th>สถานะ</th>
-                <th>ดำเนินการ</th>
-              </tr>
-            </thead>
-            <tbody id="pr-body"></tbody>
-            <tfoot>
-              <tr>
-                <td colspan="10" style="text-align:right">รวมสุทธิทั้งหมดที่เลือก</td>
-                <td id="pr-total" style="font-weight:700">0.00</td>
-                <td colspan="2"></td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
+          <div class="grid" style="margin-top:10px">
+            <div class="card">
+              <div class="toolbar"><h3 style="margin:0">รอจ่าย (Approved)</h3></div>
+              <div class="table-wrap" style="margin-top:8px">
+                <table class="log" id="py-approved-table">
+                <thead>
+                    <tr>
+                    <th>#</th>
+                    <th>พนักงาน</th>
+                    <th>ตำแหน่ง</th>
+                    <th>สุทธิ</th>
+                    <th>หมายเหตุ</th>
+                    <th>จัดการ</th>
+                    </tr>
+                </thead>
+                <tbody id="py-approved-body"></tbody>
+                </table>
+              </div>
+            </div>
 
-        <div class="row" style="margin-top:12px">
-          <button id="pr-dl-csv" class="btn">ส่ง CSV เข้า LINE</button>
-          <button id="pr-slip-selected" class="btn-ghost">ออกสลิปทั้งหมดที่เลือก</button>
-          <button id="pr-refresh" class="btn-ghost">คำนวณใหม่</button>
-          <span class="muted" id="pr-msg"></span>
+            <div class="card">
+            <div class="toolbar"><h3 style="margin:0">จ่ายแล้ว (Paid)</h3></div>
+            <div class="table-wrap" style="margin-top:8px">
+                <table class="log" id="py-paid-table">
+                <thead>
+                    <tr>
+                    <th>#</th>
+                    <th>พนักงาน</th>
+                    <th>ตำแหน่ง</th>
+                    <th>สุทธิ</th>
+                    <th>หมายเหตุ</th>
+                    <th>ดูงวด</th>
+                    </tr>
+                </thead>
+                <tbody id="py-paid-body"></tbody>
+                </table>
+            </div>
+            </div>
+          </div>
+
+          <div class="sum" id="py-msg" style="margin-top:10px">เลือกเดือน/งวดเพื่อเริ่มจ่าย</div>
         </div>
       </div>
     </section>
 
-    <!-- ====== REPORTS ====== -->
+    <!-- REPORTS -->
     <section id="view-reports" class="hidden">
       <div class="card">
         <div class="toolbar">
           <h3>รายงาน</h3>
           <div class="row" style="align-items:flex-end">
             <div class="col"><label>เดือน</label><input id="rp-month" type="month"></div>
-            <div class="col" style="flex:0 0 auto">
-              <button id="rp-runpay" class="btn">รันงวดเดือนนี้</button>
-            </div>
+            <div style="flex:0 0 auto"><button id="reports-refresh" class="btn-ghost">รีเฟรช</button></div>
           </div>
         </div>
 
-        <div class="sum" id="rp-status">กด “รันงวดเดือนนี้” เพื่อสร้างงวดและรีเฟรชรายงาน</div>
+        <div class="sum" id="rp-status">เลือกเดือนเพื่อดูภาพรวม และใช้ “ประวัติการทำเงินเดือน” ด้านล่างเพื่อเปิดงวดย้อนหลัง</div>
 
-        <!-- KPI -->
         <div class="kpi">
           <div class="box"><div class="lbl">รวมสุทธิทั้งองค์กร</div><div class="val" id="rp-k1">-</div></div>
           <div class="box"><div class="lbl">จำนวนพนักงาน</div><div class="val" id="rp-k2">-</div></div>
-          <div class="box"><div class="lbl">เฉลี่ยต่อคน</div><div class="val" id="rp-k3">-</div></div>
         </div>
 
         <div class="table-wrap" style="margin-top:10px">
@@ -395,57 +601,28 @@
 
         <div class="sum" style="margin-top:10px">
           <b>ประวัติการทำเงินเดือน</b>
-          <div class="row" style="margin-top:8px;align-items:flex-end">
-            <div class="col">
-              <label>รอบจ่าย (run)</label>
-              <select id="hist-run"></select>
-            </div>
-            <div class="col">
-              <label>เดือน</label>
-              <input id="hist-month" type="month">
-            </div>
-            <div class="col">
-              <label>ค้นหา</label>
-              <input id="hist-q" placeholder="ชื่อ/LINE UserId">
-            </div>
-            <div class="col">
-              <label>ช่วงสุทธิ (min–max)</label>
-              <div class="row" style="gap:6px">
-                <input id="hist-min" type="number" placeholder="เช่น 0">
-                <input id="hist-max" type="number" placeholder="เช่น 50000">
-              </div>
-            </div>
-          </div>
+          <div class="muted">แสดงทุก pay run ภายใน “เดือนที่เลือก” ด้านบน · แตะ run เพื่อดูรายละเอียด</div>
         </div>
 
         <div class="table-wrap" style="margin-top:10px">
-          <table class="log" id="hist-table">
+          <table class="log" id="runs-table">
             <thead>
               <tr>
                 <th>runId</th>
-                <th>พนักงาน</th>
-                <th>วันทำงาน</th>
-                <th>ชม.</th>
-                <th>ฐานจ่าย</th>
-                <th>หัก</th>
-                <th>สุทธิ</th>
-                <th>รายละเอียด</th>
-                <th>บันทึก</th>
+                <th>ช่วงงวด</th>
+                <th>จำนวนรายการ</th>
+                <th>ยอดรวมสุทธิ</th>
+                <th>บันทึกเมื่อ</th>
               </tr>
             </thead>
-            <tbody id="hist-body"></tbody>
+            <tbody id="runs-body"></tbody>
           </table>
-        </div>
-
-        <div class="row" style="margin-top:12px">
-          <button id="rp-dl-csv" class="btn">ส่ง CSV รายงานเข้า LINE</button>
-          <span class="muted" id="rp-msg"></span>
         </div>
       </div>
     </section>
   </div>
 
-  <!-- Modal: Run Detail -->
+  <!-- Modal -->
   <div id="run-modal" class="modal hidden" aria-hidden="true">
     <div class="backdrop"></div>
     <div class="panel">
@@ -481,14 +658,38 @@
           </table>
         </div>
         <div class="row" style="margin-top:10px">
-          <button class="btn" id="run-export">ส่ง CSV งวดนี้เข้า LINE</button>
+          <button class="btn" id="run-edit-here">แก้ไขงวดนี้ใน “ทำเงินเดือน”</button>
           <span class="muted" id="run-msg"></span>
         </div>
       </div>
     </div>
   </div>
 
+  <!-- Preloader -->
+  <div id="app-preload" class="hidden" aria-hidden="true">
+    <div class="box" style="display:flex;align-items:center;gap:10px">
+      <div class="loader"></div>
+      <div>
+        <div style="font-weight:700">กำลังเตรียมหน้า…</div>
+        <div class="muted">กำลังเชื่อมต่อ LIFF และโหลดข้อมูลล่าสุด</div>
+      </div>
+    </div>
+  </div>
+
 <script>
+/* ---------- Helpers: month key & status ---------- */
+function pad2(n){ return String(n).padStart(2,'0'); }
+function todayMonthKey(){ const d=new Date(); return `${d.getFullYear()}-${pad2(d.getMonth()+1)}`; }
+function getMonthKey(v){
+  const s=String(v||'').trim(); if(!s) return '';
+  if (/^\d{4}-\d{2}$/.test(s)) return s;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s.slice(0,7);
+  const d=new Date(s); if(!isNaN(d)) return `${d.getFullYear()}-${pad2(d.getMonth()+1)}`;
+  return '';
+}
+const ALLOW_STATUS = ['pending','approved','paid','rejected'];
+function normalizeStatus(v){ const s=String(v||'').toLowerCase().trim(); return ALLOW_STATUS.includes(s)? s : 'pending'; }
+
 /* ---------- router ---------- */
 function readParams(){
   const outer = new URLSearchParams(location.search);
@@ -502,13 +703,15 @@ const LIFF_ID = qs.get('liffId') || (window.DEFAULT_LIFF_ID || '');
 const TENANT  = qs.get('tenant') || '';
 const DEFAULT_VIEW = (qs.get('view') || '').toLowerCase();
 
-// --- โหมดพิเศษจาก Rich Menu ---
 const MODE_REPORT  = /^(1|true)$/i.test(qs.get('report') || '');
 const MODE_PAYROLL = /^(1|true)$/i.test(qs.get('payroll') || '');
 const FORCED_MONTH = qs.get('month') || '';
 
 const $status  = document.getElementById('status');
 const setMsg = (t,cls='muted') => { $status.className=cls; $status.textContent=t; };
+
+let __editingRunId = null; // โหมดแก้ไขงวดเดิม
+let __editRunMembers = null; // Set ของสมาชิกจากงวด
 
 const $btnHome = document.getElementById('btnHome');
 const sections = {
@@ -525,13 +728,9 @@ function show(id){
   $btnHome.classList.toggle('hidden', id==='menu');
 }
 function go(id){ location.hash = id; }
-
-// ---- เลือกหน้าแรกให้ “ถูก” ตั้งแต่เฟรมแรก ----
 const INITIAL_VIEW = ((location.hash||'').slice(1) || DEFAULT_VIEW || 'menu').toLowerCase();
 show(INITIAL_VIEW);
-if (!location.hash && DEFAULT_VIEW) {
-  location.replace('#' + DEFAULT_VIEW.toLowerCase());
-}
+if (!location.hash && DEFAULT_VIEW) { location.replace('#' + DEFAULT_VIEW.toLowerCase()); }
 
 /* ---------- LIFF + actor ---------- */
 let ACTOR = null;
@@ -542,16 +741,8 @@ async function ensureLiff(){
     liff.login({ redirectUri: location.href });
     return false;
   }
-  const FORCE_CONSENT = false;
-  const SCOPE_FLAG = 'liff_scope_v1';
-  if (FORCE_CONSENT && !localStorage.getItem(SCOPE_FLAG)) {
-    localStorage.setItem(SCOPE_FLAG, '1');
-    liff.login({ redirectUri: location.href, prompt: 'consent' });
-    return false;
-  }
   return true;
 }
-
 async function getActor(){
   if (ACTOR) return ACTOR;
   let uid=null; try { uid = liff.getDecodedIDToken()?.sub || null; } catch {}
@@ -559,11 +750,28 @@ async function getActor(){
   if (!uid) throw new Error('อ่าน LINE UserId ไม่ได้'); ACTOR = { lineUserId: uid }; return ACTOR;
 }
 
+/* ---------- auth bearer helper ---------- */
+async function getBearer(){
+  // ถ้ามี Firebase SDK อยู่ในหน้าด้วย ให้ใช้ token ของ Firebase ก่อน
+  try{
+    if (window.firebase?.auth?.currentUser){
+      const t = await window.firebase.auth().currentUser.getIdToken(true);
+      if (t) return 'Bearer ' + t;
+    }
+  }catch{}
+
+  // fallback: ใช้ LINE Login ID token (บางแบ็กเอนด์รองรับ)
+  try{
+    const lt = (typeof liff.getIDToken === 'function') ? liff.getIDToken() : '';
+    if (lt) return 'Bearer ' + lt;
+  }catch{}
+
+  return ''; // ถ้ายังไม่มี ก็ส่งว่างไว้ก่อน (จะโดน 401 ชัดเจน)
+}
+
 /* ---------- UTIL ---------- */
 const initials = (name='')=>{ const t=String(name).trim().split(/\s+/).filter(Boolean); if(!t.length) return '??'; if(t.length===1) return t[0].slice(0,2).toUpperCase(); return (t[0][0]+t[t.length-1][0]).toUpperCase(); };
 const money = v => (v==null||v==='') ? '-' : Number(v).toLocaleString();
-
-const pad2 = n => String(n).padStart(2, '0');
 const ymdLocal = (d) => { const dt = (d instanceof Date) ? d : new Date(d); if (isNaN(dt.getTime())) return ''; return `${dt.getFullYear()}-${pad2(dt.getMonth()+1)}-${pad2(dt.getDate())}`; };
 const onlyDate = (s) => {
   if (!s) return '';
@@ -579,21 +787,49 @@ function monthRangeStr(yyyyMM){
   const [Y,M] = String(yyyyMM || monthStr()).split('-').map(Number);
   const first = new Date(Y, (M||1)-1, 1);
   const last  = new Date(Y,  M||1, 0);
-  const pad = n => String(n).padStart(2,'0');
-  const toYMD = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  const toYMD = d => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
   return { first: toYMD(first), last: toYMD(last) };
 }
+function daysBetweenInclusive(a, b){
+  const d1 = new Date(a);
+  const d2 = new Date(b);
+  if (isNaN(d1) || isNaN(d2)) return 30;
+  const utc = (d)=> Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+  const diff = Math.floor((utc(d2) - utc(d1)) / 86400000) + 1;
+  return Math.max(1, diff);
+}
+function parseHm(hm){ const m=String(hm||'').match(/^(\d{1,2}):(\d{2})$/); if(!m) return null; const h=+m[1], mi=+m[2]; if(h<0||h>23||mi<0||mi>59) return null; return {h, m:mi}; }
 
-/* ---------- API ---------- */
+// === pay-type display helpers ===
+const safe = v => (v===undefined || v===null || v==='') ? '' : v;
+const mapPayTypeTH = (t, n) => {
+  switch (String(t||'').toLowerCase()) {
+    case 'hourly': return 'รายชั่วโมง';
+    case 'daily': return 'รายวัน';
+    case 'monthly': return 'รายเดือน';
+    case 'every_n_days': return `ทุก ${n||'?'} วัน`;
+    case 'every_n_hours': return `ทุก ${n||'?'} ชม.`;
+    default: return '';
+  }
+};
+function displayPay(o){
+  const employmentType = safe(o?.employmentType);
+  if (employmentType) return employmentType;
+  const t = o?.payType, n = o?.payEveryN;
+  const label = mapPayTypeTH(t, n);
+  return label || '—';
+}
+
+/* ---------- APIs ---------- */
 async function listEmployees(actor){
   const res = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/employees`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ actor }) });
   const j = await res.json().catch(()=> ({}));
   if (!res.ok || !j.ok) throw new Error(j?.error || ('โหลดรายชื่อไม่สำเร็จ ('+res.status+')')); return j.data || [];
 }
-async function fetchLogs(lineUserId, monthStr, range) {
+async function fetchLogs(lineUserId, monthKey, range) {
   const params = new URLSearchParams({ lineUserId });
   if (range?.periodStart && range?.periodEnd){ params.set('periodStart', range.periodStart); params.set('periodEnd', range.periodEnd); }
-  else if (monthStr){ params.set('month', monthStr); }
+  else if (monthKey){ params.set('month', getMonthKey(monthKey)); }
   const url = `/api/tenants/${encodeURIComponent(TENANT)}/attendance/logs?${params}`;
   const r = await fetch(url).catch(() => null);
   const j = await (r ? r.json().catch(() => ({})) : {});
@@ -606,102 +842,17 @@ async function fetchLogs(lineUserId, monthStr, range) {
   return { days: data.days || [], leave, summary };
 }
 
-/* ---------- CSV upload & share ---------- */
-async function uploadCsvAndGetUrl(fileName, csvText){
-  const payload = {
-    actor: await getActor(),
-    fileName,
-    csvBase64: btoa(unescape(encodeURIComponent(csvText)))
-  };
-  const res = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/payroll/export`, {
-    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
-  }).catch(()=>null);
-  if (!res || !res.ok) throw new Error('อัปโหลดไฟล์ไม่สำเร็จ');
-  const j = await res.json().catch(()=>({}));
-  if (!j.ok || !j.url) throw new Error(j.error || 'ไม่ได้รับ URL ไฟล์');
-  return { url: j.url, path: j.path, name: j.fileName || fileName };
+/* ====== USERS (load fresh) ====== */
+let __users = [];
+async function loadUsers(force=false){
+  if (!force && __users.length) return __users;
+  try { __users = await listEmployees(await getActor()) || []; }
+  catch { __users = []; }
+  return __users;
 }
 
-/* ---------- Payroll status & Payslip API ---------- */
-
-async function runPayrollRun({ periodStart, periodEnd }){
-  const res = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/payroll/run`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      actor: await getActor(),
-      periodStart, periodEnd
-    })
-  }).catch(()=>null);
-  const j = await (res ? res.json().catch(()=>({})) : {});
-  if (!res || !res.ok || !j.ok) throw new Error(j.error || 'run_failed');
-  return j; // { ok:true, runId, ... }
-}
-
-// บันทึกสถานะการจ่าย
-async function savePayrollStatus({ month, lineUserId, status, note='' }){
-  const actor = await getActor();
-  const res = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/payroll/status`, {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({
-      tenantId: TENANT,
-      actorLineUserId: actor.lineUserId,
-      actor,
-      month, lineUserId, status, note
-    })
-  }).catch(()=>null);
-  const j = await (res ? res.json().catch(()=>({})) : {});
-  if (!res || !res.ok || !j.ok) throw new Error(j.error || 'save_status_failed');
-  return true;
-}
-
-// ขอให้ระบบสร้าง PDF สลิป และคืน URL
-async function generatePayslipPdf({ month, record }){
-  const res = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/payroll/slip`, {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({
-      actor: await getActor(),
-      month,
-      employee: {
-        lineUserId: record.lineUserId,
-        fullName: record.fullName,
-        jobTitle: record.jobTitle,
-        bankName: record.bankName || '',
-        bankAccount: record.bankAccount || '',
-        payoutChannel: record.payoutChannel || 'bank'
-      },
-      pay: {
-        payType: record.payType,
-        payRate: Number(record.payRate||0),
-        workDays: Number(record.workDays||0),
-        workHours: Number(record.workHours||0),
-        lateHours: Number(record.lateHours||0),
-        basePay: Number(record.basePay||0),
-        lateDeduct: Number(record.lateDeduct||0),
-        netPay: Number(record.netPay||0)
-      }
-    })
-  }).catch(()=>null);
-  const j = await (res ? res.json().catch(()=>({})) : {});
-  if (!res || !res.ok || !j.ok || !j.url) throw new Error(j.error || 'gen_slip_failed');
-  return j.url;
-}
-
-async function shareTextToLine(text){
-  if (liff.isApiAvailable('shareTargetPicker')) {
-    await liff.shareTargetPicker([{ type:'text', text }]);
-    return;
-  }
-  await liff.sendMessages([{ type:'text', text }]);
-}
-
-/* ---------- USERS page ---------- */
 const $cards=document.getElementById('cards'); const $reload=document.getElementById('reload'); const $q=document.getElementById('q'); const $editor=document.getElementById('editor'); const $empTitle=document.getElementById('empTitle'); const $lazyNote=document.getElementById('lazyNote');
-
 function notOwner(x){ const r=String(x.role||'').toLowerCase(); const jt=String(x.jobTitle||'').toLowerCase(); return r!=='owner' && jt!=='owner'; }
-
 function renderCards(rows){
   $cards.innerHTML=''; const q = ($q?.value||'').toLowerCase(); let count=0;
   rows.filter(notOwner).filter(x=> !q || `${x.fullName||''} ${x.jobTitle||''}`.toLowerCase().includes(q)).forEach(x=>{
@@ -717,7 +868,7 @@ function renderCards(rows){
       </div>
       <div class="kv"><b>วันที่ลงทะเบียน</b><div>${onlyDate(x.registerDate)||'-'}</div></div>
       <div class="kv"><b>ประเภทการจ้างงาน</b><div>${x.employmentType||'-'}</div></div>
-      <div class="kv"><b>จ่าย</b><div>${(x.payType||'-')} / ${money(x.payRate)}</div></div>
+      <div class="kv"><b>จ่าย</b><div>${displayPay(x)} / ${money(x.payRate)}</div></div>
       <div style="margin-top:10px;display:flex;gap:8px">
         <button class="btn" data-act="edit">แก้ไข</button>
       </div>`;
@@ -732,15 +883,29 @@ const setv = (id, v) => document.getElementById(id).value = (v ?? '');
 function bindPayTypeSeg(segId, selectId){
   const seg=document.getElementById(segId); const sel=document.getElementById(selectId);
   const syncOn=()=>{ [...seg.querySelectorAll('button')].forEach(b=> b.classList.toggle('on', b.dataset.v===sel.value)); };
-  seg.addEventListener('click',e=>{ const v=e.target?.dataset?.v; if(!v) return; sel.value=v; syncOn(); });
-  sel.addEventListener('change', syncOn); syncOn();
+  seg.addEventListener('click',e=>{ const v=e.target?.dataset?.v; if(!v) return; sel.value=v; syncOn(); togglePayEveryN(); });
+  sel.addEventListener('change', ()=>{ syncOn(); togglePayEveryN(); });
+  syncOn();
 }
 bindPayTypeSeg('payTypeSeg','payType');
 
-function openEditor(emp){
-  $editor.classList.remove('hidden');
-  $empTitle.textContent = `แก้ไข: ${emp.fullName || emp.lineUserId}`;
+/* NEW: bank fields toggle + hide payEveryN */
+function toggleBankInputs(){
+  const ch = document.getElementById('payoutChannel').value || 'none';
+  const $bn = document.getElementById('bankName');
+  const $ba = document.getElementById('bankAccount');
+  const disable = (ch==='none' || ch==='cash');
+  [$bn,$ba].forEach(i=>{ i.disabled = disable; i.placeholder = disable ? '— ปิดใช้งาน —' : i.placeholder; });
+}
+function togglePayEveryN(){
+  const t = document.getElementById('payType').value;
+  const show = (t==='every_n_days' || t==='every_n_hours');
+  document.getElementById('wrapPayEveryN').style.display = show ? '' : 'none';
+}
 
+function openEditor(emp){
+  document.getElementById('editor').classList.remove('hidden');
+  document.getElementById('empTitle').textContent = `แก้ไข: ${emp.fullName || emp.lineUserId}`;
   setv('lineUserId',     emp.lineUserId || '');
   setv('fullName',       emp.fullName || '');
   setv('nationalId',     emp.nationalId || '');
@@ -751,25 +916,25 @@ function openEditor(emp){
   setv('currentAddress', emp.currentAddress || '');
   setv('jobTitle',       emp.jobTitle || '');
   setv('role',           (emp.role || 'user'));
-
   setv('registerDate',   onlyDate(emp.registerDate) || '');
   setv('employmentType', emp.employmentType || '');
-
   setv('bankName',       emp.bankName || '');
   setv('bankAccount',    emp.bankAccount || '');
-  setv('payoutChannel',  emp.payoutChannel || 'bank');
-
+  const defaultPayout = (emp.payoutChannel||'') || ((!(emp.bankName||emp.bankAccount)) ? 'none' : 'bank');
+  setv('payoutChannel',  defaultPayout);
   setv('payType',        emp.payType || 'daily');
   setv('payRate',        emp.payRate || 0);
   setv('dailyHours',     emp.dailyHours || 8);
   setv('prorateLate',    (String(emp.prorateLate).toLowerCase()==='true' ? 'true' : 'false'));
   setv('payEveryN',      emp.payEveryN || '');
-
   setv('shiftIn',        emp.shiftIn || '');
   setv('shiftOut',       emp.shiftOut || '');
   setv('lateGraceMin',   emp.lateGraceMin || 0);
 
   [...document.querySelectorAll('#payTypeSeg button')].forEach(b=> b.classList.toggle('on', b.dataset.v===val('payType')));
+  toggleBankInputs();
+  togglePayEveryN();
+  document.getElementById('payoutChannel').onchange = toggleBankInputs();
 
   document.getElementById('save').onclick = async ()=>{
     try{
@@ -787,8 +952,8 @@ function openEditor(emp){
           birthDate:  val('birthDate'),
           gender:     val('gender'),
           jobTitle:   val('jobTitle'),
-          bankName:   val('bankName'),
-          bankAccount:val('bankAccount'),
+          bankName:   document.getElementById('bankName').disabled ? '' : val('bankName'),
+          bankAccount:document.getElementById('bankAccount').disabled ? '' : val('bankAccount'),
           registerDate:   val('registerDate'),
           employmentType: val('employmentType')
         },
@@ -797,17 +962,16 @@ function openEditor(emp){
           payRate:       Number(val('payRate') || 0),
           dailyHours:    Number(val('dailyHours') || 8),
           prorateLate:   (val('prorateLate') === 'true'),
-          payEveryN:     Number(val('payEveryN') || '') || '',
+          payEveryN:     (['every_n_days','every_n_hours'].includes(val('payType')) ? (Number(val('payEveryN')||'')||'') : ''),
           shiftIn:       val('shiftIn'),
           shiftOut:      val('shiftOut'),
           lateGraceMin:  Number(val('lateGraceMin') || 0),
-          payoutChannel: val('payoutChannel') || 'bank',
+          payoutChannel: val('payoutChannel') || 'none',
           allowances:    [],
           deductions:    [],
         },
         role: val('role')
       };
-
       const r = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/employee/save`, {
         method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
       });
@@ -822,32 +986,16 @@ function openEditor(emp){
   };
 }
 
-/* ---------- LOGS page ---------- */
+/* ---------- LOGS ---------- */
 const $cards2=document.getElementById('cards2'); const $q2=document.getElementById('q2'); const $lazy2=document.getElementById('lazyNote2');
 const $panelLogs=document.getElementById('panelLogs'); const $logTitle=document.getElementById('logTitle'); const $logStatus=document.getElementById('logStatus');
 const $summary=document.getElementById('summaryBox'); const $month=document.getElementById('month'); const $tbody=document.getElementById('logTbody');
-
-$month.value = FORCED_MONTH || monthStr();
-
-let __users = [];
-
-let __usersPromise = null;
-async function getUsersOnce() {
-  if (__users.length) return __users;
-  if (!__usersPromise) {
-    __usersPromise = (async () => {
-      try {
-        const rows = await listEmployees(await getActor());
-        __users = rows || [];
-      } catch {
-        __users = [];
-      }
-      return __users;
-    })();
-  }
-  return __usersPromise;
+$month.value = getMonthKey(FORCED_MONTH) || todayMonthKey();
+function lateMinutesForDay(d, shiftIn, graceMin){
+  if (!d?.inTime || !shiftIn) return 0; const s=parseHm(shiftIn); if(!s) return 0;
+  const inAt=new Date(d.inTime); const sch=new Date(inAt); sch.setHours(s.h, s.m, 0, 0);
+  const diffMin=Math.round((inAt-sch)/60000); return Math.max(0, diffMin - (Number(graceMin||0)));
 }
-
 async function renderUserStripLogs(){
   $cards2.innerHTML=''; $lazy2.textContent = 'รอสักครู่ กำลังโหลดรายชื่อ…';
   const rows = __users; const q = ($q2?.value || '').toLowerCase(); let count=0;
@@ -863,7 +1011,8 @@ async function renderUserStripLogs(){
         <span class="chip">${(x.role||'user')}</span>
       </div>
       <div class="kv"><b>จ้าง</b><div>${x.employmentType||'-'}</div></div>
-      <div class="kv"><b>รูปแบบจ่าย</b><div>${x.payType||'-'} / ${money(x.payRate)}</div></div>
+      <div class="kv"><b>รูปแบบจ่าย</b><div>${displayPay(x)} / ${money(x.payRate)}</div></div>
+
       <div style="margin-top:10px;display:flex;gap:8px"><button class="btn" data-act="view">ดูรายการเดือนนี้</button></div>`;
     el.querySelector('[data-act="view"]').addEventListener('click',()=> openLogs(x));
     $cards2.appendChild(el); count++;
@@ -872,14 +1021,6 @@ async function renderUserStripLogs(){
 }
 $q2.oninput = renderUserStripLogs;
 $month.onchange = ()=>{ if (CURRENT_USER) openLogs(CURRENT_USER); };
-
-function parseHm(hm){ const m=String(hm||'').match(/^(\d{1,2}):(\d{2})$/); if(!m) return null; const h=+m[1], mi=+m[2]; if(h<0||h>23||mi<0||mi>59) return null; return {h, m:mi}; }
-function lateMinutesForDay(d, shiftIn, graceMin){
-  if (!d?.inTime || !shiftIn) return 0; const s=parseHm(shiftIn); if(!s) return 0;
-  const inAt=new Date(d.inTime); const sch=new Date(inAt); sch.setHours(s.h, s.m, 0, 0);
-  const diffMin=Math.round((inAt-sch)/60000); return Math.max(0, diffMin - (Number(graceMin||0)));
-}
-
 let CURRENT_USER=null;
 async function openLogs(emp){
   CURRENT_USER = emp;
@@ -887,15 +1028,11 @@ async function openLogs(emp){
   $logTitle.textContent = `รายการลงเวลา: ${emp.fullName || emp.lineUserId}`;
   $logStatus.textContent = 'กำลังโหลดข้อมูล…';
   $tbody.innerHTML = ''; $summary.textContent = 'กำลังคำนวณสรุป…';
-
-  const m = $month.value || monthStr();
+  const m = getMonthKey($month.value) || todayMonthKey();
   const { days, leave, summary } = await fetchLogs(emp.lineUserId, m);
-
   const leaveByDate={}; (leave||[]).forEach(l=>{ (leaveByDate[l.date]||(leaveByDate[l.date]=[])).push(l); });
-
   const shiftIn = emp.shiftIn || ''; const grace = Number(emp.lateGraceMin||0);
   let totalLateMin = 0;
-
   (days||[]).forEach(d=>{
     const inTxt  = d.inTime  ? new Date(d.inTime).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}) : '-';
     const outTxt = d.outTime ? new Date(d.outTime).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}) : '-';
@@ -913,451 +1050,1262 @@ async function openLogs(emp){
       <td style="color:#0ea5e9">${leaveTxt||''}</td>`;
     $tbody.appendChild(tr);
   });
-
-  const modeBadge = MODE_PAYROLL ? ' · โหมดทำเงินเดือน' : (MODE_REPORT ? ' · โหมดรายงาน' : '');
-  $logStatus.textContent = (days?.length || leave?.length) ? ('พร้อมใช้งาน' + modeBadge) : ('ไม่พบข้อมูลในเดือนนี้' + modeBadge);
-
   const workHours = Number(summary?.workHours || 0);
   const workDays  = Number(summary?.workDays  || 0);
-  const leaveHours= Number(summary?.leaveHours|| 0);
-  const leaveDays = Number(summary?.leaveDays || 0);
   const lateHours = totalLateMin/60;
-  const lateDays  = (days||[]).filter(d=> lateMinutesForDay(d, shiftIn, grace)>0).length;
 
   const payType     = String(emp.payType || 'daily');
   const payRate     = Number(emp.payRate || 0);
   const dailyHours  = Number(emp.dailyHours || 8);
   const prorateLate = String(emp.prorateLate||'false').toLowerCase()==='true';
-  const payEveryN   = Number(emp.payEveryN || 0);
 
-  let basePay=0;
-  if (payType==='hourly') basePay = workHours * payRate;
-  else if (payType==='daily') basePay = workDays * payRate;
-  else if (payType==='monthly'){ const effDays = dailyHours>0 ? (workHours/dailyHours) : 0; basePay = (payRate/30) * effDays; }
-  else if (payType==='every_n_days' && payEveryN>0){ basePay = (workDays/payEveryN) * payRate; }
-  else if (payType==='every_n_hours' && payEveryN>0){ basePay = (workHours/payEveryN) * payRate; }
+  let basePay=0, hourlyForLate=0;
+  if (payType==='hourly'){
+    basePay = workHours*payRate;
+    hourlyForLate = payRate;
+  } else if (payType==='daily'){
+    basePay = workDays*payRate;
+    hourlyForLate = dailyHours>0 ? (payRate/dailyHours) : 0;
+  } else if (payType==='monthly'){
+    basePay = payRate;
+    const { first, last } = monthRangeStr(m);
+    const daysInThisMonth = daysBetweenInclusive(first,last);
+    hourlyForLate = (dailyHours>0) ? ((payRate/daysInThisMonth)/dailyHours) : 0;
+  } else if (payType==='every_n_days'){
+    basePay = (workDays/Number(emp.payEveryN||0))*payRate;
+    hourlyForLate = dailyHours>0 ? (payRate/dailyHours) : 0;
+  } else if (payType==='every_n_hours'){
+    basePay = (workHours/Number(emp.payEveryN||0))*payRate;
+    hourlyForLate = payRate/Number(emp.payEveryN||1);
+  }
 
   let lateDeduct=0;
-  if (prorateLate && dailyHours>0 && payType!=='hourly'){
-    const perHour = (payType==='daily') ? (payRate/dailyHours)
-                    : (payType==='monthly') ? ((payRate/30)/dailyHours)
-                    : (payRate/dailyHours);
-    lateDeduct = perHour * lateHours;
-  }
+  if (prorateLate && hourlyForLate>0 && payType!=='hourly') lateDeduct = hourlyForLate * lateHours;
   const netPay = Math.max(0, basePay - lateDeduct);
 
   $summary.innerHTML = `
     <div style="font-weight:700;margin-bottom:6px">สรุปการทำงาน เดือน ${m}</div>
-    <div>วันทำงานรวม <b>${workDays}</b> วัน • วันลา <b>${leaveDays}</b> วัน • วันสาย <b>${lateDays}</b> วัน</div>
-    <div>ชั่วโมงทำงานรวม <b>${workHours.toFixed(2)}</b> ชม. • สาย <b>${lateHours.toFixed(2)}</b> ชม.</div>
+    <div>วันทำงานรวม <b>${workDays}</b> วัน • ชั่วโมงทำงานรวม <b>${workHours.toFixed(2)}</b> ชม. • สาย <b>${lateHours.toFixed(2)}</b> ชม.</div>
     <hr style="border:none;border-top:1px dashed #e2e8f0;margin:8px 0">
-    <div>รูปแบบจ่าย: <b>${payType}</b> — อัตรา: <b>${payRate.toLocaleString()}</b></div>
-    <div>ค่าจ้างพื้นฐาน (ก่อนหัก): <b>${basePay.toLocaleString(undefined,{maximumFractionDigits:2})}</b></div>
-    <div>หักสาย: <b>${lateDeduct.toLocaleString(undefined,{maximumFractionDigits:2})}</b></div>
+    <div>รูปแบบจ่าย: <b>${displayPay(emp)}</b> — อัตรา: <b>${payRate.toLocaleString()}</b></div>
+    <div>ฐานจ่าย: <b>${basePay.toLocaleString(undefined,{maximumFractionDigits:2})}</b> • หักสาย: <b>${lateDeduct.toLocaleString(undefined,{maximumFractionDigits:2})}</b></div>
     <div style="font-size:16px;margin-top:4px">รวมสุทธิ: <b>${netPay.toLocaleString(undefined,{maximumFractionDigits:2})}</b></div>
   `;
-
-  $summary.insertAdjacentHTML('beforeend',
-    `<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
-       <button class="btn" id="btnCsv">ส่ง CSV รายการลงเวลาเข้า LINE</button>
-     </div>`);
-  document.getElementById('btnCsv')?.addEventListener('click', async ()=>{
-    try{
-      const rows = [['date','in','out','hours','lateMin','leave']];
-      (days||[]).forEach(d=>{
-        const lt = lateMinutesForDay(d, shiftIn, grace);
-        const lv = (leaveByDate[d.date]||[]).map(l=> (l.reason||'')+(l.hours?` ${l.hours}`:'')).join('|');
-        rows.push([d.date, d.inTime||'', d.outTime||'', Number(d.hours||0).toFixed(2), lt, lv]);
-      });
-      const csv = rows.map(r=> r.map(v=> `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
-      const fname = `logs_${emp.lineUserId}_${$month.value||monthStr()}.csv`;
-      const { url } = await uploadCsvAndGetUrl(fname, csv);
-      await shareTextToLine(`รายการลงเวลา: ${emp.fullName||emp.lineUserId} (${ $month.value||monthStr() })\n${url}`);
-    }catch(e){
-      alert('ส่งไฟล์เข้า LINE ไม่สำเร็จ: ' + (e.message||e));
-    }
-  });
 }
 
-/* ---------- PAYROLL page ---------- */
-const $prMonth = document.getElementById('pr-month');
-const $prQ = document.getElementById('pr-q');
-const $prRun = document.getElementById('pr-run');
-const $prStatus = document.getElementById('pr-status');
-const $prBody = document.getElementById('pr-body');
+
+/* ---------- PAYROLL (tabs, groups) ---------- */
+// ปุ่ม + panes ของทั้ง 3 แท็บ
+const $tabPayrun   = document.getElementById('tab-payrun');
+const $tabCycles   = document.getElementById('tab-cycles');
+const $tabPayments = document.getElementById('tab-payments');
+
+const $panePayrun   = document.getElementById('pane-payrun');
+const $paneCycles   = document.getElementById('pane-cycles');
+const $panePayments = document.getElementById('pane-payments');
+
+// ตัวช่วย: สลับคลาส on และซ่อน/โชว์ pane ให้ครบทั้งสามทุกครั้ง
+function setPayrollTab(name){
+  [$tabPayrun,$tabCycles,$tabPayments].forEach(b=> b.classList.remove('on'));
+  [$panePayrun,$paneCycles,$panePayments].forEach(p=> p.classList.add('hidden'));
+
+  if (name==='cycles'){
+    $tabCycles.classList.add('on');
+    $paneCycles.classList.remove('hidden');
+  } else if (name==='payments'){
+    $tabPayments.classList.add('on');
+    $panePayments.classList.remove('hidden');
+  } else {
+    $tabPayrun.classList.add('on');
+    $panePayrun.classList.remove('hidden');
+  }
+}
+function currentPayrollTab(){
+  if (!$paneCycles.classList.contains('hidden')) return 'cycles';
+  if (!$panePayments.classList.contains('hidden')) return 'payments';
+  return 'payrun';
+}
+
+async function refreshPayrollUI(){
+  try{
+    setMsg('กำลังรีเฟรช…');
+    await loadUsers(true);
+    await loadGroups(true);
+    const t = currentPayrollTab();
+    if (t === 'payments') {
+      await primePayments(true);
+    } else {
+      await primePayroll(true);   // ครอบ TAB1 และ TAB2
+    }
+    await loadDueToday();          // อัปเดตรายการ Due Today ด้วย
+    setMsg('รีเฟรชแล้ว','ok');
+  }catch(e){
+    setMsg('รีเฟรชล้มเหลว: ' + (e.message||e), 'err');
+  }
+}
+
+// bind ปุ่มบนสุด
+document.getElementById('pr-global-refresh')?.addEventListener('click', refreshPayrollUI);
+
+// ===== DUE TODAY (Reminders) =====
+function todayYMD(){
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+const $dueDate    = document.getElementById('dueTodayInput');
+const $btnLoadDue = document.getElementById('btnLoadDue');
+const $btnNotify  = document.getElementById('btnNotifyToday');
+const $dueList    = document.getElementById('dueList');
+const $dueStat    = document.getElementById('dueStat');
+let __dueLastList = [];
+
+if ($dueDate && !$dueDate.value) $dueDate.value = todayYMD();
+
+let __dueLoading = false;
+let __dueLastAt = 0;          // timestamp ms
+const __DUE_MIN_INTERVAL = 8000; // กันซ้ำภายใน 8 วิ
+
+
+function endOfMonthYMD(d){
+  const dt = (d instanceof Date)? d : new Date(d);
+  const last = new Date(dt.getFullYear(), dt.getMonth()+1, 0);
+  return `${last.getFullYear()}-${String(last.getMonth()+1).padStart(2,'0')}-${String(last.getDate()).padStart(2,'0')}`;
+}
+function monthlyPayDateYMD(todayYMD, payDayOfMonth){
+  // todayYMD: 'YYYY-MM-DD', payDayOfMonth: 1..31 หรือ 'last'
+  const [Y,M] = todayYMD.split('-').map(Number);
+  const base = new Date(Y, M-1, 1);
+  const mk = (y,m,d)=> `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+
+  const thisLast = new Date(Y, M, 0).getDate();
+  const toDay = (payDayOfMonth==='last') ? thisLast : Math.min(Number(payDayOfMonth||1), 31);
+
+  // ถ้าวันนี้เลยวันจ่ายในเดือนนี้แล้ว → ขยับไปเดือนหน้า
+  const today = new Date(todayYMD);
+  const payThis = new Date(Y, M-1, (payDayOfMonth==='last')? thisLast : toDay);
+  if (today <= payThis) return mk(Y, M, (payDayOfMonth==='last')? thisLast : toDay);
+
+  // เดือนถัดไป
+  const nY = (M===12)? (Y+1) : Y;
+  const nM = (M===12)? 1 : (M+1);
+  const nextLast = new Date(nY, nM, 0).getDate();
+  const d = (payDayOfMonth==='last')? nextLast : Math.min(Number(payDayOfMonth||1), 31);
+  return mk(nY, nM, d);
+}
+
+async function loadDueToday(force=false){
+  try{
+    if (!$dueList) return;
+
+    const nowTs = Date.now();
+    if (!force && (__dueLoading || (nowTs - __dueLastAt) < __DUE_MIN_INTERVAL)) {
+      // กันรีโหลดถี่เกิน ถ้าไม่ force
+      return;
+    }
+
+    __dueLoading = true;
+    __dueLastAt = nowTs;
+
+    const today = $dueDate?.value || todayYMD();
+    $dueList.innerHTML = 'กำลังโหลด...';
+    $dueStat.textContent = '';
+
+    const actor = await getActor();
+    const qs = new URLSearchParams({
+      today,
+      actor: actor.lineUserId,
+      actorLineUserId: actor.lineUserId
+    });
+
+    const r = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/paygroups/reminder-due?${qs}`, {
+      method: 'GET',
+      headers: {
+        'Accept':'application/json',
+        'Authorization': await getBearer()
+      },
+      credentials: 'include'
+    });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'error');
+
+    const payload  = j.duePayload || {};
+    const due      = Array.isArray(payload.due) ? payload.due : [];
+    __dueLastList = due;
+    const adminIds = Array.isArray(payload.adminIds) ? payload.adminIds : [];
+
+    $dueStat.textContent = `ผู้รับแจ้ง: ${adminIds.length} คน · วันที่แจ้ง: ${payload.today || today}`;
+
+    if (!due.length){
+      $dueList.innerHTML = `<div class="muted">วันนี้ (${today}) ยังไม่มีกลุ่มที่ถึงกำหนดแจ้งเตือน</div>`;
+    } else {
+      const html = [
+        `<div class="table-wrap"><table class="log">`,
+        `<thead><tr><th>กลุ่ม</th><th>ช่วงงวด</th><th>วันจ่าย</th></tr></thead><tbody>`,
+        ...due.map(g=>{
+            const name = g.name || g.groupId || '(ไม่ระบุชื่อกลุ่ม)';
+
+            // ค่าจากเซิร์ฟเวอร์ถ้ามี
+            let payTxt = g.payDate || '';
+
+            // ✅ ถ้าเป็นรายเดือนและยังไม่ได้ส่ง payDate มา → คำนวณฝั่งหน้าเว็บ
+            if ((!payTxt || payTxt==='—') && String(g.type).toLowerCase()==='monthly'){
+            const pdom = g.payDayOfMonth ?? g.meta?.payDayOfMonth ?? g.payDay ?? g.meta?.payDay ?? null;
+            if (pdom!=null && ($dueDate?.value)){
+                payTxt = monthlyPayDateYMD($dueDate.value, String(pdom).toLowerCase()==='last' ? 'last' : Number(pdom));
+            }
+            }
+
+            // ถ้าไม่มี period จากเซิร์ฟเวอร์และเป็นรายเดือน → ใช้เดือนของ payTxt
+            let range = '—';
+            if (g.periodStart && g.periodEnd){
+            range = `${g.periodStart} → ${g.periodEnd}`;
+            } else if (String(g.type).toLowerCase()==='monthly' && payTxt){
+            const d = new Date(payTxt);
+            const first = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`;
+            const last  = endOfMonthYMD(d);
+            range = `${first} → ${last}`;
+            }
+
+            const pay = payTxt || '—';
+            return `<tr><td>${name}</td><td>${range}</td><td>${pay}</td></tr>`;
+        }),
+        `</tbody></table></div>`
+        ].join('');
+        $dueList.innerHTML = html;
+    }
+  }catch(e){
+    $dueList.innerHTML = `<div class="err">โหลดรายการล้มเหลว: ${e.message || e}</div>`;
+  } finally {
+    __dueLoading = false;
+  }
+}
+
+async function notifyDueToday(){
+  try{
+    const today = $dueDate?.value || todayYMD();
+    const actor = await getActor();                         // ✅ เพิ่ม
+    $btnNotify.disabled = true; $btnNotify.textContent = 'กำลังส่ง...';
+
+    const r = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/paygroups/notify-run`, {
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'Accept':'application/json',
+        'Authorization': await getBearer()                  // เดิม
+      },
+      credentials:'include',
+      body: JSON.stringify({ today, actor })               // ✅ ใส่ actor ใน body
+    });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'error');
+
+    const { sent=0, groups=0, adminCount=0 } = j;
+   
+    // รวบรวมกลุ่ม + สมาชิก (จาก cache __dueLastList และ __groupMembers/__users)
+    const block = (__dueLastList||[]).map((g,idx)=>{
+    const gid  = g.groupId || g.id || '';
+    const name = g.name || gid || '(ไม่ระบุชื่อกลุ่ม)';
+    const ids  = __groupMembers[gid] || new Set();
+    const users = (__users||[]).filter(u => ids.has(u.lineUserId));
+    const chips = users.length
+        ? users.map(u=>`<span class="chip" title="${u.lineUserId}">${u.fullName||u.lineUserId}</span>`).join(' ')
+        : '<span class="muted">— ไม่มีสมาชิก —</span>';
+    const payTxt = g.payDate || '—';
+    const range  = (g.periodStart && g.periodEnd) ? `${g.periodStart} → ${g.periodEnd}` : '—';
+    return `
+        <div class="card" style="margin:8px 0">
+        <div class="toolbar"><h3 style="margin:0">${idx+1}. ${name}</h3>
+            <span class="muted">ช่วงงวด: ${range} · วันจ่าย: ${payTxt}</span>
+        </div>
+        <div style="margin-top:6px">${chips}</div>
+        </div>`;
+    }).join('');
+
+    showDialog('ส่งการแจ้งเตือนแล้ว', 'ส่งการแจ้งเตือนแล้ว');;
+
+    loadDueToday();
+
+  }catch(e){
+    alert('ส่งแจ้งเตือนล้มเหลว: ' + (e.message || e));
+  }finally{
+    $btnNotify.disabled = false; $btnNotify.textContent = 'ส่งแจ้งเตือนวันนี้';
+  }
+}
+
+$btnLoadDue?.addEventListener('click', loadDueToday);
+$btnNotify?.addEventListener('click', notifyDueToday);
+
+
+// bind ปุ่มแท็บ
+$tabPayrun.onclick = async ()=>{
+  setPayrollTab('payrun');
+  await primePayroll(true);
+  await loadDueToday(true);
+};
+$tabCycles.onclick = async ()=>{
+  setPayrollTab('cycles');
+  await primePayroll(true);
+};
+$tabPayments.onclick = async ()=>{
+  setPayrollTab('payments');
+  await primePayments(true);
+};
+
+$dueDate?.addEventListener('change', ()=> loadDueToday(true));
+
+
+const $prGroup = document.getElementById('pr-group');
+const $prStart = document.getElementById('pr-start');
+const $prEnd   = document.getElementById('pr-end');
+const $prQ     = document.getElementById('pr-q');
+const $prDraft = document.getElementById('pr-draft');
+const $prBody  = document.getElementById('pr-body');
 const $prTotal = document.getElementById('pr-total');
+const $prMsg   = document.getElementById('pr-msg');
 const $prCheckAll = document.getElementById('pr-checkall');
-const $prMsg = document.getElementById('pr-msg');
+const $prStatus = document.getElementById('pr-status');
+const $prMembersBox   = document.getElementById('pr-members-box');
+const $prMembersList  = document.getElementById('pr-members-list');
+const $prMembersCount = document.getElementById('pr-members-count');
 
-$prMonth.value = FORCED_MONTH || monthStr();
+/* NEW: elements for edit-run chips */
+const $prRunBox = document.getElementById('pr-run-box');
+const $prRunIdChip = document.getElementById('pr-runid-chip');
+const $prRunMembers = document.getElementById('pr-run-members');
 
-let __payrollRows = [];
+/* Default period (first load only) */
+(function initDefaultRange(){
+  if ($prStart.value && $prEnd.value) return;
+  const d=new Date(); const first=new Date(d.getFullYear(), d.getMonth(), 1); const last=new Date(d.getFullYear(), d.getMonth()+1, 0);
+  $prStart.value = `${first.getFullYear()}-${pad2(first.getMonth()+1)}-${pad2(first.getDate())}`;
+  $prEnd.value   = `${last.getFullYear()}-${pad2(last.getMonth()+1)}-${pad2(last.getDate())}`;
+})();
 
-$prQ.oninput = ()=> renderPayrollTable(__payrollRows);
-document.getElementById('pr-filter-status').onchange = ()=> renderPayrollTable(__payrollRows);
-
-$prCheckAll.addEventListener('change', ()=>{
-  [...$prBody.querySelectorAll('input[type="checkbox"]')].forEach(cb=> cb.checked = $prCheckAll.checked);
-  recomputePayrollTotal();
+/* Persist period & normalize */
+const PERIOD_KEY = `ta_pr_period_${TENANT}`;
+function loadSavedPeriod(){
+  try{
+    const j = JSON.parse(sessionStorage.getItem(PERIOD_KEY)||'{}');
+    if (j.start && j.end){ $prStart.value = j.start; $prEnd.value = j.end; }
+  }catch{}
+}
+function savePeriod(){ sessionStorage.setItem(PERIOD_KEY, JSON.stringify({ start:$prStart.value, end:$prEnd.value })); }
+function normalizePeriod(){
+  if (!$prStart.value || !$prEnd.value) return;
+  const s = new Date($prStart.value), e = new Date($prEnd.value);
+  if (!isNaN(s) && !isNaN(e) && s > e){ const t=$prStart.value; $prStart.value=$prEnd.value; $prEnd.value=t; }
+}
+let USER_TOUCHED_PERIOD = false;
+[$prStart,$prEnd].forEach(i=>{
+  i.addEventListener('change', ()=>{ 
+    USER_TOUCHED_PERIOD = true; normalizePeriod(); savePeriod(); 
+    // ออกจากโหมดแก้ไขงวดเดิมทันที
+    __editingRunId = null; __editRunMembers = null; $prRunBox.classList.add('hidden');
+  });
 });
 
-function recomputePayrollTotal(){
-  let s = 0;
+loadSavedPeriod();
+
+let __payDraft = [];
+let __groups = [];
+let __groupMembers = {}; // groupId -> Set(lineUserId)
+
+function recomputeTotal(){
+  let s=0;
   [...$prBody.querySelectorAll('tr')].forEach(tr=>{
     const cb = tr.querySelector('input[type="checkbox"]');
-    const net = Number(tr.dataset.net || 0);
-    if (cb && cb.checked) s += net;
+    if (!cb || !cb.checked) return;
+    const net = Number(tr.querySelector('[data-net]')?.dataset.net || 0);
+    s += net;
   });
   $prTotal.textContent = s.toLocaleString(undefined,{maximumFractionDigits:2});
 }
-let __statusMap = {};
-let __slipped = new Set();
-
-function renderPayrollTable(rows){
-  const q = ($prQ.value||'').toLowerCase();
-  const fStatus = document.getElementById('pr-filter-status').value || '';
-  $prBody.innerHTML = '';
-  rows.filter(notOwner)
-      .filter(x => !q || `${x.fullName||''} ${x.jobTitle||''}`.toLowerCase().includes(q))
-      .filter(x => !fStatus || (String(x.status||'')===fStatus))
-    .forEach((r)=>{
-      const st = r.status || 'Pending';
-      const slipMark = __slipped.has(r.lineUserId) ? `<span class="chip" title="ออกสลิปแล้ว">สลิป✓</span>` : '';
-      const tr = document.createElement('tr');
-      tr.dataset.net = r.netPay || 0;
-      tr.innerHTML = `
-        <td><input type="checkbox" checked></td>
-        <td>${r.fullName || '-'} ${slipMark}</td>
-        <td>${r.jobTitle || '-'}</td>
-        <td>${r.payType}</td>
-        <td style="text-align:right">${Number(r.payRate||0).toLocaleString()}</td>
-        <td style="text-align:right">${r.workDays}</td>
-        <td style="text-align:right">${r.workHours.toFixed(2)}</td>
-        <td style="text-align:right">${r.lateHours.toFixed(2)}</td>
-        <td style="text-align:right">${r.basePay.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
-        <td style="text-align:right">${r.lateDeduct.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
-        <td style="text-align:right"><b>${r.netPay.toLocaleString(undefined,{maximumFractionDigits:2})}</b></td>
-        <td>${r.payoutChannel || '-'}</td>
-        <td>${r.bankName||'-'} ${r.bankAccount||''}</td>
-        <td class="status-col">
-            <select class="pr-status">
-              <option value="Pending"${st==='Pending'?' selected':''}>Pending</option>
-              <option value="Approved"${st==='Approved'?' selected':''}>Approved</option>
-              <option value="Transferred"${st==='Transferred'?' selected':''}>Transferred</option>
-            </select>
-        </td>
-        <td>
-          <div style="display:flex;gap:6px;flex-wrap:wrap">
-            <button class="btn-ghost pr-save">บันทึก</button>
-            <button class="btn pr-slip">ออกสลิป</button>
-          </div>
-        </td>`;
-      $prBody.appendChild(tr);
-      const $sel = tr.querySelector('.pr-status');
-      const $btnSave = tr.querySelector('.pr-save');
-      const $btnSlip = tr.querySelector('.pr-slip');
-
-      $btnSave.addEventListener('click', async ()=>{
-        try{
-          const status = $sel.value;
-          await savePayrollStatus({
-            month: $prMonth.value || monthStr(),
-            lineUserId: r.lineUserId,
-            status
-          });
-          $prMsg.textContent = `บันทึกสถานะเป็น ${status} แล้ว`;
-          r.status = status;
-        }catch(e){ $prMsg.textContent = 'บันทึกสถานะไม่สำเร็จ: ' + (e.message||e); }
-      });
-
-      $btnSlip.addEventListener('click', async ()=>{
-        try{
-          const url = await generatePayslipPdf({
-            month: $prMonth.value || monthStr(),
-            record: r
-          });
-          __slipped.add(r.lineUserId);
-          renderPayrollTable(__payrollRows);
-          await shareTextToLine(`สลิปเงินเดือน ${r.fullName} (${ $prMonth.value || monthStr() })\n${url}`);
-          $prMsg.textContent = 'สร้างสลิปสำเร็จและส่งลิงก์เข้า LINE แล้ว';
-        }catch(e){ $prMsg.textContent = 'ออกสลิปไม่สำเร็จ: ' + (e.message||e); }
-      });
-    });
-  recomputePayrollTotal();
+function renderGroupMembers(gid){
+  const ids = __groupMembers[gid];
+  if (ids && ids.size > 0){
+    const users = (__users || []).filter(u => ids.has(u.lineUserId));
+    $prMembersCount.textContent = String(users.length);
+    $prMembersList.innerHTML = users.map(u =>
+      `<span class="chip" title="${u.lineUserId}">${u.fullName || u.lineUserId}</span>`
+    ).join(' ');
+    $prMembersBox.classList.remove('hidden');
+  } else {
+    $prMembersCount.textContent = '0';
+    $prMembersList.innerHTML = '';
+    $prMembersBox.classList.add('hidden');
+  }
 }
 
-async function runPayroll(){
+/* helper: render chips for edit-run members */
+function renderEditRunChips(){
+  if (!__editingRunId || !(__editRunMembers instanceof Set) || __editRunMembers.size===0){
+    $prRunBox.classList.add('hidden');
+    return;
+  }
+  $prRunIdChip.textContent = __editingRunId;
+  const users = (__users||[]).filter(u => __editRunMembers.has(u.lineUserId));
+  $prRunMembers.innerHTML = users.map(u =>
+    `<span class="chip" title="${u.lineUserId}">${u.fullName||u.lineUserId}</span>`
+  ).join(' ');
+  $prRunBox.classList.remove('hidden');
+  // และซ่อนกล่องสมาชิกกลุ่มเพื่อไม่ให้สับสน
+  $prMembersBox.classList.add('hidden');
+}
+
+$prCheckAll.onchange = ()=>{
+  [...$prBody.querySelectorAll('input[type="checkbox"]')].forEach(cb=> cb.checked = $prCheckAll.checked);
+  recomputeTotal();
+};
+
+function rowHTML(r){
+  return `
+    <td><input type="checkbox" checked></td>
+    <td>${r.fullName || '-'}</td>
+    <td>${r.jobTitle || '-'}</td>
+    <td>${displayPay(r)}</td>
+    <td style="text-align:right">${Number(r.payRate||0).toLocaleString()}</td>
+    <td style="text-align:right">${r.workDays}</td>
+    <td style="text-align:right">${r.workHours.toFixed(2)}</td>
+    <td style="text-align:right">${r.lateHours.toFixed(2)}</td>
+    <td style="text-align:right">${r.basePay.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+    <td><input class="adjMinus" type="number" step="0.01" value="${r.adjMinus||0}" style="width:110px"></td>
+    <td><input class="adjPlus"  type="number" step="0.01" value="${r.adjPlus||0}"  style="width:110px"></td>
+    <td data-net="${r.netPay.toFixed(2)}" style="text-align:right"><b>${r.netPay.toLocaleString(undefined,{maximumFractionDigits:2})}</b></td>
+    <td><input class="note" placeholder="หมายเหตุ" value="${(r.note||'').replace(/"/g,'&quot;')}" style="width:160px"></td>
+    <td class="status-col"><span class="pr-status muted">รอจ่าย</span></td>
+  `;
+}
+
+/* ฐานจ่าย (monthly = เงินเดือนเต็ม) */
+function parsePayBase(emp, logs, period){
+  const { days, summary } = logs;
+  const shiftIn = emp.shiftIn || ''; const grace = Number(emp.lateGraceMin||0);
+  let lateMinTotal=0; (days||[]).forEach(d=> lateMinTotal += lateMinutesForDay(d, shiftIn, grace));
+  const lateHours = lateMinTotal/60;
+  const workHours = Number(summary?.workHours||0);
+  const workDays  = Number(summary?.workDays||0);
+  const payType   = String(emp.payType||'daily');
+  const payRate   = Number(emp.payRate||0);
+  const dailyHours= Number(emp.dailyHours||8);
+  const payEveryN = Number(emp.payEveryN||0);
+
+  const daysInPeriod = (period?.periodStart && period?.periodEnd)
+    ? daysBetweenInclusive(period.periodStart, period.periodEnd)
+    : 30;
+
+  let basePay=0, hourlyForLate=0;
+  if (payType==='hourly'){
+    basePay = workHours * payRate;
+    hourlyForLate = payRate;
+  } else if (payType==='daily'){
+    basePay = workDays * payRate;
+    hourlyForLate = dailyHours>0 ? (payRate/dailyHours) : 0;
+  } else if (payType==='monthly'){
+    basePay = payRate;
+    hourlyForLate = (dailyHours>0) ? ((payRate/daysInPeriod)/dailyHours) : 0;
+  } else if (payType==='every_n_days' && payEveryN>0){
+    basePay = (workDays/payEveryN) * payRate;
+    hourlyForLate = dailyHours>0 ? (payRate/dailyHours) : 0;
+  } else if (payType==='every_n_hours' && payEveryN>0){
+    basePay = (workHours/payEveryN) * payRate;
+    hourlyForLate = payRate/payEveryN;
+  }
+
+  let lateDeduct=0;
+  if (String(emp.prorateLate||'false').toLowerCase()==='true' && hourlyForLate>0 && payType!=='hourly'){
+    lateDeduct = hourlyForLate * lateHours;
+  }
+  return { workDays, workHours, lateHours, basePay, lateDeduct, payType, payRate, dailyHours, payEveryN };
+}
+
+async function computeOne(emp, periodStart, periodEnd){
+  const logs = await fetchLogs(emp.lineUserId, null, { periodStart, periodEnd });
+  const calc = parsePayBase(emp, logs, { periodStart, periodEnd });
+  return {
+    ...emp, ...calc,
+    adjMinus: 0, adjPlus: 0, note: '',
+    netPay: Math.max(0, calc.basePay - calc.lateDeduct),
+    status: 'approved' // ✅ lower-case to match GAS
+  };
+}
+
+/* groups helpers */
+async function loadGroups(force=false){
+  if (!force && __groups?.length) { /* cached */ }
+  else {
+    const r = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/paygroups`).catch(()=>null);
+    const j = await (r ? r.json().catch(()=>({})) : {});
+    __groups = j?.data||[];
+  }
+  // members
+  __groupMembers = {};
+  for (const g of __groups){
+    const det = await fetchGroupDetail(g.groupId).catch(()=>({}));
+    __groupMembers[g.groupId] = new Set((det.members||det.memberIds||[]).map(x=> x.lineUserId || x));
+  }
+  // fills select + tables
+  $prGroup.innerHTML = `<option value="">— เลือกกลุ่มงวด —</option>` +
+    (__groups||[]).map(g=> `<option value="${g.groupId}">${g.name} (${g.type}${g.n?(' '+g.n):''})</option>`).join('');
+  renderGroupsOverview();
+  renderCyclesTable();
+}
+async function fetchGroupDetail(groupId){
   try{
-    $prStatus.textContent = 'กำลังคำนวณ…';
-    const m = $prMonth.value || monthStr();
-    const rows = [];
-    for (const emp of __users){
-      if (!notOwner(emp)) continue;
-      const { days, leave, summary } = await fetchLogs(emp.lineUserId, m);
-      const shiftIn = emp.shiftIn || ''; const grace = Number(emp.lateGraceMin || 0);
-      let totalLateMin = 0;
-      (days||[]).forEach(d=> totalLateMin += lateMinutesForDay(d, shiftIn, grace));
-      const lateHours = totalLateMin / 60;
+    const r = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/paygroups/${groupId}`).catch(()=>null);
+    const j = await (r ? r.json().catch(()=>({})) : {});
+    return j?.data || {};
+  }catch{ return {}; }
+}
+function computePeriodFromGroup(g){
+  if (!g) return null;
 
-      const workHours = Number(summary?.workHours || 0);
-      const workDays  = Number(summary?.workDays  || 0);
-      const payType     = String(emp.payType || 'daily');
-      const payRate     = Number(emp.payRate || 0);
-      const dailyHours  = Number(emp.dailyHours || 8);
-      const prorateLate = String(emp.prorateLate||'false').toLowerCase()==='true';
-      const payEveryN   = Number(emp.payEveryN || 0);
+  const baseStart = $prStart.value ? new Date($prStart.value) : null;
+  const baseEnd   = $prEnd.value   ? new Date($prEnd.value)   : null;
+  const baseDate  = (baseStart && !isNaN(baseStart)) ? baseStart
+                 : (baseEnd && !isNaN(baseEnd)) ? baseEnd
+                 : new Date();
 
-      let basePay=0;
-      if (payType==='hourly') basePay = workHours * payRate;
-      else if (payType==='daily') basePay = workDays * payRate;
-      else if (payType==='monthly'){ const effDays = dailyHours>0 ? (workHours/dailyHours) : 0; basePay = (payRate/30) * effDays; }
-      else if (payType==='every_n_days' && payEveryN>0){ basePay = (workDays/payEveryN) * payRate; }
-      else if (payType==='every_n_hours' && payEveryN>0){ basePay = (workHours/payEveryN) * payRate; }
+  const toYMD = d => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
 
-      let lateDeduct=0;
-      if (prorateLate && dailyHours>0 && payType!=='hourly'){
-        const perHour = (payType==='daily') ? (payRate/dailyHours)
-                        : (payType==='monthly') ? ((payRate/30)/dailyHours)
-                        : (payRate/dailyHours);
-        lateDeduct = perHour * lateHours;
+  if (g.type==='monthly'){
+    const first = new Date(baseDate.getFullYear(), baseDate.getMonth(), 1);
+    const last  = new Date(baseDate.getFullYear(), baseDate.getMonth()+1, 0);
+    return { start: toYMD(first), end: toYMD(last) };
+  }
+
+  if (g.type==='every_n_days' && g.n>0 && onlyDate(g.startDate) ){
+    const N = Number(g.n);
+    const start0 = new Date(onlyDate(g.startDate) || '-');
+    if (isNaN(start0)) return null;
+
+    let cycleStart = new Date(start0);
+    let cycleEnd   = new Date(cycleStart);
+    cycleEnd.setDate(cycleEnd.getDate() + (N - 1));
+
+    while (cycleEnd < baseDate) {
+      cycleStart.setDate(cycleStart.getDate() + N);
+      cycleEnd.setDate(cycleEnd.getDate() + N);
+    }
+    return { start: toYMD(cycleStart), end: toYMD(cycleEnd) };
+  }
+
+  return null;
+}
+
+/* กลุ่มแบบตาราง (TAB1) */
+function renderGroupsOverview(){
+  const tb = document.getElementById('pr-groups-tbody');
+  const users = __users || [];
+  tb.innerHTML = (__groups||[]).map(g=>{
+
+    const meta = g.meta || {};
+    const sub = (g.type==='monthly') ? 'รายเดือน' : `ทุก ${g.n||'-'} วัน`;
+
+    // ✅ baseTxt: monthly ใช้ payDay/payDayOfMonth, นอกนั้นใช้ startDate
+    function pickExactYMD(...candidates){
+      for (const v of candidates){
+        const s = String(v||'').trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s; // ใช้ค่าเดิมเลยถ้าเป็น YYYY-MM-DD
+        if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+        // ถ้ามีเวลา (UTC) ให้แปลงเป็น local YMD
+          const d = new Date(s); if (!isNaN(d)) {
+            return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+          }
+        }
       }
-      const netPay = Math.max(0, basePay - lateDeduct);
+      return '';
+    }
 
-      rows.push({
-        month: m,
-        lineUserId: emp.lineUserId,
-        fullName: emp.fullName || '',
-        jobTitle: emp.jobTitle || '',
-        payType, payRate,
-        workDays, workHours,
-        lateHours, basePay, lateDeduct, netPay,
-        payoutChannel: emp.payoutChannel || 'bank',
-        bankName: emp.bankName || '', bankAccount: emp.bankAccount || ''
+    const rawBaseYMD =
+      (g.type === 'monthly')
+        ? '' // รายเดือนใช้ payDay แทน
+        : pickExactYMD(g.startDate, g.baseDate, g.anchorDate, g.meta?.startDate, g.meta?.baseDate);
+
+    let baseTxt = '—';
+    if (g.type === 'monthly') {
+      const pd = (g.payDayOfMonth ?? g.payDay ?? g.meta?.payDayOfMonth ?? g.meta?.payDay ?? '').toString().toLowerCase();
+      baseTxt = pd ? (pd === 'last' ? 'last' : `วันที่ ${pd}`) : '—';
+    } else {
+      baseTxt = rawBaseYMD || '—';
+    }
+
+    const ids = __groupMembers[g.groupId] || new Set();
+    const memCount = ids.size || 0;
+
+    const previewUsers = users.filter(u => ids.has(u.lineUserId)).slice(0,8);
+    const more = Math.max(0, memCount - previewUsers.length);
+    const chips = previewUsers
+      .map(u=>`<span class="chip" title="${u.lineUserId}">${u.fullName||u.lineUserId}</span>`)
+      .join(' ');
+    const moreTxt = more>0 ? ` <span class="chip">+${more}</span>` : '';
+
+    return `<tr data-gid="${g.groupId}">
+      <td style="display:flex; gap:6px; align-items:center">
+        <button class="btn-ghost" data-pick="${g.groupId}">เลือก</button>
+      </td>
+      <td>${g.name || g.groupId}</td>
+      <td>${sub}</td>
+      <td class="nowrap">${baseTxt}</td>                  <!-- ✅ คอลัมน์ใหม่ -->
+      <td>${chips}${moreTxt || (memCount===0?'<span class="muted">— ไม่มีสมาชิก —</span>':'')}</td>
+    </tr>`;
+  }).join('');
+
+  // bind ปุ่มเลือกกลุ่ม
+  [...tb.querySelectorAll('[data-pick]')].forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const gid = btn.dataset.pick;
+      $prGroup.value = gid;
+      USER_TOUCHED_PERIOD = true;
+      const det = await fetchGroupDetail(gid);
+      const ids = new Set((det.members||det.memberIds||[]).map(x=> x.lineUserId || x));
+      __groupMembers[gid] = ids;
+      renderGroupMembers(gid);
+      $prStatus.textContent = 'เลือกกลุ่มแล้ว — ตั้งช่วงวันที่ แล้วกด “คำนวณ”';
+      __editingRunId = null; __editRunMembers = null; $prRunBox.classList.add('hidden');
+      document.getElementById('pr-start').disabled = false;
+      document.getElementById('pr-end').disabled   = false;
+    });
+  });
+}
+
+
+$prGroup.onchange = async ()=>{
+  __editingRunId = null;  
+  __editRunMembers = null;
+  $prRunBox.classList.add('hidden');
+  const gid = $prGroup.value;
+  if (!gid){
+    $prStatus.textContent = 'เลือกกลุ่ม/ช่วงวันที่ แล้วคำนวณ';
+    $prMembersBox.classList.add('hidden');
+    return;
+  }
+  await loadUsers(true);
+  const det = await fetchGroupDetail(gid);
+  const ids = new Set((det.members||det.memberIds||[]).map(x=> x.lineUserId || x));
+  __groupMembers[gid] = ids;
+  renderGroupMembers(gid);
+  $prStatus.textContent = 'เลือกกลุ่มแล้ว — ตั้งช่วงวันที่ แล้วกด “คำนวณ”';
+};
+
+async function draftCompute(periodStart, periodEnd){
+  normalizePeriod(); savePeriod();
+  const q = ($prQ.value||'').toLowerCase();
+  $prBody.innerHTML = ''; $prStatus.textContent = 'กำลังคำนวณ…';
+  let rows = (__users||[]).filter(notOwner)
+                 .filter(x => !q || `${x.fullName||''} ${x.jobTitle||''}`.toLowerCase().includes(q));
+  const gid = $prGroup.value || '';
+
+  // ถ้าอยู่โหมดแก้ไขงวดเดิม → ใช้สมาชิกจากงวดเท่านั้น (ignore group)
+  if (__editingRunId && (__editRunMembers instanceof Set) && __editRunMembers.size>0){
+    rows = rows.filter(u => __editRunMembers.has(u.lineUserId));
+    renderEditRunChips();
+  } else if (gid && __groupMembers[gid] instanceof Set && __groupMembers[gid].size>0){
+    renderGroupMembers(gid);
+    rows = rows.filter(u => __groupMembers[gid].has(u.lineUserId));
+  } else {
+    $prMembersBox.classList.add('hidden');
+    $prRunBox.classList.add('hidden');
+  }
+
+  const out = [];
+  for (const emp of rows) out.push(await computeOne(emp, periodStart, periodEnd));
+  __payDraft = out;
+  $prBody.innerHTML = '';
+  out.forEach(r=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML = rowHTML(r);
+    const bind = ()=>{
+      const minus = Number(tr.querySelector('.adjMinus').value||0);
+      const plus  = Number(tr.querySelector('.adjPlus').value||0);
+      const net = Math.max(0, r.basePay - r.lateDeduct - minus + plus);
+      tr.querySelector('[data-net]').dataset.net = net.toFixed(2);
+      tr.querySelector('[data-net]').innerHTML = `<b>${net.toLocaleString(undefined,{maximumFractionDigits:2})}</b>`;
+      recomputeTotal();
+    };
+    tr.querySelector('.adjMinus').oninput = bind;
+    tr.querySelector('.adjPlus').oninput  = bind;
+    $prBody.appendChild(tr);
+  });
+  $prStatus.textContent = `คำนวณเสร็จ ${out.length} รายการ`;
+  recomputeTotal();
+}
+
+/* buttons */
+$prDraft.onclick = async ()=>{
+  try{
+    $prDraft.disabled = true; $prDraft.textContent = 'กำลังกำหนด…';
+    await draftCompute($prStart.value, $prEnd.value);
+  } finally {
+    $prDraft.disabled = false; $prDraft.textContent = 'คำนวณ';
+  }
+};
+$prQ.oninput = ()=> draftCompute($prStart.value, $prEnd.value);
+document.getElementById('pr-refresh').onclick = ()=> draftCompute($prStart.value, $prEnd.value);
+document.getElementById('pr-commit-selected').onclick = async ()=>{
+  try{
+    normalizePeriod(); savePeriod();
+    const btn = document.getElementById('pr-commit-selected');
+    btn.disabled = true;
+    const jobs = [];
+    [...$prBody.querySelectorAll('tr')].forEach((tr,idx)=>{
+      const cb = tr.querySelector('input[type="checkbox"]');
+      if (!cb || !cb.checked) return;
+      const r = __payDraft[idx]; if (!r) return;
+      const minus = Number(tr.querySelector('.adjMinus').value||0);
+      const plus  = Number(tr.querySelector('.adjPlus').value||0);
+      const note  = String(tr.querySelector('.note').value||'');
+      const status= 'approved'; // ✅
+      jobs.push({
+        lineUserId:  r.lineUserId,
+        periodStart: $prStart.value,
+        periodEnd:   $prEnd.value,
+        status,
+        adjustments: { minus, plus, note },
+        detail: {
+          workDays:   Number(r.workDays||0),
+          workHours:  Number(r.workHours||0),
+          lateHours:  Number(r.lateHours||0),
+          basePay:    Number(r.basePay||0),
+          lateDeduct: Number(r.lateDeduct||0),
+          payType:    String(r.payType||''),
+          payRate:    Number(r.payRate||0),
+          dailyHours: Number(r.dailyHours||0),
+          payEveryN:  Number(r.payEveryN||0)
+        }
       });
-    }
-    __payrollRows = rows;
-
-    const monthNow = m;
-    __statusMap = await fetchPayrollStatusMap(monthNow);
-    const logs = await fetchPayslipLogs(monthNow);
-    __slipped = new Set(logs.map(x => x.lineUserId));
-    __payrollRows = rows.map(r => {
-      const st = __statusMap[r.lineUserId]?.status;
-      return Object.assign({}, r, { status: st ? String(st).replace(/^\w/,c=>c.toUpperCase()) : 'Pending' });
     });
-
-    renderPayrollTable(__payrollRows);
-
-    $prStatus.textContent = `คำนวณแล้ว ${rows.length} คน · เลือกเพื่อรวมยอด / ส่งไฟล์ หรือ "ออกสลิปทั้งหมดที่เลือก" ด้านล่าง`;
-  }catch(e){
-    $prStatus.textContent = 'คำนวณไม่สำเร็จ: ' + (e.message||e);
-  }
+    if (!jobs.length) { $prMsg.textContent='ยังไม่ได้เลือกพนักงาน'; return; }
+    await commitPays(jobs, { runId: __editingRunId, overwrite: true });
+    $prMsg.textContent = `บันทึก & แจ้งพนักงาน ${jobs.length} รายเรียบร้อย`;
+    __editingRunId = null; __editRunMembers = null; $prRunBox.classList.add('hidden');
+    document.getElementById('pr-status').textContent = 'บันทึกเสร็จ — ออกจากโหมดแก้ไขแล้ว';
+    document.getElementById('pr-start').disabled = false;
+    document.getElementById('pr-end').disabled   = false;
+  }catch(e){ $prMsg.textContent = 'ผิดพลาด: '+(e.message||e); }
+  finally{ document.getElementById('pr-commit-selected').disabled = false; }
+};
+async function commitPays(jobs, opts = {}){
+  const res = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/payroll/commit`, {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      actor: await getActor(),
+      jobs,
+      notify: true,
+      runId: opts.runId || __editingRunId || null,
+      overwrite: opts.overwrite === undefined ? true : !!opts.overwrite
+    })
+  }).catch(()=>null);
+  const j = await (res ? res.json().catch(()=>({})) : {});
+  if (!res || !res.ok || !j.ok) throw new Error(j.error || 'commit_failed');
+  return j;
 }
 
-$prRun.onclick = runPayroll;
-document.getElementById('pr-refresh').onclick = runPayroll;
+/* ---------- TAB 2: ตั้งค่างวดเงินเดือน ---------- */
+const $pgGroupsBody = document.getElementById('pg-groups-body');
+const $pgCreate = document.getElementById('pg-create');
+const $pgEditor = document.getElementById('pg-editor');
+const $pgEditTitle = document.getElementById('pg-edit-title');
+const $pgName = document.getElementById('pg-name');
+const $pgType = document.getElementById('pg-type');
+const $pgN    = document.getElementById('pg-n');
+const $pgStart= document.getElementById('pg-start');
+const $pgMemberQ = document.getElementById('pg-member-q');
+const $pgMembers= document.getElementById('pg-members');
+const $pgMsg = document.getElementById('pg-msg');
+const $pgSave = document.getElementById('pg-save');
+const $pgCancel = document.getElementById('pg-cancel');
 
-/* (2) ออกสลิปทั้งหมดที่เลือก */
-document.getElementById('pr-slip-selected').onclick = async ()=>{
-  try{
-    const month = $prMonth.value || monthStr();
-    const selected = [];
-    [...$prBody.querySelectorAll('tr')].forEach(tr=>{
-      const cb = tr.querySelector('input[type="checkbox"]');
-      if (!cb || !cb.checked) return;
-      const name = tr.children[1]?.textContent?.replace('สลิป✓','').trim() || '';
-      const found = __payrollRows.find(r => (r.fullName||'')===name);
-      if (found) selected.push(found);
+let __editingGroupId = null;
+let __membersDraft = new Set();
+
+function renderCyclesTable(){
+  const users = __users || [];
+  $pgGroupsBody.innerHTML = (__groups||[]).map((g,idx)=>{
+    const ids = __groupMembers[g.groupId] || new Set();
+    const memCount = ids.size;
+    const typeTxt = (g.type==='monthly') ? 'รายเดือน' : `ทุก ${g.n||'-'} วัน`;
+    return `<tr>
+      <td>${idx+1}</td>
+      <td>${g.name}</td>
+      <td>${typeTxt}</td>
+      <td style="text-align:right">${memCount}</td>
+      <td><button class="btn-ghost" data-edit="${g.groupId}">แก้ไข</button></td>
+    </tr>`;
+  }).join('');
+
+  [...$pgGroupsBody.querySelectorAll('[data-edit]')].forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const gid = btn.dataset.edit;
+      await openGroupEditor(gid);
     });
-    if (!selected.length){ alert('ยังไม่ได้เลือกรายการ'); return; }
+  });
+}
 
-    $prMsg.textContent = `กำลังออกสลิป ${selected.length} รายการ…`;
-    for (const r of selected){
-      const url = await generatePayslipPdf({ month, record: r });
-      __slipped.add(r.lineUserId);
-      renderPayrollTable(__payrollRows);
-      await shareTextToLine(`สลิปเงินเดือน ${r.fullName} (${month})\n${url}`);
+function togglePgTypeUI(){
+  const t = $pgType.value;
+  const showN = (t === 'every_n_days');
+  const showPayDay = (t === 'monthly');
+
+  $pgN.closest('.col').style.display     = showN ? '' : 'none';
+  $pgStart.closest('.col').style.display = showN ? '' : 'none';
+  document.getElementById('pg-payday-wrap').style.display = showPayDay ? '' : 'none';
+}
+
+$pgType.addEventListener('change', togglePgTypeUI);
+
+
+
+async function openGroupEditor(groupId){
+  __editingGroupId = groupId || null;
+  $pgMsg.textContent = '';
+  const creating = !groupId;
+  let meta = { name:'', type:'every_n_days', n: null, startDate: '' };
+
+  if (!creating){
+    meta = await fetchGroupDetail(groupId);
+  }
+
+  // fill fields
+  $pgEditTitle.textContent = creating ? 'สร้างกลุ่มใหม่' : `แก้ไขกลุ่ม: ${meta.name||groupId}`;
+  $pgName.value = meta.name || '';
+  $pgType.value = meta.type || 'every_n_days';
+  $pgN.value = meta.n || '';
+  
+
+  // รองรับหลายชื่อคีย์ + บังคับ YYYY-MM-DD
+  function normYMD(v){
+    const s = String(v||'').trim();
+    if (!s) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    // try parse แบบหลวมๆ แล้ว format กลับ
+    const d = new Date(s);
+    if (!isNaN(d)) {
+        const mm = String(d.getMonth()+1).padStart(2,'0');
+        const dd = String(d.getDate()).padStart(2,'0');
+        return `${d.getFullYear()}-${mm}-${dd}`;
     }
-    $prMsg.textContent = `ออกสลิปสำเร็จ ${selected.length} รายการ และส่งลิงก์เข้า LINE แล้ว`;
+    return '';
+   }
+
+  const startRaw = meta.startDate || meta.baseDate || meta.anchorDate || meta.start || '';
+  $pgStart.value = normYMD(startRaw);
+
+  const $pgPayDay = document.getElementById('pg-payday');
+  $pgPayDay.value = meta.payDayOfMonth || meta.payDay || '';
+  // draft members
+  const ids = new Set((meta.members||meta.memberIds||[]).map(x=> x.lineUserId || x));
+  __membersDraft = ids;
+
+  togglePgTypeUI();
+  // render member list
+  renderMemberChecklist();
+
+  $pgEditor.classList.remove('hidden');
+}
+
+function renderMemberChecklist(){
+  const kw = ($pgMemberQ.value||'').trim().toLowerCase();
+  const rows = (__users||[]).filter(notOwner).filter(u=> !kw || `${u.fullName||''} ${u.jobTitle||''}`.toLowerCase().includes(kw));
+  $pgMembers.innerHTML = rows.map(u=>{
+    const checked = __membersDraft.has(u.lineUserId) ? 'checked' : '';
+    return `<tr>
+      <td><input type="checkbox" data-mid value="${u.lineUserId}" ${checked}></td>
+      <td>${u.fullName||u.lineUserId}</td>
+      <td>${u.jobTitle||'-'}</td>
+    </tr>`;
+  }).join('');
+  [...$pgMembers.querySelectorAll('[data-mid]')].forEach(ch=>{
+    ch.addEventListener('change', ()=>{
+      const id = ch.value;
+      if (ch.checked) __membersDraft.add(id); else __membersDraft.delete(id);
+    });
+  });
+}
+$pgMemberQ.oninput = renderMemberChecklist;
+
+$pgCreate.onclick = ()=> openGroupEditor(null);
+$pgCancel.onclick = ()=>{ $pgEditor.classList.add('hidden'); __editingGroupId=null; __membersDraft=new Set(); };
+
+$pgSave.onclick = async ()=>{
+  try{
+    $pgMsg.textContent = 'กำลังบันทึก…';
+
+    const name = $pgName.value.trim();
+    const type = $pgType.value;
+
+    // ฐาน: กรองอินพุต
+    if (!name){ $pgMsg.textContent = 'โปรดระบุชื่อกลุ่ม'; return; }
+    if (type !== 'monthly' && type !== 'every_n_days'){ 
+      $pgMsg.textContent = 'ประเภทไม่ถูกต้อง'; return; 
+    }
+
+    // ทำความสะอาด payload ให้ตรงรูปแบบใหม่
+    let n = null, startDate = null;
+    let payDay = null;
+
+  
+
+    if (type === 'monthly'){
+      const raw = (document.getElementById('pg-payday').value || '').trim().toLowerCase();
+      if (raw) {
+        if (raw === 'last') {
+          payDay = 'last';
+        } else {
+          const dn = Number.parseInt(raw, 10);
+        if (dn >= 1 && dn <= 31) payDay = dn;
+        else { $pgMsg.textContent = 'วันจ่ายต้องเป็น 1–31 หรือ last'; return; }
+        }
+      }
+      // ✅ เคลียร์ field ที่ไม่เกี่ยวกันทุกราย
+      n = null;
+      startDate = null;
+    }
+
+    if (type === 'every_n_days'){
+      n = Number.parseInt($pgN.value, 10);
+      if (!(n >= 1)) { $pgMsg.textContent = 'โปรดกรอก N เป็นจำนวนเต็มตั้งแต่ 1 ขึ้นไป'; return; }
+
+      const rawStart = ($pgStart.value || '').trim();
+      const d = new Date(rawStart);
+      const startYMD = (!isNaN(d)) ? `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` : '';
+      if (!startYMD){ $pgMsg.textContent = 'โปรดเลือกวันเริ่ม (วันฐาน)'; return; }
+
+      startDate = startYMD;
+
+      // ✅ กันค่าค้างจากโหมด monthly
+      payDay = null;
+    }
+
+
+    const payload = {
+      actor: await getActor(),
+      name,
+      type,
+      n,
+      startDate,
+      payDayOfMonth: payDay,   // <-- คีย์หลักที่ชีตใช้จริง
+      // (เผื่อแบ็กเอนด์ตัวเก่าที่อ่าน payDay)
+      payDay: payDay
+    };
+
+    const url   = `/api/tenants/${encodeURIComponent(TENANT)}/admin/paygroups${__editingGroupId?('/'+__editingGroupId):''}`;
+    const method= __editingGroupId ? 'PUT' : 'POST';
+    const r  = await fetch(url, { method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }).catch(()=>null);
+    const j  = await (r ? r.json().catch(()=>({})) : {});
+
+    if (!r || !r.ok || !j.ok){
+      // แสดง error ที่มาจริง ๆ จากเซิร์ฟเวอร์ถ้ามี
+      $pgMsg.textContent = 'ไม่สำเร็จ: ' + (j.error || 'save_group_failed');
+      return;
+    }
+
+    // ดึง groupId กลับ (กันหลายรูปแบบ key ชื่อ)
+    const gid = __editingGroupId || j.data?.groupId || j.data?.id || j.groupId;
+    if (!gid){ $pgMsg.textContent = 'บันทึกสำเร็จ แต่ไม่พบ groupId ที่สร้าง/อัปเดต'; return; }
+
+    // อัปเดตสมาชิก (ถ้าเลือกไว้)
+    const ids = Array.from(__membersDraft || []);
+    const r2  = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/paygroups/members`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ actor: await getActor(), groupId: gid, memberIds: ids })
+    }).catch(()=>null);
+    const j2 = await (r2 ? r2.json().catch(()=>({})) : {});
+    if (!r2 || !r2.ok || !j2.ok){
+      $pgMsg.textContent = 'บันทึกกลุ่มแล้ว แต่ผูกสมาชิกไม่สำเร็จ: ' + (j2.error || 'assign_failed');
+      // ยังถือว่ากลุ่มถูกสร้าง/แก้ไขแล้ว ผู้ใช้สามารถลองกดบันทึกสมาชิกใหม่ได้
+      return;
+    }
+
+    $pgMsg.textContent = 'บันทึกสำเร็จ ✓';
+    await loadUsers(true);
+    await loadGroups(true);
+    $pgEditor.classList.add('hidden');
+
+    // รีเฟรชตารางกลุ่ม
+    setPayrollTab('cycles');
+    await primePayroll(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
   }catch(e){
-    $prMsg.textContent = 'ออกสลิปแบบชุดไม่สำเร็จ: ' + (e.message||e);
+    $pgMsg.textContent = 'ไม่สำเร็จ: ' + (e.message || e);
   }
 };
 
-document.getElementById('pr-dl-csv').onclick = async ()=>{
-  try{
-    if (!__payrollRows.length) { alert('ยังไม่มีข้อมูล กรุณาคำนวณก่อน'); return; }
-    const header = ['lineUserId','fullName','jobTitle','payType','payRate','workDays','workHours','lateHours','basePay','lateDeduct','netPay','month','payoutChannel','bankName','bankAccount'];
-    const rows = [header];
-    const chosen = [];
-    [...$prBody.querySelectorAll('tr')].forEach((tr)=>{
-      const cb = tr.querySelector('input[type="checkbox"]');
-      if (!cb || !cb.checked) return;
-      const name = tr.children[1]?.textContent || '';
-      const found = __payrollRows.find(r => (r.fullName||'')===name);
-      if (found) chosen.push(found);
-    });
-    (chosen.length ? chosen : __payrollRows).forEach(r=> rows.push(header.map(k=> r[k])));
-    const csv = rows.map(r=> r.map(v=> `"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\n');
-    const fname = `payroll_${TENANT}_${$prMonth.value||monthStr()}.csv`;
 
-    const { url } = await uploadCsvAndGetUrl(fname, csv);
-    await shareTextToLine(`ไฟล์เงินเดือน ${fname}\n${url}`);
-    $prMsg.textContent = 'ส่งลิงก์ไฟล์เข้า LINE แล้ว';
+// ==== PAYMENTS TAB ====
+const $pyMonth   = document.getElementById('py-month');
+const $pyRun     = document.getElementById('py-run');
+const $pyQ       = document.getElementById('py-q');
+const $pyMsg     = document.getElementById('py-msg');
+const $pyAbody   = document.getElementById('py-approved-body');
+const $pyPbody   = document.getElementById('py-paid-body');
+
+if ($pyMonth && !$pyMonth.value) $pyMonth.value = todayMonthKey();
+
+
+async function primePayments(force=true){
+  // โหลด runs ของเดือน
+  const runs = await fetchRuns();
+  // cache เป็น map เพื่ออ้างอิงช่วงงวดตาม runId
+  window.__runsById = Object.fromEntries(
+    (runs||[]).map(r => [r.runId, { periodStart: r.periodStart, periodEnd: r.periodEnd }])
+  );
+  const month = $pyMonth.value || todayMonthKey();
+  const list = (runs||[]).filter(r => overlapsMonth(r.periodStart, r.periodEnd, month));
+  $pyRun.innerHTML = '<option value="">— เลือก Pay Run ภายในเดือน —</option>' + list.map(r=>{
+    const label = `${r.runId} · ${r.periodStart||'-'} → ${r.periodEnd||'-'}`;
+    return `<option value="${r.runId}">${label}</option>`;
+  }).join('');
+  $pyMsg.textContent = 'เลือก Pay Run เพื่อแสดงรายการ';
+  $pyAbody.innerHTML = ''; $pyPbody.innerHTML = '';
+}
+
+async function reloadPayments(){
+  const runId = $pyRun.value || '';
+  const kw = ($pyQ.value||'').trim().toLowerCase();
+  if (!runId){ $pyMsg.textContent = 'ยังไม่ได้เลือก Pay Run'; $pyAbody.innerHTML=''; $pyPbody.innerHTML=''; return; }
+
+  const items = await fetchItems({ runId }) || [];
+  // map/normalize fields
+  const rows = items.map(x=>{
+    const d   = x.detail||{};
+    const net = Number(x.netPay ?? d.netPay
+                 ?? (Number(x.basePay ?? d.basePay ?? 0) - Number(x.lateDeduct ?? d.lateDeduct ?? 0)));
+    const note = (x.adjustments?.note) || '';
+    // ถ้าไม่มีสถานะใน items ให้ถือว่า "approved" (รอจ่าย)
+    let status = String(x.status ?? d.status ?? '').toLowerCase();
+    if (status !== 'approved' && status !== 'paid') status = 'approved';
+    return {
+      ...x,
+      fullName: x.fullName || x.lineUserId || '-',
+      jobTitle: x.jobTitle || '-',
+      status,
+      netPay: isNaN(net) ? 0 : net,
+      note
+    };
+  }).filter(r => !kw || (`${r.fullName} ${r.jobTitle}`).toLowerCase().includes(kw));
+
+  const approved = rows.filter(r => r.status === 'approved');
+  const paid     = rows.filter(r => r.status === 'paid');
+  // แนบช่วงงวดจาก run ที่เลือก (กันกรณี items ไม่มี period)
+  const sel = (window.__runsById||{})[$pyRun.value||''] || {};
+  [...approved, ...paid].forEach(r => {
+    if (!r.periodStart) r.periodStart = sel.periodStart || '';
+    if (!r.periodEnd)   r.periodEnd   = sel.periodEnd   || '';
+  });
+
+  // render approved
+  $pyAbody.innerHTML = '';
+  approved.forEach((r,idx)=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${idx+1}</td>
+      <td>${r.fullName}</td>
+      <td>${r.jobTitle}</td>
+      <td style="text-align:right"><b>${Number(r.netPay||0).toLocaleString(undefined,{maximumFractionDigits:2})}</b></td>
+      <td>${(r.note||'')}</td>
+      <td>
+        <button class="btn" data-pay>ทำเครื่องหมายจ่ายแล้ว</button>
+      </td>
+    `;
+    tr.querySelector('[data-pay]').onclick = ()=> markPaidOne(r);
+    $pyAbody.appendChild(tr);
+  });
+
+  // render paid
+  $pyPbody.innerHTML = '';
+  paid.forEach((r,idx)=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${idx+1}</td>
+      <td>${r.fullName}</td>
+      <td>${r.jobTitle}</td>
+      <td style="text-align:right"><b>${Number(r.netPay||0).toLocaleString(undefined,{maximumFractionDigits:2})}</b></td>
+      <td>${(r.note||'')}</td>
+      <td><a href="#" data-run="${runId}">ดูงวด</a></td>
+    `;
+    tr.querySelector('[data-run]').onclick = (e)=>{ e.preventDefault(); openRunDetail(runId); };
+    $pyPbody.appendChild(tr);
+  });
+
+  $pyMsg.textContent = `รอจ่าย ${approved.length} ราย · จ่ายแล้ว ${paid.length} ราย`;
+}
+
+async function markPaidOne(row){
+  try{
+    $pyMsg.textContent = `กำลังทำเครื่องหมายจ่ายแล้ว: ${row.fullName}…`;
+       // ปิดปุ่มในแถวนี้ระหว่างทำงาน
+    const btn = [...document.querySelectorAll('#py-approved-body tr')].find(tr => 
+      (tr.children?.[1]?.textContent||'').trim() === (row.fullName||'').trim()
+    )?.querySelector('[data-pay]');
+    if (btn) btn.disabled = true;
+
+    // สร้าง payload จาก item เดิม → เปลี่ยน status: 'paid'
+    const d = row.detail || {};
+    // ดึงช่วงงวดจาก row หรือ map ของ run
+    const runMeta = (window.__runsById||{})[(row.runId || $pyRun.value || '')] || {};
+    const ps = row.periodStart || d.periodStart || runMeta.periodStart || '';
+    const pe = row.periodEnd   || d.periodEnd   || runMeta.periodEnd   || '';
+    const jobs = [{
+      lineUserId:  row.lineUserId,
+      periodStart: ps,                                  // ✅ ส่ง period ที่ถูกต้อง
+      periodEnd:   pe,
+      status: 'paid',
+      adjustments: row.adjustments || {},
+      detail: {
+        workDays:   Number(row.workDays   ?? d.workDays   ?? 0),
+        workHours:  Number(row.workHours  ?? d.workHours  ?? 0),
+        lateHours:  Number(row.lateHours  ?? d.lateHours  ?? 0),
+        basePay:    Number(row.basePay    ?? d.basePay    ?? 0),
+        lateDeduct: Number(row.lateDeduct ?? d.lateDeduct ?? 0),
+        payType:    String(row.payType    ?? d.payType    ?? ''),
+        payRate:    Number(row.payRate    ?? d.payRate    ?? 0),
+        dailyHours: Number(row.dailyHours ?? d.dailyHours ?? 0),
+        payEveryN:  Number(row.payEveryN  ?? d.payEveryN  ?? 0)
+        // ไม่ส่ง netPay เพื่อให้ฝั่ง GAS คำนวณเอง (กันบวกซ้ำ)
+      }
+    }];
+    await commitPays(jobs, { runId: row.runId || null, overwrite: true, notify:false });
+    // *optimistic move* — ลบแถวจาก "รอจ่าย" ทันที
+    if (btn) { const tr = btn.closest('tr'); if (tr) tr.remove(); }
+    $pyMsg.textContent = `ทำเครื่องหมายจ่ายแล้ว: ${row.fullName} ✓`;
+    await reloadPayments();
   }catch(e){
-    $prMsg.textContent = 'ส่งไม่สำเร็จ: ' + (e.message||e);
+    $pyMsg.textContent = 'ผิดพลาด: ' + (e.message||e);
   }
+}
+
+// hook UI
+$pyMonth?.addEventListener('change', ()=> primePayments(true));
+$pyRun?.addEventListener('change', reloadPayments);
+$pyQ?.addEventListener('input', reloadPayments);
+document.getElementById('py-refresh')?.addEventListener('click', ()=> reloadPayments());
+
+// ปรับ commitPays ให้รองรับ notify จาก options (ถ้าไม่ส่ง = คงเดิม)
+const __origCommitPays = commitPays;
+commitPays = async function(jobs, opts={}){
+  const res = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/payroll/commit`, {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      actor: await getActor(),
+      jobs,
+      notify: opts.notify===undefined ? true : !!opts.notify,
+      runId: opts.runId || null,
+      overwrite: opts.overwrite === undefined ? true : !!opts.overwrite
+    })
+  }).catch(()=>null);
+  const j = await (res ? res.json().catch(()=>({})) : {});
+  if (!res || !res.ok || !j.ok) throw new Error(j.error || 'commit_failed');
+  return j;
 };
 
-async function fetchPayrollStatusMap(month){
-  const params = new URLSearchParams({ month, actorLineUserId:(await getActor()).lineUserId });
-  const r = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/payroll/status?`+params).catch(()=>null);
-  const j = await (r ? r.json().catch(()=>({})) : {});
-  if (!r || !r.ok || !j.ok) return {};
-  return j.data || {};
-}
 
-async function fetchPayslipLogs(month){
-  const params = new URLSearchParams({ month, actorLineUserId:(await getActor()).lineUserId });
-  const r = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/payroll/payslip_logs?`+params).catch(()=>null);
-  const j = await (r ? r.json().catch(()=>({})) : {});
-  if (!r || !r.ok || !j.ok) return [];
-  return j.data || [];
-}
-
-
-/* ---------- REPORTS page ---------- */
+/* ---------- REPORTS (history) ---------- */
 const $rpMonth = document.getElementById('rp-month');
 const $rpStatus = document.getElementById('rp-status');
 const $rpBody = document.getElementById('rp-body');
 const $rpTotal = document.getElementById('rp-total');
-const $rpMsg = document.getElementById('rp-msg');
-const $rpRunPay = document.getElementById('rp-runpay');
-
-$rpMonth.value = FORCED_MONTH || monthStr();
+$rpMonth.value = getMonthKey(FORCED_MONTH) || todayMonthKey();
+$rpMonth.onchange = ()=> { loadReportOverview(); loadRunsTable(); };
 
 let __reportRows = [];
-let __runsCache = []; // cache รายชื่อ runs
+let __runsCache = [];
 
-$rpRunPay.onclick = async ()=>{
-  try{
-    $rpRunPay.disabled = true;
-    $rpStatus.textContent = 'กำลังรันงวดเงินเดือน…';
-
-    const { first, last } = monthRangeStr($rpMonth.value || monthStr());
-    const out = await runPayrollRun({ periodStart:first, periodEnd:last });
-
-    $rpStatus.textContent = `รันงวดสำเร็จ (runId: ${out.runId || '-'}) · กำลังรีเฟรชข้อมูล…`;
-
-    await primeHistoryControls();
-    await loadHistory();
-    await runReport();
-  }catch(e){
-    $rpStatus.textContent = 'รันงวดไม่สำเร็จ: ' + (e.message || e);
-  }finally{
-    $rpRunPay.disabled = false;
-  }
-};
-
-async function runReport(){
-  try{
-    $rpStatus.textContent = 'กำลังรวมรายงาน…';
-    const m = $rpMonth.value || monthStr();
-    const rows =[];
-    for (const emp of __users){
-      if (!notOwner(emp)) continue;
-      const { days, leave, summary } = await fetchLogs(emp.lineUserId, m);
-      const shiftIn = emp.shiftIn || ''; const grace = Number(emp.lateGraceMin || 0);
-      let totalLateMin = 0;
-      (days||[]).forEach(d=> totalLateMin += lateMinutesForDay(d, shiftIn, grace));
-      const lateHours = totalLateMin / 60;
-
-      const workHours = Number(summary?.workHours || 0);
-      const workDays  = Number(summary?.workDays  || 0);
-      const payType     = String(emp.payType || 'daily');
-      const payRate     = Number(emp.payRate || 0);
-      const dailyHours  = Number(emp.dailyHours || 8);
-      const prorateLate = String(emp.prorateLate||'false').toLowerCase()==='true';
-      const payEveryN   = Number(emp.payEveryN || 0);
-
-      let basePay=0;
-      if (payType==='hourly') basePay = workHours * payRate;
-      else if (payType==='daily') basePay = workDays * payRate;
-      else if (payType==='monthly'){ const effDays = dailyHours>0 ? (workHours/dailyHours) : 0; basePay = (payRate/30) * effDays; }
-      else if (payType==='every_n_days' && payEveryN>0){ basePay = (workDays/payEveryN) * payRate; }
-      else if (payType==='every_n_hours' && payEveryN>0){ basePay = (workHours/payEveryN) * payRate; }
-
-      let lateDeduct=0;
-      if (prorateLate && dailyHours>0 && payType!=='hourly'){
-        const perHour = (payType==='daily') ? (payRate/dailyHours)
-                        : (payType==='monthly') ? ((payRate/30)/dailyHours)
-                        : (payRate/dailyHours);
-        lateDeduct = perHour * lateHours;
-      }
-      const netPay = Math.max(0, basePay - lateDeduct);
-
-      rows.push({
-        month: m,
-        lineUserId: emp.lineUserId,
-        fullName: emp.fullName || '',
-        jobTitle: emp.jobTitle || '',
-        payType, payRate,
-        workDays, workHours,
-        lateHours, basePay, lateDeduct, netPay
-      });
-    }
-    __reportRows = rows;
-
-    $rpBody.innerHTML = '';
-    let s = 0;
-    rows.forEach(r=>{
-      s += r.netPay || 0;
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${r.fullName||'-'}</td>
-        <td>${r.jobTitle||'-'}</td>
-        <td>${r.payType}</td>
-        <td style="text-align:right">${Number(r.payRate||0).toLocaleString()}</td>
-        <td style="text-align:right">${r.workDays}</td>
-        <td style="text-align:right">${r.workHours.toFixed(2)}</td>
-        <td style="text-align:right">${r.lateHours.toFixed(2)}</td>
-        <td style="text-align:right">${r.basePay.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
-        <td style="text-align:right">${r.lateDeduct.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
-        <td style="text-align:right"><b>${r.netPay.toLocaleString(undefined,{maximumFractionDigits:2})}</b></td>
-      `;
-      $rpBody.appendChild(tr);
-    });
-    $rpTotal.textContent = s.toLocaleString(undefined,{maximumFractionDigits:2});
-
-    const empCount = rows.length;
-    const avg = empCount ? (s/empCount) : 0;
-    document.getElementById('rp-k1').textContent = $rpTotal.textContent;
-    document.getElementById('rp-k2').textContent = String(empCount);
-    document.getElementById('rp-k3').textContent = avg.toLocaleString(undefined,{maximumFractionDigits:2});
-
-    $rpStatus.textContent = `เสร็จแล้ว: เดือน ${$rpMonth.value||monthStr()} (ดูสรุปด้านบน และรายละเอียดตามตาราง)`;
-  }catch(e){
-    $rpStatus.textContent = 'สร้างรายงานไม่สำเร็จ: ' + (e.message||e);
-  }
+function overlapsMonth(periodStart, periodEnd, yyyyMM){
+  const { first, last } = monthRangeStr(yyyyMM);
+  const s = new Date(periodStart), e = new Date(periodEnd);
+  const f = new Date(first), l = new Date(last);
+  if (isNaN(s) || isNaN(e)) return false;
+  return !(e < f || s > l);
 }
 
-document.getElementById('rp-dl-csv').onclick = async ()=>{
-  try{
-    if (!__reportRows.length) { alert('ยังไม่มีข้อมูล กรุณาสร้างรายงานก่อน'); return; }
-    const header = ['lineUserId','fullName','jobTitle','payType','payRate','workDays','workHours','lateHours','basePay','lateDeduct','netPay','month'];
-    const rows = [header];
-    __reportRows.forEach(r=> rows.push(header.map(k=> r[k])));
-    const csv = rows.map(r=> r.map(v=> `"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\n');
-    const fname = `report_${TENANT}_${$rpMonth.value||monthStr()}.csv`;
-    const { url } = await uploadCsvAndGetUrl(fname, csv);
-    await shareTextToLine(`รายงานเงินเดือน ${fname}\n${url}`);
-    $rpMsg.textContent = 'ส่งลิงก์ไฟล์เข้า LINE แล้ว';
-  }catch(e){
-    $rpMsg.textContent = 'ส่งไม่สำเร็จ: ' + (e.message||e);
-  }
-};
+async function loadRunsTable(){
+  const month = $rpMonth.value || todayMonthKey();
+  const runs = await fetchRuns();
+  const list = (runs||[]).filter(r => overlapsMonth(r.periodStart, r.periodEnd, month));
 
-// ===== Payroll History (runs + items) =====
+  const $tbody = document.getElementById('runs-body');
+  $tbody.innerHTML = '';
+
+  for (const r of list){
+    const items = await fetchItems({ runId: r.runId });
+    const total = (items||[]).reduce((s,x)=>{
+      const net = Number(x.netPay ?? (x.detail?.netPay ?? 0));
+      return s + (isNaN(net) ? 0 : net);
+    }, 0);
+    const n = (items||[]).length;
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><a href="#" data-runid="${r.runId}" class="run-link">${r.runId}</a></td>
+      <td>${r.periodStart || '-'} → ${r.periodEnd || '-'}</td>
+      <td style="text-align:right">${n}</td>
+      <td style="text-align:right"><b>${total.toLocaleString(undefined,{maximumFractionDigits:2})}</b></td>
+      <td>${(r.createdAt||'').replace('T',' ').slice(0,16)}</td>
+    `;
+    $tbody.appendChild(tr);
+  }
+
+  [...document.querySelectorAll('.run-link')].forEach(a=>{
+    a.addEventListener('click', (e)=>{
+      e.preventDefault();
+      const rid = a.dataset.runid || '';
+      if (rid) openRunDetail(rid);
+    });
+  });
+}
+
+async function loadReportOverview(){
+  const month = $rpMonth.value || todayMonthKey();
+  let rows = await fetchItems({ month });
+
+  rows = (rows||[]).map(r => {
+    const d = r.detail || {};
+    const workDays   = Number(r.workDays ?? d.workDays ?? 0);
+    const workHours  = Number(r.workHours ?? d.workHours ?? 0);
+    const lateHours  = Number(r.lateHours ?? d.lateHours ?? 0);
+    const basePay    = Number(r.basePay ?? d.basePay ?? 0);
+    const lateDeduct = Number(r.lateDeduct ?? d.lateDeduct ?? 0);
+    const netPay     = Number(r.netPay ?? d.netPay ?? (basePay - lateDeduct));
+    const payType    = r.payType ?? d.payType ?? '-';
+    const payRate    = Number(r.payRate ?? d.payRate ?? 0);
+    return { ...r, workDays, workHours, lateHours, basePay, lateDeduct, netPay, payType, payRate };
+  });
+
+  $rpBody.innerHTML = '';
+  let total = 0;
+  rows.forEach(r=>{
+    total += Number(r.netPay||0);
+    const tr = document.createElement('tr');
+    const label = displayPay({
+      employmentType: r.detail?.employmentType ?? r.employmentType,
+      payType: r.payType,
+      payEveryN: r.payEveryN ?? r.detail?.payEveryN
+    });
+    tr.innerHTML = `
+      <td>${r.fullName || r.lineUserId || '-'}</td>
+      <td>${r.jobTitle || '-'}</td>
+      <td>${label}</td>
+      <td style="text-align:right">${Number(r.payRate||0).toLocaleString()}</td>
+
+      <td style="text-align:right">${Number(r.workDays||0)}</td>
+      <td style="text-align:right">${Number(r.workHours||0).toFixed(2)}</td>
+      <td style="text-align:right">${Number(r.lateHours||0).toFixed(2)}</td>
+      <td style="text-align:right">${Number(r.basePay||0).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+      <td style="text-align:right">${Number(r.lateDeduct||0).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+      <td style="text-align:right"><b>${Number(r.netPay||0).toLocaleString(undefined,{maximumFractionDigits:2})}</b></td>
+    `;
+    $rpBody.appendChild(tr);
+  });
+  $rpTotal.textContent = total.toLocaleString(undefined,{maximumFractionDigits:2});
+
+  document.getElementById('rp-k1').textContent = $rpTotal.textContent;
+  document.getElementById('rp-k2').textContent = String(rows.length);
+}
+
 async function fetchRuns(){
   const params = new URLSearchParams({ actorLineUserId:(await getActor()).lineUserId });
   const r = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/payroll/runs?`+params).catch(()=>null);
@@ -1367,118 +2315,126 @@ async function fetchRuns(){
 async function fetchItems({ runId, month, q }){
   const params = new URLSearchParams({ actorLineUserId:(await getActor()).lineUserId });
   if (runId) params.set('runId', runId);
-  if (month) params.set('month', month);
+  if (month) params.set('month', getMonthKey(month));
   if (q) params.set('q', q);
   const r = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/payroll/items?`+params).catch(()=>null);
   const j = await (r ? r.json().catch(()=>({})) : {});
   return (r && r.ok && j.ok) ? (j.data||[]) : [];
 }
 
-const $histRun  = document.getElementById('hist-run');
-const $histMonth= document.getElementById('hist-month');
-const $histQ    = document.getElementById('hist-q');
-const $histMin  = document.getElementById('hist-min');
-const $histMax  = document.getElementById('hist-max');
-const $histBody = document.getElementById('hist-body');
-
-$histMonth.value = monthStr();
-
-async function primeHistoryControls(){
-  const runs = await fetchRuns();
-  __runsCache = runs || [];
-  $histRun.innerHTML = `<option value="">— ทั้งหมด —</option>` +
-    __runsCache.map(r=> `<option value="${r.runId}">${r.runId} (${r.periodStart}→${r.periodEnd})</option>`).join('');
-}
-
-async function loadHistory(){
-  const runId = $histRun.value || '';
-  const month = $histMonth.value || '';
-  const kw = ($histQ.value||'').trim();
-
-  let rows = await fetchItems({ runId, month, q: kw });
-
-  const min = Number($histMin.value||'');
-  const max = Number($histMax.value||'');
-  rows = rows.filter(r => (isNaN(min) || Number(r.netPay||0) >= min) &&
-                          (isNaN(max) || Number(r.netPay||0) <= max));
-
-  $histBody.innerHTML = '';
-  rows.forEach((r)=>{
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td><a href="#" data-runid="${r.runId||''}" class="run-link">${r.runId||'-'}</a></td>
-      <td>${r.fullName||r.lineUserId||'-'}</td>
-      <td style="text-align:right">${Number(r.workDays||0)}</td>
-      <td style="text-align:right">${Number(r.workHours||0).toFixed(2)}</td>
-      <td style="text-align:right">${Number(r.basePay||0).toLocaleString()}</td>
-      <td style="text-align:right">${Number(r.lateDeduct||0).toLocaleString()}</td>
-      <td style="text-align:right"><b>${Number(r.netPay||0).toLocaleString()}</b></td>
-      <td><code style="font-size:11px">${(r.detail && Object.keys(r.detail).length)? '…' : '-'}</code></td>
-      <td>${(r.createdAt||'').replace('T',' ').slice(0,16)}</td>`;
-    $histBody.appendChild(tr);
-  });
-
-  // bind เปิดรายละเอียดงวด
-  [...document.querySelectorAll('.run-link')].forEach(a=>{
-    a.addEventListener('click', (e)=>{ e.preventDefault(); const rid=a.dataset.runid||''; if(rid) openRunDetail(rid); });
-  });
-}
-
-/* ---- Run detail modal ---- */
+/* modal */
 function showRunModal(){ document.getElementById('run-modal').classList.remove('hidden'); }
 function hideRunModal(){ document.getElementById('run-modal').classList.add('hidden'); }
+// แทนที่ฟังก์ชันเดิมทั้งก้อน
+function showDialog(title, text){
+  const m = document.getElementById('run-modal');
+  m.querySelector('#run-title').textContent = title || '';
+  m.querySelector('#run-subtitle').textContent = '';
+
+  // ซ่อนองค์ประกอบที่ไม่ใช้ในโหมด “แจ้งสั้นๆ”
+  m.querySelector('.run-kpi')?.classList.add('hidden');
+  m.querySelector('#run-table')?.closest('.table-wrap')?.classList.add('hidden');
+  m.querySelector('#run-edit-here')?.closest('.row')?.classList.add('hidden');
+
+  // แสดงข้อความสั้นบรรทัดเดียว
+  document.getElementById('run-body').innerHTML =
+    `<tr><td colspan="9" style="padding:18px 12px; text-align:center; font-weight:700">
+       ${text || 'ส่งการแจ้งเตือนแล้ว'}
+     </td></tr>`;
+
+  showRunModal();
+}
+
 document.getElementById('run-close').onclick = hideRunModal;
 document.querySelector('#run-modal .backdrop').onclick = hideRunModal;
-
+let __currentRunMeta = { periodStart:'', periodEnd:'' };
 async function openRunDetail(runId){
   try{
+    // โหมดดูงวด: เปิดส่วนประกอบทั้งหมดกลับมา
+    const mm = document.getElementById('run-modal');
+    mm.querySelector('.run-kpi')?.classList.remove('hidden');
+    mm.querySelector('#run-table')?.closest('.table-wrap')?.classList.remove('hidden');
+    mm.querySelector('#run-edit-here')?.closest('.row')?.classList.remove('hidden');
+    // เคลียร์ run-body เผื่อเคยใส่ข้อความสั้นจาก dialog ก่อนหน้า
+    document.getElementById('run-body').innerHTML = '';
+    
     if (!__runsCache.length) __runsCache = await fetchRuns();
     const meta = __runsCache.find(r=> r.runId===runId) || {};
     const { periodStart, periodEnd } = { periodStart: meta.periodStart||'', periodEnd: meta.periodEnd||'' };
+    __currentRunMeta = { periodStart, periodEnd };
 
-    const items = await fetchItems({ runId });
+    const items = await fetchItems({ runId }) || [];
 
-    const total = items.reduce((s,x)=> s + Number(x.netPay||0), 0);
+    const total = items.reduce((s,x)=>{
+      const net = Number(x.netPay ?? x.detail?.netPay ?? 0);
+      return s + (isNaN(net) ? 0 : net);
+    }, 0);
     const n = items.length;
     const avg = n ? total/n : 0;
 
     document.getElementById('run-title').textContent = `รายละเอียดงวด ${runId}`;
     const periodTxt = (periodStart && periodEnd) ? `${periodStart} → ${periodEnd}` : '—';
     document.getElementById('run-subtitle').textContent = `ช่วงงวด: ${periodTxt} · รายการทั้งหมด ${n} คน`;
-
     document.getElementById('run-k1').textContent = total.toLocaleString(undefined,{maximumFractionDigits:2});
     document.getElementById('run-k2').textContent = String(n);
     document.getElementById('run-k3').textContent = avg.toLocaleString(undefined,{maximumFractionDigits:2});
 
-    const $rb = document.getElementById('run-body'); $rb.innerHTML = '';
+    const $rb = document.getElementById('run-body'); 
+    $rb.innerHTML = '';
     items.forEach((r,idx)=>{
+      const workDays   = Number(r.workDays   ?? r.detail?.workDays   ?? 0);
+      const workHours  = Number(r.workHours  ?? r.detail?.workHours  ?? 0);
+      const lateHours  = Number(r.lateHours  ?? r.detail?.lateHours  ?? 0);
+      const leaveHours = Number(r.leaveHours ?? r.detail?.leaveHours ?? 0);
+      const basePay    = Number(r.basePay    ?? r.detail?.basePay    ?? 0);
+      const lateDeduct = Number(r.lateDeduct ?? r.detail?.lateDeduct ?? 0);
+      const netPay     = Number(r.netPay     ?? r.detail?.netPay     ?? (basePay - lateDeduct));
+      const payType    = r.payType ?? r.detail?.payType ?? '-';
+      const payRate    = Number(r.payRate ?? r.detail?.payRate ?? 0);
+
       const tr = document.createElement('tr');
+      const label = displayPay({
+        employmentType: r.detail?.employmentType ?? r.employmentType,
+        payType: r.payType ?? r.detail?.payType,
+        payEveryN: r.payEveryN ?? r.detail?.payEveryN
+      });
+
       tr.innerHTML = `
         <td>${idx+1}</td>
         <td>${r.fullName||r.lineUserId||'-'}</td>
-        <td>${(r.payType||'-')}/${Number(r.payRate||0).toLocaleString()}</td>
-        <td style="text-align:right">${Number(r.workDays||0)}</td>
-        <td style="text-align:right">${Number(r.workHours||0).toFixed(2)}</td>
-        <td style="text-align:right">${Number(r.lateHours||0).toFixed(2)} / ${Number(r.leaveHours||0).toFixed?.(2)??'0.00'}</td>
-        <td style="text-align:right">${Number(r.basePay||0).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
-        <td style="text-align:right">${Number(r.lateDeduct||0).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
-        <td style="text-align:right"><b>${Number(r.netPay||0).toLocaleString(undefined,{maximumFractionDigits:2})}</b></td>`;
+        <td>${label}/${payRate.toLocaleString()}</td>
+        <td style="text-align:right">${workDays}</td>
+        <td style="text-align:right">${workHours.toFixed(2)}</td>
+        <td style="text-align:right">${lateHours.toFixed(2)} / ${leaveHours.toFixed(2)}</td>
+        <td style="text-align:right">${basePay.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+        <td style="text-align:right">${lateDeduct.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+        <td style="text-align:right"><b>${netPay.toLocaleString(undefined,{maximumFractionDigits:2})}</b></td>
+      `;
       $rb.appendChild(tr);
     });
 
-    document.getElementById('run-export').onclick = async ()=>{
-      try{
-        const header = ['runId','lineUserId','fullName','payType','payRate','workDays','workHours','lateHours','basePay','lateDeduct','netPay','month'];
-        const rows = [header];
-        items.forEach(r=> rows.push(header.map(k=> r[k])));
-        const csv = rows.map(r=> r.map(v=> `"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\n');
-        const fname = `run_${runId}.csv`;
-        const { url } = await uploadCsvAndGetUrl(fname, csv);
-        await shareTextToLine(`รายละเอียดงวด ${runId} (${periodTxt})\n${url}`);
-        document.getElementById('run-msg').textContent = 'ส่งลิงก์ไฟล์เข้า LINE แล้ว';
-      }catch(e){
-        document.getElementById('run-msg').textContent = 'ส่งไม่สำเร็จ: ' + (e.message||e);
-      }
+    document.getElementById('run-edit-here').onclick = async ()=>{
+      // ตั้งค่าโหมดแก้ไข + เก็บชุดสมาชิกจากงวด
+      __editingRunId = runId; 
+      __editRunMembers = new Set((items||[]).map(x => x.lineUserId).filter(Boolean));
+
+      // ตั้งช่วงวันที่ตามงวด
+      document.getElementById('pr-start').value = __currentRunMeta.periodStart || '';
+      document.getElementById('pr-end').value   = __currentRunMeta.periodEnd   || '';
+      document.getElementById('pr-start').disabled = true;
+      document.getElementById('pr-end').disabled   = true;
+
+      // ไปที่แท็บ "ทำเงินเดือน" และคำนวณใหม่
+      location.hash = '#payroll';
+      document.getElementById('tab-payrun').click();
+
+      // แสดงชิป "สมาชิกจากงวด" และทำคำนวณ
+      renderEditRunChips();
+      document.getElementById('pr-draft').click();
+
+      document.getElementById('pr-status').textContent =
+        `โหมดแก้ไขงวดเดิม: ${__editingRunId} — บันทึกแล้วจะทับงวดเดิม (เปลี่ยนกลุ่ม/ช่วงวันที่จะออกจากโหมดนี้)`;
+      hideRunModal();
     };
 
     showRunModal();
@@ -1487,86 +2443,103 @@ async function openRunDetail(runId){
   }
 }
 
-/* ---------- boot ---------- */
-function applyRoute(){
+/* ---------- preload overlay ---------- */
+function showPreloader(msg){
+  const el = document.getElementById('app-preload');
+  el.classList.remove('hidden');
+  if (msg) el.querySelector('.muted').textContent = msg;
+}
+function hidePreloader(){
+  document.getElementById('app-preload').classList.add('hidden');
+}
+
+/* ---------- boot & route (fast-first-paint) ---------- */
+async function primeUsers(force=true){ document.getElementById('lazyNote').textContent='รอสักครู่ กำลังโหลดข้อมูล…'; await loadUsers(!!force); renderCards(__users); }
+async function primeLogs(force=true){ document.getElementById('lazyNote2').textContent='รอสักครู่ กำลังโหลดรายชื่อ…'; await loadUsers(!!force); renderUserStripLogs(); if (!CURRENT_USER && __users.length) openLogs(__users[0]); }
+async function primePayroll(force=true){ await loadUsers(!!force); await loadGroups(true); $prStatus.textContent='พร้อมคำนวณ — เลือกกลุ่ม/ช่วงวัน แล้วกด “คำนวณ”'; }
+async function primeReports(force=true){
+  await loadUsers(!!force);
+  await loadReportOverview();
+  await loadRunsTable();
+  document.getElementById('rp-status').textContent = 'เลือกงวดด้านล่างเพื่อดูประวัติ';
+}
+
+async function applyRoute(){
   const h=(location.hash||'').replace('#','').trim().toLowerCase();
   const v=h||DEFAULT_VIEW||'menu';
   show(v);
+  // ทุกครั้งที่เปลี่ยนเมนู → บังคับโหลดสดเสมอ
+  if (v==='users')   await primeUsers(true);
+  if (v==='logs')    await primeLogs(true);
+  if (v==='reports') await primeReports(true);
+  if (v==='payroll'){ 
+    show('payroll');
+    setPayrollTab('payrun');
+    await primePayroll(true);
+  }
+  if (v==='payments'){ 
+    show('payroll');
+    setPayrollTab('payments');
+    await primePayments(true);
+  }
+
 }
-window.addEventListener('hashchange', applyRoute);
+window.addEventListener('hashchange', async ()=>{ showPreloader('กำลังรีเฟรชข้อมูลล่าสุด…'); try{ await applyRoute(); } finally{ hidePreloader(); } });
 document.getElementById('btnHome').addEventListener('click', e=>{ e.preventDefault(); go('menu'); });
 
-(async ()=>{
-  try{
-    if (!TENANT) throw new Error('URL ไม่มีพารามิเตอร์ tenant');
-    setMsg('กำลังเริ่มต้น LIFF…');
-    const ok = await ensureLiff(); if (!ok) return;
-    await getActor(); setMsg('พร้อมใช้งาน','ok');
+// ตั้งค่า month inputs ให้เป็น YYYY-MM เสมอ
+document.addEventListener('DOMContentLoaded', ()=>{
+  const m1 = document.getElementById('month'); if (m1 && !m1.value) m1.value = todayMonthKey();
+  const m2 = document.getElementById('rp-month'); if (m2 && !m2.value) m2.value = todayMonthKey();
+});
 
-    const primeUsers = async ()=> {
-      try {
-        document.getElementById('lazyNote').textContent='รอสักครู่ กำลังโหลดข้อมูล…';
-        const rows = await getUsersOnce();
-        renderCards(rows);
-      } catch(e) {
-        document.getElementById('lazyNote').textContent='โหลดไม่สำเร็จ';
-      }
-    };
-    const primeLogs = async ()=> {
-      try {
-        document.getElementById('lazyNote2').textContent='รอสักครู่ กำลังโหลดรายชื่อ…';
-        await getUsersOnce();
-        renderUserStripLogs();
-        if (!CURRENT_USER && __users.length) openLogs(__users[0]);
-      } catch(e) {
-        document.getElementById('lazyNote2').textContent='โหลดไม่สำเร็จ';
-      }
-    };
-    const primePayroll = async ()=> {
-      try {
-        await getUsersOnce();
-        $prStatus.textContent = 'พร้อมคำนวณ เลือกเดือนแล้วกด “คำนวณเงินเดือน”';
-      } catch(e) {
-        $prStatus.textContent = 'โหลดรายชื่อไม่สำเร็จ';
-      }
-    };
-    const primeReports = async ()=> {
-      try {
-        await getUsersOnce();
-        $rpStatus.textContent = 'พร้อมสร้างรายงาน';
-        await primeHistoryControls();
-        await loadHistory();
-      } catch(e) {
-        $rpStatus.textContent = 'โหลดรายชื่อไม่สำเร็จ';
-      }
-    };
+if (window.__TA_INITED__) {
+  console.log('[TA] skip duplicate boot');
+} else {
+  window.__TA_INITED__ = true;
 
-    const firstView=(location.hash||'').slice(1)||DEFAULT_VIEW||'menu';
-    if (firstView==='users') await primeUsers();
-    if (firstView==='logs')  await primeLogs();
-    if (firstView==='payroll') await primePayroll();
-    if (firstView==='reports') await primeReports();
+  (async ()=>{
+    try{
+      if (!TENANT) throw new Error('URL ไม่มีพารามิเตอร์ tenant');
 
-    window.addEventListener('hashchange', async ()=>{
-      const v=(location.hash||'').slice(1);
-      if (v==='users') await primeUsers();
-      if (v==='logs')  await primeLogs();
-      if (v==='payroll') await primePayroll();
-      if (v==='reports') await primeReports();
-    });
+      // เร่ง first paint: โชว์หน้าที่ขอมาก่อน (เช่น #payroll) + overlay โหลด
+      const firstView=(location.hash||'').slice(1)||DEFAULT_VIEW||'menu';
+      show(firstView.toLowerCase());
+      showPreloader('กำลังเปิด LIFF และโหลดข้อมูล…');
+      setMsg('กำลังเริ่มต้น LIFF…');
 
-    await getUsersOnce();
-    if (firstView==='users') renderCards(__users);
-    if (firstView==='logs')  renderUserStripLogs();
+      const ok = await ensureLiff(); if (!ok) return; // liff.login จะ redirect กลับ
+      await getActor();
+      setMsg('พร้อมใช้งาน','ok');
 
-    document.getElementById('reload').onclick = async()=> renderCards(await listEmployees(await getActor()));
-    document.getElementById('q').oninput      = async()=> renderCards(await listEmployees(await getActor()));
+      // โหลดหน้าปัจจุบันแบบบังคับสด
+      await applyRoute();
 
-    if (MODE_PAYROLL){ go('payroll'); await primePayroll(); }
-    if (MODE_REPORT){ go('reports'); await primeReports(); }
+      /* quick actions */
+      document.getElementById('reload').onclick = async()=> renderCards(await loadUsers(true));
+      document.getElementById('q').oninput      = async()=> renderCards(await loadUsers());
 
-  }catch(e){ setMsg('ผิดพลาด: '+ (e.message||e), 'err'); }
-})();
+      /* refresh buttons (ยังคงไว้ แต่ไม่จำเป็นต้องกดแล้ว) */
+      document.getElementById('users-refresh').onclick   = ()=> primeUsers(true);
+      document.getElementById('logs-refresh').onclick    = ()=> primeLogs(true);
+      document.getElementById('pr-hard-reload').onclick  = async ()=>{
+        $prMsg.textContent = 'กำลังรีเฟรช…';
+        await primePayroll(true);
+        document.getElementById('pr-body').innerHTML = '';
+        document.getElementById('pr-total').textContent = '0.00';
+        $prMsg.textContent = 'รีเฟรชแล้ว';
+      };
+      document.getElementById('reports-refresh').onclick = ()=> primeReports(true);
+
+      if (MODE_PAYROLL){ location.hash = '#payroll'; await primePayroll(true); }
+      if (MODE_REPORT){  location.hash = '#reports'; await primeReports(true); }
+    }catch(e){
+      setMsg('ผิดพลาด: '+ (e.message||e), 'err');
+    } finally {
+      hidePreloader();
+    }
+  })();
+}
 </script>
 </body>
 </html>
