@@ -8623,6 +8623,7 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
 
     
     // ======= HELP (คำสั่ง: ช่วยเหลือ) – Single Bubble (no links) =======
+    // ======= HELP (คำสั่ง: ช่วยเหลือ) – Single Bubble (no spacer) =======
     if (/^ช่วยเหลือ$/i.test(text)) {
       // เปิดใช้ฟีเจอร์?
       if (!(await isAttendanceEnabled(tenantRef))) {
@@ -8647,6 +8648,7 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
           layout: 'vertical',
           spacing: '14px',
           contents: [
+            // ===== User section =====
             { type: 'text', text: 'User (พนักงาน)', weight: 'bold', size: 'md' },
             {
               type: 'box', layout: 'vertical', spacing: '10px', contents: [
@@ -8657,25 +8659,25 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
                     { type: 'text', text: 'พิมพ์: "ลงเวลาเข้า"', size: 'xs', color: '#9CA3AF' }
                   ]
                 },
-                { type: 'separator' },
+                { type: 'separator', margin: 'md' },
                 {
-                  type: 'box', layout: 'vertical', spacing: '4px', contents: [
+                  type: 'box', layout: 'vertical', spacing: '4px', margin: 'md', contents: [
                     { type: 'text', text: 'ลงเวลาออก', weight: 'bold', size: 'sm' },
                     { type: 'text', text: 'บันทึกเวลาเลิกงานของวันนี้ ระบบจะคำนวณชั่วโมงทำงาน', size: 'sm', color: '#6b7280' },
                     { type: 'text', text: 'พิมพ์: "ลงเวลาออก"', size: 'xs', color: '#9CA3AF' }
                   ]
                 },
-                { type: 'separator' },
+                { type: 'separator', margin: 'md' },
                 {
-                  type: 'box', layout: 'vertical', spacing: '4px', contents: [
+                  type: 'box', layout: 'vertical', spacing: '4px', margin: 'md', contents: [
                     { type: 'text', text: 'ลางาน', weight: 'bold', size: 'sm' },
                     { type: 'text', text: 'ส่งคำขอลางาน ระบุวันที่/ชั่วโมง/เหตุผล เพื่อให้ผู้ดูแลตรวจสอบ', size: 'sm', color: '#6b7280' },
                     { type: 'text', text: 'พิมพ์: "ลางาน"', size: 'xs', color: '#9CA3AF' }
                   ]
                 },
-                { type: 'separator' },
+                { type: 'separator', margin: 'md' },
                 {
-                  type: 'box', layout: 'vertical', spacing: '4px', contents: [
+                  type: 'box', layout: 'vertical', spacing: '4px', margin: 'md', contents: [
                     { type: 'text', text: 'ลงทะเบียนเข้าใช้งาน', weight: 'bold', size: 'sm' },
                     { type: 'text', text: 'บันทึกข้อมูลโปรไฟล์พื้นฐาน เช่น ชื่อ เลขบัญชี ตำแหน่ง ฯลฯ', size: 'sm', color: '#6b7280' },
                     { type: 'text', text: 'พิมพ์: "ลงทะเบียนเข้าใช้งาน"', size: 'xs', color: '#9CA3AF' }
@@ -8684,11 +8686,10 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
               ]
             },
 
-            { type: 'spacer', size: 'md' },
-            { type: 'separator' },
-            { type: 'spacer', size: 'sm' },
+            { type: 'separator', margin: 'lg' },
 
-            { type: 'text', text: 'Owner / Admin', weight: 'bold', size: 'md' },
+            // ===== Admin section =====
+            { type: 'text', text: 'Owner / Admin', weight: 'bold', size: 'md', margin: 'md' },
             {
               type: 'box', layout: 'vertical', spacing: '10px', contents: [
                 {
@@ -8698,25 +8699,25 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
                     { type: 'text', text: 'พิมพ์: "ผู้ดูแล: บันทึกการทำงาน"', size: 'xs', color: '#9CA3AF' }
                   ]
                 },
-                { type: 'separator' },
+                { type: 'separator', margin: 'md' },
                 {
-                  type: 'box', layout: 'vertical', spacing: '4px', contents: [
+                  type: 'box', layout: 'vertical', spacing: '4px', margin: 'md', contents: [
                     { type: 'text', text: 'ทำเงินเดือน', weight: 'bold', size: 'sm' },
                     { type: 'text', text: 'คำนวณชั่วโมง/วันทำงาน รวมหักสาย/วันลา สร้างสรุปจ่ายต่อคน/งวด', size: 'sm', color: '#6b7280' },
                     { type: 'text', text: 'พิมพ์: "ผู้ดูแล: ทำเงินเดือน"', size: 'xs', color: '#9CA3AF' }
                   ]
                 },
-                { type: 'separator' },
+                { type: 'separator', margin: 'md' },
                 {
-                  type: 'box', layout: 'vertical', spacing: '4px', contents: [
+                  type: 'box', layout: 'vertical', spacing: '4px', margin: 'md', contents: [
                     { type: 'text', text: 'รายงาน', weight: 'bold', size: 'sm' },
                     { type: 'text', text: 'สรุปการทำงาน/การจ่าย ช่วงเวลาที่เลือก และส่งออก CSV เพื่อตรวจสอบย้อนหลัง', size: 'sm', color: '#6b7280' },
                     { type: 'text', text: 'พิมพ์: "ผู้ดูแล: รายงาน"', size: 'xs', color: '#9CA3AF' }
                   ]
                 },
-                { type: 'separator' },
+                { type: 'separator', margin: 'md' },
                 {
-                  type: 'box', layout: 'vertical', spacing: '4px', contents: [
+                  type: 'box', layout: 'vertical', spacing: '4px', margin: 'md', contents: [
                     { type: 'text', text: 'ตั้งค่า', weight: 'bold', size: 'sm' },
                     { type: 'text', text: 'กำหนดรอบจ่าย (รายเดือน/ทุก N วัน) เวลางาน ค่าแรง สิทธิ์บทบาท และการแจ้งเตือน', size: 'sm', color: '#6b7280' },
                     { type: 'text', text: 'พิมพ์: "ผู้ดูแล: ตั้งค่า"', size: 'xs', color: '#9CA3AF' }
@@ -8735,20 +8736,10 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
         }
       };
 
-      // ถ้า replyFlex รองรับ quickReply เป็นอาร์กิวเมนต์ที่ 5 ให้ส่งไปด้วย; ถ้าไม่รองรับ ให้ลบทิ้งได้
-      const quickReply = {
-        items: [
-          { type: 'action', action: { type: 'message', label: 'ลงเวลาเข้า', text: 'ลงเวลาเข้า' } },
-          { type: 'action', action: { type: 'message', label: 'ลงเวลาออก', text: 'ลงเวลาออก' } },
-          { type: 'action', action: { type: 'message', label: 'ลางาน', text: 'ลางาน' } },
-          { type: 'action', action: { type: 'message', label: 'ลงทะเบียน', text: 'ลงทะเบียนเข้าใช้งาน' } },
-          { type: 'action', action: { type: 'message', label: 'ทำเงินเดือน', text: 'ผู้ดูแล: ทำเงินเดือน' } }
-        ]
-      };
-
-      // เหมือนกับบล็อก "ลางาน"
-      return replyFlex(replyToken, bubble, 'คู่มือการใช้งาน Time Attendance', tenantRef, quickReply);
+      // ส่งแบบเดียวกับบล็อก "ลางาน"
+      return replyFlex(replyToken, bubble, 'คู่มือการใช้งาน Time Attendance', tenantRef);
     }
+
 
 
     // ---------- /Time Attendance ----------
