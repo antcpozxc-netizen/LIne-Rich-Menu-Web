@@ -8624,11 +8624,38 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
     
     // ======= HELP (คำสั่ง: ช่วยเหลือ) – Single Bubble (no links) =======
     // ======= HELP (คำสั่ง: ช่วยเหลือ) – Single Bubble (no spacer) =======
+    // ======= HELP (คำสั่ง: ช่วยเหลือ) – Single Bubble (themed, readable) =======
     if (/^ช่วยเหลือ$/i.test(text)) {
-      // เปิดใช้ฟีเจอร์?
       if (!(await isAttendanceEnabled(tenantRef))) {
         return reply(replyToken, 'ยังไม่ได้เปิดใช้ระบบ Time Attendance ใน OA นี้', null, tenantRef);
       }
+
+      const THEME_PRIMARY = '#3B5BDB';   // ฟ้าอมม่วง (ใกล้ภาพตัวอย่าง)
+      const THEME_SOFT    = '#EEF2FF';   // พื้นอ่อน
+      const TEXT_MUTED    = '#6b7280';
+      const TEXT_HINT     = '#9CA3AF';
+
+      const sectionTitle = (th, en) => ({
+        type: 'box',
+        layout: 'baseline',
+        contents: [
+          { type: 'text', text: th, weight: 'bold', size: 'md', color: THEME_PRIMARY, wrap: true },
+          { type: 'text', text: en, size: 'xs', color: TEXT_HINT, margin: 'sm', flex: 0 }
+        ]
+      });
+
+      const item = (title, desc, hint) => ({
+        type: 'box',
+        layout: 'vertical',
+        backgroundColor: THEME_SOFT,
+        paddingAll: '12px',
+        margin: 'md',
+        contents: [
+          { type: 'text', text: title, weight: 'bold', size: 'sm', wrap: true },
+          { type: 'text', text: desc, size: 'sm', color: TEXT_MUTED, margin: 'xs', wrap: true },
+          { type: 'text', text: hint, size: 'xs', color: TEXT_HINT, margin: 'sm', wrap: true }
+        ]
+      });
 
       const bubble = {
         type: 'bubble',
@@ -8637,10 +8664,10 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
           type: 'box',
           layout: 'vertical',
           paddingAll: '16px',
-          backgroundColor: '#F3F4F6',
+          backgroundColor: '#E9EFFF',
           contents: [
-            { type: 'text', text: 'Help', weight: 'bold', size: 'lg', color: '#111111' },
-            { type: 'text', text: 'คู่มือการใช้งาน Time Attendance', size: 'sm', color: '#6b7280' }
+            { type: 'text', text: 'Help', weight: 'bold', size: 'xl', color: '#111111' },
+            { type: 'text', text: 'คู่มือการใช้งาน Time Attendance', size: 'sm', color: TEXT_MUTED, wrap: true }
           ]
         },
         body: {
@@ -8648,97 +8675,69 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
           layout: 'vertical',
           spacing: '14px',
           contents: [
-            // ===== User section =====
-            { type: 'text', text: 'User (พนักงาน)', weight: 'bold', size: 'md' },
-            {
-              type: 'box', layout: 'vertical', spacing: '10px', contents: [
-                {
-                  type: 'box', layout: 'vertical', spacing: '4px', contents: [
-                    { type: 'text', text: 'ลงเวลาเข้า', weight: 'bold', size: 'sm' },
-                    { type: 'text', text: 'บันทึกเวลามาทำงานของวันนี้ เก็บพิกัด/หมายเหตุได้', size: 'sm', color: '#6b7280' },
-                    { type: 'text', text: 'พิมพ์: "ลงเวลาเข้า"', size: 'xs', color: '#9CA3AF' }
-                  ]
-                },
-                { type: 'separator', margin: 'md' },
-                {
-                  type: 'box', layout: 'vertical', spacing: '4px', margin: 'md', contents: [
-                    { type: 'text', text: 'ลงเวลาออก', weight: 'bold', size: 'sm' },
-                    { type: 'text', text: 'บันทึกเวลาเลิกงานของวันนี้ ระบบจะคำนวณชั่วโมงทำงาน', size: 'sm', color: '#6b7280' },
-                    { type: 'text', text: 'พิมพ์: "ลงเวลาออก"', size: 'xs', color: '#9CA3AF' }
-                  ]
-                },
-                { type: 'separator', margin: 'md' },
-                {
-                  type: 'box', layout: 'vertical', spacing: '4px', margin: 'md', contents: [
-                    { type: 'text', text: 'ลางาน', weight: 'bold', size: 'sm' },
-                    { type: 'text', text: 'ส่งคำขอลางาน ระบุวันที่/ชั่วโมง/เหตุผล เพื่อให้ผู้ดูแลตรวจสอบ', size: 'sm', color: '#6b7280' },
-                    { type: 'text', text: 'พิมพ์: "ลางาน"', size: 'xs', color: '#9CA3AF' }
-                  ]
-                },
-                { type: 'separator', margin: 'md' },
-                {
-                  type: 'box', layout: 'vertical', spacing: '4px', margin: 'md', contents: [
-                    { type: 'text', text: 'ลงทะเบียนเข้าใช้งาน', weight: 'bold', size: 'sm' },
-                    { type: 'text', text: 'บันทึกข้อมูลโปรไฟล์พื้นฐาน เช่น ชื่อ เลขบัญชี ตำแหน่ง ฯลฯ', size: 'sm', color: '#6b7280' },
-                    { type: 'text', text: 'พิมพ์: "ลงทะเบียนเข้าใช้งาน"', size: 'xs', color: '#9CA3AF' }
-                  ]
-                }
-              ]
-            },
+            // ===== User =====
+            sectionTitle('User (พนักงาน)', 'Employee'),
+            item(
+              'ลงเวลาเข้า',
+              'บันทึกเวลามาทำงานของวันนี้ พร้อมพิกัดและหมายเหตุได้ ใช้ยึดเวลาเริ่มงานเพื่อคิดชั่วโมงทำงาน/สาย',
+              'พิมพ์: "ลงเวลาเข้า"'
+            ),
+            item(
+              'ลงเวลาออก',
+              'บันทึกเวลาเลิกงานของวันนี้ ระบบจะจับคู่กับเวลาเข้าและคำนวณชั่วโมงทำงานให้อัตโนมัติ',
+              'พิมพ์: "ลงเวลาออก"'
+            ),
+            item(
+              'ลางาน',
+              'ส่งคำขอลา ระบุวันที่ จำนวนชั่วโมง/เต็มวัน และเหตุผล เพื่อให้ผู้ดูแลตรวจสอบและเก็บประวัติ',
+              'พิมพ์: "ลางาน"'
+            ),
+            item(
+              'ลงทะเบียนเข้าใช้งาน',
+              'บันทึกโปรไฟล์พื้นฐาน เช่น ชื่อ–สกุล เบอร์โทร ตำแหน่ง ช่องทางรับเงิน (ธนาคาร/เงินสด) เพื่อใช้ทำเงินเดือน',
+              'หมายเหตุ : การลงทะเบียนซ้ำจะเป็นการแก้ไขข้อมูลเดิม',
+              'พิมพ์: "ลงทะเบียนเข้าใช้งาน"'
+            ),
 
             { type: 'separator', margin: 'lg' },
 
-            // ===== Admin section =====
-            { type: 'text', text: 'Owner / Admin', weight: 'bold', size: 'md', margin: 'md' },
-            {
-              type: 'box', layout: 'vertical', spacing: '10px', contents: [
-                {
-                  type: 'box', layout: 'vertical', spacing: '4px', contents: [
-                    { type: 'text', text: 'บันทึกการทำงาน', weight: 'bold', size: 'sm' },
-                    { type: 'text', text: 'ตรวจทาน/แก้ไขเวลาเข้า–ออก หรือเพิ่มบันทึกให้พนักงานเมื่อมีข้อผิดพลาด', size: 'sm', color: '#6b7280' },
-                    { type: 'text', text: 'พิมพ์: "ผู้ดูแล: บันทึกการทำงาน"', size: 'xs', color: '#9CA3AF' }
-                  ]
-                },
-                { type: 'separator', margin: 'md' },
-                {
-                  type: 'box', layout: 'vertical', spacing: '4px', margin: 'md', contents: [
-                    { type: 'text', text: 'ทำเงินเดือน', weight: 'bold', size: 'sm' },
-                    { type: 'text', text: 'คำนวณชั่วโมง/วันทำงาน รวมหักสาย/วันลา สร้างสรุปจ่ายต่อคน/งวด', size: 'sm', color: '#6b7280' },
-                    { type: 'text', text: 'พิมพ์: "ผู้ดูแล: ทำเงินเดือน"', size: 'xs', color: '#9CA3AF' }
-                  ]
-                },
-                { type: 'separator', margin: 'md' },
-                {
-                  type: 'box', layout: 'vertical', spacing: '4px', margin: 'md', contents: [
-                    { type: 'text', text: 'รายงาน', weight: 'bold', size: 'sm' },
-                    { type: 'text', text: 'สรุปการทำงาน/การจ่าย ช่วงเวลาที่เลือก และส่งออก CSV เพื่อตรวจสอบย้อนหลัง', size: 'sm', color: '#6b7280' },
-                    { type: 'text', text: 'พิมพ์: "ผู้ดูแล: รายงาน"', size: 'xs', color: '#9CA3AF' }
-                  ]
-                },
-                { type: 'separator', margin: 'md' },
-                {
-                  type: 'box', layout: 'vertical', spacing: '4px', margin: 'md', contents: [
-                    { type: 'text', text: 'ตั้งค่า', weight: 'bold', size: 'sm' },
-                    { type: 'text', text: 'กำหนดรอบจ่าย (รายเดือน/ทุก N วัน) เวลางาน ค่าแรง สิทธิ์บทบาท และการแจ้งเตือน', size: 'sm', color: '#6b7280' },
-                    { type: 'text', text: 'พิมพ์: "ผู้ดูแล: ตั้งค่า"', size: 'xs', color: '#9CA3AF' }
-                  ]
-                }
-              ]
-            }
+            // ===== Admin =====
+            sectionTitle('Owner / Admin', 'Administrator'),
+            item(
+              'บันทึกการทำงาน',
+              'ตรวจทาน/แก้ไขเวลาเข้า–ออก เพิ่มบันทึกแทนพนักงาน (กรณีลืมลงเวลา) และตามดูสถานะประจำวัน',
+              'พิมพ์: "ผู้ดูแล: บันทึกการทำงาน"'
+            ),
+            item(
+              'ทำเงินเดือน',
+              'รวมชั่วโมง/วันทำงาน คิดฐานจ่ายตามรูปแบบ (รายชั่วโมง/รายวัน/รายเดือน/ทุก N วัน) คิดหักสาย/ลา และสรุปจ่ายรายคน',
+              'พิมพ์: "ผู้ดูแล: ทำเงินเดือน"'
+            ),
+            item(
+              'รายงาน',
+              'ดูสรุปการทำงาน/การจ่ายตามช่วงเวลา ส่งออกไฟล์เพื่อตรวจสอบย้อนหลังหรือนำไปใช้งานต่อ',
+              'พิมพ์: "ผู้ดูแล: รายงาน"'
+            ),
+            item(
+              'ตั้งค่า',
+              'กำหนดรอบจ่าย (รายเดือนหรือทุก N วัน) วันทำงาน/เวลาเข้างาน ค่าแรง สิทธิ์บทบาท และตั้งค่าแจ้งเตือน',
+              'พิมพ์: "ผู้ดูแล: ตั้งค่า"'
+            )
           ]
         },
         footer: {
           type: 'box',
           layout: 'vertical',
           contents: [
-            { type: 'text', text: 'หมายเหตุ: บางเมนูต้องเป็น Owner/Admin เท่านั้น', size: 'xs', color: '#9CA3AF', align: 'center' }
+            { type: 'text', text: 'Tip: เนื้อหาอาจถูกจำกัดความกว้างโดยแอป LINE — แตะเพื่อขยายอ่านข้อความได้', size: 'xs', color: TEXT_HINT, align: 'center', wrap: true },
+            { type: 'text', text: 'บางเมนูต้องเป็น Owner/Admin เท่านั้น', size: 'xs', color: TEXT_HINT, align: 'center', margin: 'sm', wrap: true }
           ]
         }
       };
 
-      // ส่งแบบเดียวกับบล็อก "ลางาน"
       return replyFlex(replyToken, bubble, 'คู่มือการใช้งาน Time Attendance', tenantRef);
     }
+
 
 
 
