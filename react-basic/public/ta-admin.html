@@ -752,21 +752,17 @@ async function getActor(){
 
 /* ---------- auth bearer helper ---------- */
 async function getBearer(){
-  // ถ้ามี Firebase SDK อยู่ในหน้าด้วย ให้ใช้ token ของ Firebase ก่อน
   try{
     if (window.firebase?.auth?.currentUser){
       const t = await window.firebase.auth().currentUser.getIdToken(true);
       if (t) return 'Bearer ' + t;
     }
   }catch{}
-
-  // fallback: ใช้ LINE Login ID token (บางแบ็กเอนด์รองรับ)
   try{
     const lt = (typeof liff.getIDToken === 'function') ? liff.getIDToken() : '';
     if (lt) return 'Bearer ' + lt;
   }catch{}
-
-  return ''; // ถ้ายังไม่มี ก็ส่งว่างไว้ก่อน (จะโดน 401 ชัดเจน)
+  return '';
 }
 
 /* ---------- UTIL ---------- */
@@ -1095,7 +1091,6 @@ async function openLogs(emp){
 
 
 /* ---------- PAYROLL (tabs, groups) ---------- */
-// ปุ่ม + panes ของทั้ง 3 แท็บ
 const $tabPayrun   = document.getElementById('tab-payrun');
 const $tabCycles   = document.getElementById('tab-cycles');
 const $tabPayments = document.getElementById('tab-payments');
@@ -1104,7 +1099,6 @@ const $panePayrun   = document.getElementById('pane-payrun');
 const $paneCycles   = document.getElementById('pane-cycles');
 const $panePayments = document.getElementById('pane-payments');
 
-// ตัวช่วย: สลับคลาส on และซ่อน/โชว์ pane ให้ครบทั้งสามทุกครั้ง
 function setPayrollTab(name){
   [$tabPayrun,$tabCycles,$tabPayments].forEach(b=> b.classList.remove('on'));
   [$panePayrun,$paneCycles,$panePayments].forEach(p=> p.classList.add('hidden'));
@@ -1126,26 +1120,22 @@ function currentPayrollTab(){
   return 'payrun';
 }
 
-async function refreshPayrollUI(){
-  try{
-    setMsg('กำลังรีเฟรช…');
-    await loadUsers(true);
-    await loadGroups(true);
-    const t = currentPayrollTab();
-    if (t === 'payments') {
-      await primePayments(true);
-    } else {
-      await primePayroll(true);   // ครอบ TAB1 และ TAB2
-    }
-    await loadDueToday();          // อัปเดตรายการ Due Today ด้วย
-    setMsg('รีเฟรชแล้ว','ok');
-  }catch(e){
-    setMsg('รีเฟรชล้มเหลว: ' + (e.message||e), 'err');
-  }
-}
-
-// bind ปุ่มบนสุด
+/* ====== PATCH 1: tab handlers (no double prime) ====== */
 document.getElementById('pr-global-refresh')?.addEventListener('click', refreshPayrollUI);
+$tabPayrun.onclick = ()=>{
+  setPayrollTab('payrun');
+  // ไม่ prime ซ้ำ ปล่อยให้ route/refresh ทำงานพอ
+  loadDueToday(true);
+};
+$tabCycles.onclick = ()=>{
+  setPayrollTab('cycles');
+};
+$tabPayments.onclick = ()=>{
+  setPayrollTab('payments');
+  if (!$pyRun.options || $pyRun.options.length <= 1) {
+    primePayments(true);
+  }
+};
 
 // ===== DUE TODAY (Reminders) =====
 function todayYMD(){
@@ -1163,9 +1153,8 @@ let __dueLastList = [];
 if ($dueDate && !$dueDate.value) $dueDate.value = todayYMD();
 
 let __dueLoading = false;
-let __dueLastAt = 0;          // timestamp ms
-const __DUE_MIN_INTERVAL = 8000; // กันซ้ำภายใน 8 วิ
-
+let __dueLastAt = 0;
+const __DUE_MIN_INTERVAL = 8000;
 
 function endOfMonthYMD(d){
   const dt = (d instanceof Date)? d : new Date(d);
@@ -1173,20 +1162,13 @@ function endOfMonthYMD(d){
   return `${last.getFullYear()}-${String(last.getMonth()+1).padStart(2,'0')}-${String(last.getDate()).padStart(2,'0')}`;
 }
 function monthlyPayDateYMD(todayYMD, payDayOfMonth){
-  // todayYMD: 'YYYY-MM-DD', payDayOfMonth: 1..31 หรือ 'last'
   const [Y,M] = todayYMD.split('-').map(Number);
-  const base = new Date(Y, M-1, 1);
   const mk = (y,m,d)=> `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-
   const thisLast = new Date(Y, M, 0).getDate();
   const toDay = (payDayOfMonth==='last') ? thisLast : Math.min(Number(payDayOfMonth||1), 31);
-
-  // ถ้าวันนี้เลยวันจ่ายในเดือนนี้แล้ว → ขยับไปเดือนหน้า
   const today = new Date(todayYMD);
   const payThis = new Date(Y, M-1, (payDayOfMonth==='last')? thisLast : toDay);
   if (today <= payThis) return mk(Y, M, (payDayOfMonth==='last')? thisLast : toDay);
-
-  // เดือนถัดไป
   const nY = (M===12)? (Y+1) : Y;
   const nM = (M===12)? 1 : (M+1);
   const nextLast = new Date(nY, nM, 0).getDate();
@@ -1197,12 +1179,8 @@ function monthlyPayDateYMD(todayYMD, payDayOfMonth){
 async function loadDueToday(force=false){
   try{
     if (!$dueList) return;
-
     const nowTs = Date.now();
-    if (!force && (__dueLoading || (nowTs - __dueLastAt) < __DUE_MIN_INTERVAL)) {
-      // กันรีโหลดถี่เกิน ถ้าไม่ force
-      return;
-    }
+    if (!force && (__dueLoading || (nowTs - __dueLastAt) < __DUE_MIN_INTERVAL)) return;
 
     __dueLoading = true;
     __dueLastAt = nowTs;
@@ -1244,29 +1222,22 @@ async function loadDueToday(force=false){
         `<thead><tr><th>กลุ่ม</th><th>ช่วงงวด</th><th>วันจ่าย</th></tr></thead><tbody>`,
         ...due.map(g=>{
             const name = g.name || g.groupId || '(ไม่ระบุชื่อกลุ่ม)';
-
-            // ค่าจากเซิร์ฟเวอร์ถ้ามี
             let payTxt = g.payDate || '';
-
-            // ✅ ถ้าเป็นรายเดือนและยังไม่ได้ส่ง payDate มา → คำนวณฝั่งหน้าเว็บ
             if ((!payTxt || payTxt==='—') && String(g.type).toLowerCase()==='monthly'){
-            const pdom = g.payDayOfMonth ?? g.meta?.payDayOfMonth ?? g.payDay ?? g.meta?.payDay ?? null;
-            if (pdom!=null && ($dueDate?.value)){
+              const pdom = g.payDayOfMonth ?? g.meta?.payDayOfMonth ?? g.payDay ?? g.meta?.payDay ?? null;
+              if (pdom!=null && ($dueDate?.value)){
                 payTxt = monthlyPayDateYMD($dueDate.value, String(pdom).toLowerCase()==='last' ? 'last' : Number(pdom));
+              }
             }
-            }
-
-            // ถ้าไม่มี period จากเซิร์ฟเวอร์และเป็นรายเดือน → ใช้เดือนของ payTxt
             let range = '—';
             if (g.periodStart && g.periodEnd){
-            range = `${g.periodStart} → ${g.periodEnd}`;
+              range = `${g.periodStart} → ${g.periodEnd}`;
             } else if (String(g.type).toLowerCase()==='monthly' && payTxt){
-            const d = new Date(payTxt);
-            const first = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`;
-            const last  = endOfMonthYMD(d);
-            range = `${first} → ${last}`;
+              const d = new Date(payTxt);
+              const first = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`;
+              const last  = endOfMonthYMD(d);
+              range = `${first} → ${last}`;
             }
-
             const pay = payTxt || '—';
             return `<tr><td>${name}</td><td>${range}</td><td>${pay}</td></tr>`;
         }),
@@ -1284,7 +1255,7 @@ async function loadDueToday(force=false){
 async function notifyDueToday(){
   try{
     const today = $dueDate?.value || todayYMD();
-    const actor = await getActor();                         // ✅ เพิ่ม
+    const actor = await getActor();
     $btnNotify.disabled = true; $btnNotify.textContent = 'กำลังส่ง...';
 
     const r = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/paygroups/notify-run`, {
@@ -1292,39 +1263,16 @@ async function notifyDueToday(){
       headers:{
         'Content-Type':'application/json',
         'Accept':'application/json',
-        'Authorization': await getBearer()                  // เดิม
+        'Authorization': await getBearer()
       },
       credentials:'include',
-      body: JSON.stringify({ today, actor })               // ✅ ใส่ actor ใน body
+      body: JSON.stringify({ today, actor })
     });
     const j = await r.json();
     if (!j.ok) throw new Error(j.error || 'error');
 
-    const { sent=0, groups=0, adminCount=0 } = j;
-   
-    // รวบรวมกลุ่ม + สมาชิก (จาก cache __dueLastList และ __groupMembers/__users)
-    const block = (__dueLastList||[]).map((g,idx)=>{
-    const gid  = g.groupId || g.id || '';
-    const name = g.name || gid || '(ไม่ระบุชื่อกลุ่ม)';
-    const ids  = __groupMembers[gid] || new Set();
-    const users = (__users||[]).filter(u => ids.has(u.lineUserId));
-    const chips = users.length
-        ? users.map(u=>`<span class="chip" title="${u.lineUserId}">${u.fullName||u.lineUserId}</span>`).join(' ')
-        : '<span class="muted">— ไม่มีสมาชิก —</span>';
-    const payTxt = g.payDate || '—';
-    const range  = (g.periodStart && g.periodEnd) ? `${g.periodStart} → ${g.periodEnd}` : '—';
-    return `
-        <div class="card" style="margin:8px 0">
-        <div class="toolbar"><h3 style="margin:0">${idx+1}. ${name}</h3>
-            <span class="muted">ช่วงงวด: ${range} · วันจ่าย: ${payTxt}</span>
-        </div>
-        <div style="margin-top:6px">${chips}</div>
-        </div>`;
-    }).join('');
-
-    showDialog('ส่งการแจ้งเตือนแล้ว', 'ส่งการแจ้งเตือนแล้ว');;
-
-    loadDueToday();
+    showDialog('ส่งการแจ้งเตือนแล้ว', 'ส่งการแจ้งเตือนแล้ว');
+    loadDueToday(true);
 
   }catch(e){
     alert('ส่งแจ้งเตือนล้มเหลว: ' + (e.message || e));
@@ -1333,27 +1281,21 @@ async function notifyDueToday(){
   }
 }
 
-$btnLoadDue?.addEventListener('click', loadDueToday);
+$btnLoadDue?.addEventListener('click', ()=>loadDueToday(true));
 $btnNotify?.addEventListener('click', notifyDueToday);
 
-
-// bind ปุ่มแท็บ
-$tabPayrun.onclick = async ()=>{
-  setPayrollTab('payrun');
-  await primePayroll(true);
-  await loadDueToday(true);
-};
-$tabCycles.onclick = async ()=>{
-  setPayrollTab('cycles');
-  await primePayroll(true);
-};
-$tabPayments.onclick = async ()=>{
-  setPayrollTab('payments');
-  await primePayments(true);
-};
-
-$dueDate?.addEventListener('change', ()=> loadDueToday(true));
-
+/* ====== PATCH 6: lean refresh ====== */
+async function refreshPayrollUI(){
+  try{
+    setMsg('กำลังรีเฟรช…');
+    __groupsCacheAt = 0;               // invalidate groups cache
+    await primePayroll(true);          // primePayroll มี loadUsers/loadGroups อยู่แล้ว
+    await loadDueToday(true);
+    setMsg('รีเฟรชแล้ว','ok');
+  }catch(e){
+    setMsg('รีเฟรชล้มเหลว: ' + (e.message||e), 'err');
+  }
+}
 
 const $prGroup = document.getElementById('pr-group');
 const $prStart = document.getElementById('pr-start');
@@ -1400,16 +1342,15 @@ let USER_TOUCHED_PERIOD = false;
 [$prStart,$prEnd].forEach(i=>{
   i.addEventListener('change', ()=>{ 
     USER_TOUCHED_PERIOD = true; normalizePeriod(); savePeriod(); 
-    // ออกจากโหมดแก้ไขงวดเดิมทันที
     __editingRunId = null; __editRunMembers = null; $prRunBox.classList.add('hidden');
   });
 });
-
 loadSavedPeriod();
 
 let __payDraft = [];
 let __groups = [];
 let __groupMembers = {}; // groupId -> Set(lineUserId)
+let __draftSeq = 0;      // PATCH 5: cancel stale compute
 
 function recomputeTotal(){
   let s=0;
@@ -1449,7 +1390,6 @@ function renderEditRunChips(){
     `<span class="chip" title="${u.lineUserId}">${u.fullName||u.lineUserId}</span>`
   ).join(' ');
   $prRunBox.classList.remove('hidden');
-  // และซ่อนกล่องสมาชิกกลุ่มเพื่อไม่ให้สับสน
   $prMembersBox.classList.add('hidden');
 }
 
@@ -1526,30 +1466,38 @@ async function computeOne(emp, periodStart, periodEnd){
     ...emp, ...calc,
     adjMinus: 0, adjPlus: 0, note: '',
     netPay: Math.max(0, calc.basePay - calc.lateDeduct),
-    status: 'approved' // ✅ lower-case to match GAS
+    status: 'approved'
   };
 }
 
-/* groups helpers */
+/* ====== PATCH 4: loadGroups cache + parallel details ====== */
+let __groupsCacheAt = 0;
+const __GROUPS_TTL_MS = 10_000;
+
 async function loadGroups(force=false){
-  if (!force && __groups?.length) { /* cached */ }
-  else {
+  const now = Date.now();
+  if (!force && __groups?.length && (now - __groupsCacheAt) < __GROUPS_TTL_MS) {
+    // use cache
+  } else {
     const r = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/paygroups`).catch(()=>null);
     const j = await (r ? r.json().catch(()=>({})) : {});
     __groups = j?.data||[];
+    __groupsCacheAt = now;
   }
-  // members
-  __groupMembers = {};
-  for (const g of __groups){
-    const det = await fetchGroupDetail(g.groupId).catch(()=>({}));
-    __groupMembers[g.groupId] = new Set((det.members||det.memberIds||[]).map(x=> x.lineUserId || x));
-  }
-  // fills select + tables
+
+  const missing = (__groups||[]).filter(g => !(__groupMembers[g.groupId] instanceof Set));
+  const detailList = await Promise.all(missing.map(g => fetchGroupDetail(g.groupId).catch(()=>({}))));
+  detailList.forEach((det, idx)=>{
+    const gid = missing[idx].groupId;
+    __groupMembers[gid] = new Set((det.members||det.memberIds||[]).map(x=> x.lineUserId || x));
+  });
+
   $prGroup.innerHTML = `<option value="">— เลือกกลุ่มงวด —</option>` +
     (__groups||[]).map(g=> `<option value="${g.groupId}">${g.name} (${g.type}${g.n?(' '+g.n):''})</option>`).join('');
   renderGroupsOverview();
   renderCyclesTable();
 }
+
 async function fetchGroupDetail(groupId){
   try{
     const r = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/paygroups/${groupId}`).catch(()=>null);
@@ -1602,13 +1550,11 @@ function renderGroupsOverview(){
     const meta = g.meta || {};
     const sub = (g.type==='monthly') ? 'รายเดือน' : `ทุก ${g.n||'-'} วัน`;
 
-    // ✅ baseTxt: monthly ใช้ payDay/payDayOfMonth, นอกนั้นใช้ startDate
     function pickExactYMD(...candidates){
       for (const v of candidates){
         const s = String(v||'').trim();
-        if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s; // ใช้ค่าเดิมเลยถ้าเป็น YYYY-MM-DD
+        if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
         if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
-        // ถ้ามีเวลา (UTC) ให้แปลงเป็น local YMD
           const d = new Date(s); if (!isNaN(d)) {
             return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
           }
@@ -1619,7 +1565,7 @@ function renderGroupsOverview(){
 
     const rawBaseYMD =
       (g.type === 'monthly')
-        ? '' // รายเดือนใช้ payDay แทน
+        ? ''
         : pickExactYMD(g.startDate, g.baseDate, g.anchorDate, g.meta?.startDate, g.meta?.baseDate);
 
     let baseTxt = '—';
@@ -1646,12 +1592,11 @@ function renderGroupsOverview(){
       </td>
       <td>${g.name || g.groupId}</td>
       <td>${sub}</td>
-      <td class="nowrap">${baseTxt}</td>                  <!-- ✅ คอลัมน์ใหม่ -->
+      <td class="nowrap">${baseTxt}</td>
       <td>${chips}${moreTxt || (memCount===0?'<span class="muted">— ไม่มีสมาชิก —</span>':'')}</td>
     </tr>`;
   }).join('');
 
-  // bind ปุ่มเลือกกลุ่ม
   [...tb.querySelectorAll('[data-pick]')].forEach(btn=>{
     btn.addEventListener('click', async ()=>{
       const gid = btn.dataset.pick;
@@ -1668,7 +1613,6 @@ function renderGroupsOverview(){
     });
   });
 }
-
 
 $prGroup.onchange = async ()=>{
   __editingRunId = null;  
@@ -1688,15 +1632,18 @@ $prGroup.onchange = async ()=>{
   $prStatus.textContent = 'เลือกกลุ่มแล้ว — ตั้งช่วงวันที่ แล้วกด “คำนวณ”';
 };
 
+/* ====== PATCH 5: cancel stale draft ====== */
 async function draftCompute(periodStart, periodEnd){
   normalizePeriod(); savePeriod();
+  const mySeq = ++__draftSeq;
+
   const q = ($prQ.value||'').toLowerCase();
   $prBody.innerHTML = ''; $prStatus.textContent = 'กำลังคำนวณ…';
+
   let rows = (__users||[]).filter(notOwner)
                  .filter(x => !q || `${x.fullName||''} ${x.jobTitle||''}`.toLowerCase().includes(q));
   const gid = $prGroup.value || '';
 
-  // ถ้าอยู่โหมดแก้ไขงวดเดิม → ใช้สมาชิกจากงวดเท่านั้น (ignore group)
   if (__editingRunId && (__editRunMembers instanceof Set) && __editRunMembers.size>0){
     rows = rows.filter(u => __editRunMembers.has(u.lineUserId));
     renderEditRunChips();
@@ -1709,7 +1656,12 @@ async function draftCompute(periodStart, periodEnd){
   }
 
   const out = [];
-  for (const emp of rows) out.push(await computeOne(emp, periodStart, periodEnd));
+  for (const emp of rows) {
+    if (mySeq !== __draftSeq) return; // ถูกแซง
+    out.push(await computeOne(emp, periodStart, periodEnd));
+  }
+  if (mySeq !== __draftSeq) return; // ถูกแซง
+
   __payDraft = out;
   $prBody.innerHTML = '';
   out.forEach(r=>{
@@ -1755,7 +1707,7 @@ document.getElementById('pr-commit-selected').onclick = async ()=>{
       const minus = Number(tr.querySelector('.adjMinus').value||0);
       const plus  = Number(tr.querySelector('.adjPlus').value||0);
       const note  = String(tr.querySelector('.note').value||'');
-      const status= 'approved'; // ✅
+      const status= 'approved';
       jobs.push({
         lineUserId:  r.lineUserId,
         periodStart: $prStart.value,
@@ -1855,8 +1807,6 @@ function togglePgTypeUI(){
 
 $pgType.addEventListener('change', togglePgTypeUI);
 
-
-
 async function openGroupEditor(groupId){
   __editingGroupId = groupId || null;
   $pgMsg.textContent = '';
@@ -1867,19 +1817,15 @@ async function openGroupEditor(groupId){
     meta = await fetchGroupDetail(groupId);
   }
 
-  // fill fields
   $pgEditTitle.textContent = creating ? 'สร้างกลุ่มใหม่' : `แก้ไขกลุ่ม: ${meta.name||groupId}`;
   $pgName.value = meta.name || '';
   $pgType.value = meta.type || 'every_n_days';
   $pgN.value = meta.n || '';
-  
 
-  // รองรับหลายชื่อคีย์ + บังคับ YYYY-MM-DD
   function normYMD(v){
     const s = String(v||'').trim();
     if (!s) return '';
     if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-    // try parse แบบหลวมๆ แล้ว format กลับ
     const d = new Date(s);
     if (!isNaN(d)) {
         const mm = String(d.getMonth()+1).padStart(2,'0');
@@ -1894,12 +1840,10 @@ async function openGroupEditor(groupId){
 
   const $pgPayDay = document.getElementById('pg-payday');
   $pgPayDay.value = meta.payDayOfMonth || meta.payDay || '';
-  // draft members
   const ids = new Set((meta.members||meta.memberIds||[]).map(x=> x.lineUserId || x));
   __membersDraft = ids;
 
   togglePgTypeUI();
-  // render member list
   renderMemberChecklist();
 
   $pgEditor.classList.remove('hidden');
@@ -1935,17 +1879,13 @@ $pgSave.onclick = async ()=>{
     const name = $pgName.value.trim();
     const type = $pgType.value;
 
-    // ฐาน: กรองอินพุต
     if (!name){ $pgMsg.textContent = 'โปรดระบุชื่อกลุ่ม'; return; }
     if (type !== 'monthly' && type !== 'every_n_days'){ 
       $pgMsg.textContent = 'ประเภทไม่ถูกต้อง'; return; 
     }
 
-    // ทำความสะอาด payload ให้ตรงรูปแบบใหม่
     let n = null, startDate = null;
     let payDay = null;
-
-  
 
     if (type === 'monthly'){
       const raw = (document.getElementById('pg-payday').value || '').trim().toLowerCase();
@@ -1954,11 +1894,10 @@ $pgSave.onclick = async ()=>{
           payDay = 'last';
         } else {
           const dn = Number.parseInt(raw, 10);
-        if (dn >= 1 && dn <= 31) payDay = dn;
-        else { $pgMsg.textContent = 'วันจ่ายต้องเป็น 1–31 หรือ last'; return; }
+          if (dn >= 1 && dn <= 31) payDay = dn;
+          else { $pgMsg.textContent = 'วันจ่ายต้องเป็น 1–31 หรือ last'; return; }
         }
       }
-      // ✅ เคลียร์ field ที่ไม่เกี่ยวกันทุกราย
       n = null;
       startDate = null;
     }
@@ -1973,11 +1912,8 @@ $pgSave.onclick = async ()=>{
       if (!startYMD){ $pgMsg.textContent = 'โปรดเลือกวันเริ่ม (วันฐาน)'; return; }
 
       startDate = startYMD;
-
-      // ✅ กันค่าค้างจากโหมด monthly
       payDay = null;
     }
-
 
     const payload = {
       actor: await getActor(),
@@ -1985,8 +1921,7 @@ $pgSave.onclick = async ()=>{
       type,
       n,
       startDate,
-      payDayOfMonth: payDay,   // <-- คีย์หลักที่ชีตใช้จริง
-      // (เผื่อแบ็กเอนด์ตัวเก่าที่อ่าน payDay)
+      payDayOfMonth: payDay,
       payDay: payDay
     };
 
@@ -1996,16 +1931,13 @@ $pgSave.onclick = async ()=>{
     const j  = await (r ? r.json().catch(()=>({})) : {});
 
     if (!r || !r.ok || !j.ok){
-      // แสดง error ที่มาจริง ๆ จากเซิร์ฟเวอร์ถ้ามี
       $pgMsg.textContent = 'ไม่สำเร็จ: ' + (j.error || 'save_group_failed');
       return;
     }
 
-    // ดึง groupId กลับ (กันหลายรูปแบบ key ชื่อ)
     const gid = __editingGroupId || j.data?.groupId || j.data?.id || j.groupId;
     if (!gid){ $pgMsg.textContent = 'บันทึกสำเร็จ แต่ไม่พบ groupId ที่สร้าง/อัปเดต'; return; }
 
-    // อัปเดตสมาชิก (ถ้าเลือกไว้)
     const ids = Array.from(__membersDraft || []);
     const r2  = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/paygroups/members`, {
       method:'POST', headers:{'Content-Type':'application/json'},
@@ -2014,7 +1946,6 @@ $pgSave.onclick = async ()=>{
     const j2 = await (r2 ? r2.json().catch(()=>({})) : {});
     if (!r2 || !r2.ok || !j2.ok){
       $pgMsg.textContent = 'บันทึกกลุ่มแล้ว แต่ผูกสมาชิกไม่สำเร็จ: ' + (j2.error || 'assign_failed');
-      // ยังถือว่ากลุ่มถูกสร้าง/แก้ไขแล้ว ผู้ใช้สามารถลองกดบันทึกสมาชิกใหม่ได้
       return;
     }
 
@@ -2023,7 +1954,6 @@ $pgSave.onclick = async ()=>{
     await loadGroups(true);
     $pgEditor.classList.add('hidden');
 
-    // รีเฟรชตารางกลุ่ม
     setPayrollTab('cycles');
     await primePayroll(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -2044,11 +1974,8 @@ const $pyPbody   = document.getElementById('py-paid-body');
 
 if ($pyMonth && !$pyMonth.value) $pyMonth.value = todayMonthKey();
 
-
 async function primePayments(force=true){
-  // โหลด runs ของเดือน
   const runs = await fetchRuns();
-  // cache เป็น map เพื่ออ้างอิงช่วงงวดตาม runId
   window.__runsById = Object.fromEntries(
     (runs||[]).map(r => [r.runId, { periodStart: r.periodStart, periodEnd: r.periodEnd }])
   );
@@ -2068,13 +1995,11 @@ async function reloadPayments(){
   if (!runId){ $pyMsg.textContent = 'ยังไม่ได้เลือก Pay Run'; $pyAbody.innerHTML=''; $pyPbody.innerHTML=''; return; }
 
   const items = await fetchItems({ runId }) || [];
-  // map/normalize fields
   const rows = items.map(x=>{
     const d   = x.detail||{};
     const net = Number(x.netPay ?? d.netPay
                  ?? (Number(x.basePay ?? d.basePay ?? 0) - Number(x.lateDeduct ?? d.lateDeduct ?? 0)));
     const note = (x.adjustments?.note) || '';
-    // ถ้าไม่มีสถานะใน items ให้ถือว่า "approved" (รอจ่าย)
     let status = String(x.status ?? d.status ?? '').toLowerCase();
     if (status !== 'approved' && status !== 'paid') status = 'approved';
     return {
@@ -2089,14 +2014,12 @@ async function reloadPayments(){
 
   const approved = rows.filter(r => r.status === 'approved');
   const paid     = rows.filter(r => r.status === 'paid');
-  // แนบช่วงงวดจาก run ที่เลือก (กันกรณี items ไม่มี period)
   const sel = (window.__runsById||{})[$pyRun.value||''] || {};
   [...approved, ...paid].forEach(r => {
     if (!r.periodStart) r.periodStart = sel.periodStart || '';
     if (!r.periodEnd)   r.periodEnd   = sel.periodEnd   || '';
   });
 
-  // render approved
   $pyAbody.innerHTML = '';
   approved.forEach((r,idx)=>{
     const tr = document.createElement('tr');
@@ -2114,7 +2037,6 @@ async function reloadPayments(){
     $pyAbody.appendChild(tr);
   });
 
-  // render paid
   $pyPbody.innerHTML = '';
   paid.forEach((r,idx)=>{
     const tr = document.createElement('tr');
@@ -2136,21 +2058,18 @@ async function reloadPayments(){
 async function markPaidOne(row){
   try{
     $pyMsg.textContent = `กำลังทำเครื่องหมายจ่ายแล้ว: ${row.fullName}…`;
-       // ปิดปุ่มในแถวนี้ระหว่างทำงาน
     const btn = [...document.querySelectorAll('#py-approved-body tr')].find(tr => 
       (tr.children?.[1]?.textContent||'').trim() === (row.fullName||'').trim()
     )?.querySelector('[data-pay]');
     if (btn) btn.disabled = true;
 
-    // สร้าง payload จาก item เดิม → เปลี่ยน status: 'paid'
     const d = row.detail || {};
-    // ดึงช่วงงวดจาก row หรือ map ของ run
     const runMeta = (window.__runsById||{})[(row.runId || $pyRun.value || '')] || {};
     const ps = row.periodStart || d.periodStart || runMeta.periodStart || '';
     const pe = row.periodEnd   || d.periodEnd   || runMeta.periodEnd   || '';
     const jobs = [{
       lineUserId:  row.lineUserId,
-      periodStart: ps,                                  // ✅ ส่ง period ที่ถูกต้อง
+      periodStart: ps,
       periodEnd:   pe,
       status: 'paid',
       adjustments: row.adjustments || {},
@@ -2164,11 +2083,9 @@ async function markPaidOne(row){
         payRate:    Number(row.payRate    ?? d.payRate    ?? 0),
         dailyHours: Number(row.dailyHours ?? d.dailyHours ?? 0),
         payEveryN:  Number(row.payEveryN  ?? d.payEveryN  ?? 0)
-        // ไม่ส่ง netPay เพื่อให้ฝั่ง GAS คำนวณเอง (กันบวกซ้ำ)
       }
     }];
     await commitPays(jobs, { runId: row.runId || null, overwrite: true, notify:false });
-    // *optimistic move* — ลบแถวจาก "รอจ่าย" ทันที
     if (btn) { const tr = btn.closest('tr'); if (tr) tr.remove(); }
     $pyMsg.textContent = `ทำเครื่องหมายจ่ายแล้ว: ${row.fullName} ✓`;
     await reloadPayments();
@@ -2177,13 +2094,11 @@ async function markPaidOne(row){
   }
 }
 
-// hook UI
 $pyMonth?.addEventListener('change', ()=> primePayments(true));
 $pyRun?.addEventListener('change', reloadPayments);
 $pyQ?.addEventListener('input', reloadPayments);
 document.getElementById('py-refresh')?.addEventListener('click', ()=> reloadPayments());
 
-// ปรับ commitPays ให้รองรับ notify จาก options (ถ้าไม่ส่ง = คงเดิม)
 const __origCommitPays = commitPays;
 commitPays = async function(jobs, opts={}){
   const res = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/payroll/commit`, {
@@ -2325,37 +2240,31 @@ async function fetchItems({ runId, month, q }){
 /* modal */
 function showRunModal(){ document.getElementById('run-modal').classList.remove('hidden'); }
 function hideRunModal(){ document.getElementById('run-modal').classList.add('hidden'); }
-// แทนที่ฟังก์ชันเดิมทั้งก้อน
 function showDialog(title, text){
   const m = document.getElementById('run-modal');
   m.querySelector('#run-title').textContent = title || '';
   m.querySelector('#run-subtitle').textContent = '';
-
-  // ซ่อนองค์ประกอบที่ไม่ใช้ในโหมด “แจ้งสั้นๆ”
   m.querySelector('.run-kpi')?.classList.add('hidden');
   m.querySelector('#run-table')?.closest('.table-wrap')?.classList.add('hidden');
   m.querySelector('#run-edit-here')?.closest('.row')?.classList.add('hidden');
-
-  // แสดงข้อความสั้นบรรทัดเดียว
   document.getElementById('run-body').innerHTML =
     `<tr><td colspan="9" style="padding:18px 12px; text-align:center; font-weight:700">
        ${text || 'ส่งการแจ้งเตือนแล้ว'}
      </td></tr>`;
-
   showRunModal();
 }
-
 document.getElementById('run-close').onclick = hideRunModal;
 document.querySelector('#run-modal .backdrop').onclick = hideRunModal;
+
 let __currentRunMeta = { periodStart:'', periodEnd:'' };
+let __afterRoute = null;   // PATCH 3: run after route settled
+
 async function openRunDetail(runId){
   try{
-    // โหมดดูงวด: เปิดส่วนประกอบทั้งหมดกลับมา
     const mm = document.getElementById('run-modal');
     mm.querySelector('.run-kpi')?.classList.remove('hidden');
     mm.querySelector('#run-table')?.closest('.table-wrap')?.classList.remove('hidden');
     mm.querySelector('#run-edit-here')?.closest('.row')?.classList.remove('hidden');
-    // เคลียร์ run-body เผื่อเคยใส่ข้อความสั้นจาก dialog ก่อนหน้า
     document.getElementById('run-body').innerHTML = '';
     
     if (!__runsCache.length) __runsCache = await fetchRuns();
@@ -2414,26 +2323,23 @@ async function openRunDetail(runId){
     });
 
     document.getElementById('run-edit-here').onclick = async ()=>{
-      // ตั้งค่าโหมดแก้ไข + เก็บชุดสมาชิกจากงวด
       __editingRunId = runId; 
       __editRunMembers = new Set((items||[]).map(x => x.lineUserId).filter(Boolean));
 
-      // ตั้งช่วงวันที่ตามงวด
       document.getElementById('pr-start').value = __currentRunMeta.periodStart || '';
       document.getElementById('pr-end').value   = __currentRunMeta.periodEnd   || '';
       document.getElementById('pr-start').disabled = true;
       document.getElementById('pr-end').disabled   = true;
 
-      // ไปที่แท็บ "ทำเงินเดือน" และคำนวณใหม่
+      __afterRoute = async ()=>{
+        setPayrollTab('payrun');
+        renderEditRunChips();
+        await draftCompute($prStart.value, $prEnd.value);
+        $prStatus.textContent =
+          `โหมดแก้ไขงวดเดิม: ${__editingRunId} — บันทึกแล้วจะทับงวดเดิม (เปลี่ยนกลุ่ม/ช่วงวันที่จะออกจากโหมดนี้)`;
+      };
+
       location.hash = '#payroll';
-      document.getElementById('tab-payrun').click();
-
-      // แสดงชิป "สมาชิกจากงวด" และทำคำนวณ
-      renderEditRunChips();
-      document.getElementById('pr-draft').click();
-
-      document.getElementById('pr-status').textContent =
-        `โหมดแก้ไขงวดเดิม: ${__editingRunId} — บันทึกแล้วจะทับงวดเดิม (เปลี่ยนกลุ่ม/ช่วงวันที่จะออกจากโหมดนี้)`;
       hideRunModal();
     };
 
@@ -2464,27 +2370,53 @@ async function primeReports(force=true){
   document.getElementById('rp-status').textContent = 'เลือกงวดด้านล่างเพื่อดูประวัติ';
 }
 
-async function applyRoute(){
-  const h=(location.hash||'').replace('#','').trim().toLowerCase();
-  const v=h||DEFAULT_VIEW||'menu';
-  show(v);
-  // ทุกครั้งที่เปลี่ยนเมนู → บังคับโหลดสดเสมอ
-  if (v==='users')   await primeUsers(true);
-  if (v==='logs')    await primeLogs(true);
-  if (v==='reports') await primeReports(true);
-  if (v==='payroll'){ 
-    show('payroll');
-    setPayrollTab('payrun');
-    await primePayroll(true);
-  }
-  if (v==='payments'){ 
-    show('payroll');
-    setPayrollTab('payments');
-    await primePayments(true);
-  }
+/* ====== PATCH 2: serialize routing & skip same view ====== */
+let __routeBusy = false;
+let __currentView = INITIAL_VIEW;
 
+async function applyRoute(){
+  if (__routeBusy) return;
+  __routeBusy = true;
+  try{
+    const h=(location.hash||'').replace('#','').trim().toLowerCase();
+    const v=h||DEFAULT_VIEW||'menu';
+    if (v === __currentView) {
+      show(v);
+      return;
+    }
+    __currentView = v;
+
+    show(v);
+    if (v==='users')   await primeUsers(true);
+    if (v==='logs')    await primeLogs(true);
+    if (v==='reports') await primeReports(true);
+    if (v==='payroll'){ 
+      show('payroll');
+      setPayrollTab('payrun');
+      await primePayroll(true);
+    }
+    if (v==='payments'){ 
+      show('payroll');
+      setPayrollTab('payments');
+      await primePayments(true);
+    }
+  } finally {
+    __routeBusy = false;
+  }
 }
-window.addEventListener('hashchange', async ()=>{ showPreloader('กำลังรีเฟรชข้อมูลล่าสุด…'); try{ await applyRoute(); } finally{ hidePreloader(); } });
+
+window.addEventListener('hashchange', async ()=>{
+  showPreloader('กำลังรีเฟรชข้อมูลล่าสุด…');
+  try{
+    await applyRoute();
+    if (typeof __afterRoute === 'function') {
+      const fn = __afterRoute;
+      __afterRoute = null;
+      await fn();
+    }
+  } finally { hidePreloader(); }
+});
+
 document.getElementById('btnHome').addEventListener('click', e=>{ e.preventDefault(); go('menu'); });
 
 // ตั้งค่า month inputs ให้เป็น YYYY-MM เสมอ
@@ -2502,24 +2434,20 @@ if (window.__TA_INITED__) {
     try{
       if (!TENANT) throw new Error('URL ไม่มีพารามิเตอร์ tenant');
 
-      // เร่ง first paint: โชว์หน้าที่ขอมาก่อน (เช่น #payroll) + overlay โหลด
       const firstView=(location.hash||'').slice(1)||DEFAULT_VIEW||'menu';
       show(firstView.toLowerCase());
       showPreloader('กำลังเปิด LIFF และโหลดข้อมูล…');
       setMsg('กำลังเริ่มต้น LIFF…');
 
-      const ok = await ensureLiff(); if (!ok) return; // liff.login จะ redirect กลับ
+      const ok = await ensureLiff(); if (!ok) return;
       await getActor();
       setMsg('พร้อมใช้งาน','ok');
 
-      // โหลดหน้าปัจจุบันแบบบังคับสด
       await applyRoute();
 
-      /* quick actions */
       document.getElementById('reload').onclick = async()=> renderCards(await loadUsers(true));
       document.getElementById('q').oninput      = async()=> renderCards(await loadUsers());
 
-      /* refresh buttons (ยังคงไว้ แต่ไม่จำเป็นต้องกดแล้ว) */
       document.getElementById('users-refresh').onclick   = ()=> primeUsers(true);
       document.getElementById('logs-refresh').onclick    = ()=> primeLogs(true);
       document.getElementById('pr-hard-reload').onclick  = async ()=>{
@@ -2531,8 +2459,8 @@ if (window.__TA_INITED__) {
       };
       document.getElementById('reports-refresh').onclick = ()=> primeReports(true);
 
-      if (MODE_PAYROLL){ location.hash = '#payroll'; await primePayroll(true); }
-      if (MODE_REPORT){  location.hash = '#reports'; await primeReports(true); }
+      if (MODE_PAYROLL){ location.hash = '#payroll'; await applyRoute(); }
+      if (MODE_REPORT){  location.hash = '#reports'; await applyRoute(); }
     }catch(e){
       setMsg('ผิดพลาด: '+ (e.message||e), 'err');
     } finally {
