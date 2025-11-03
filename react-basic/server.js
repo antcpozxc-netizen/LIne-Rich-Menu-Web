@@ -8621,12 +8621,15 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
     }
 
 
-    // ======= HELP (คำสั่ง: ช่วยเหลือ) =======
+    
+    // ======= HELP (คำสั่ง: ช่วยเหลือ) – Single Bubble (no links) =======
     if (/^ช่วยเหลือ$/i.test(text)) {
+      // เปิดใช้ฟีเจอร์?
       if (!(await isAttendanceEnabled(tenantRef))) {
-        return reply(replyToken, 'ยังไม่ได้เปิดใช้ระบบลางานใน OA นี้', null, tenantRef);
+        return reply(replyToken, 'ยังไม่ได้เปิดใช้ระบบ Time Attendance ใน OA นี้', null, tenantRef);
       }
-      const flex = {
+
+      const bubble = {
         type: 'bubble',
         size: 'mega',
         header: {
@@ -8644,7 +8647,6 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
           layout: 'vertical',
           spacing: '14px',
           contents: [
-            // ===== User section =====
             { type: 'text', text: 'User (พนักงาน)', weight: 'bold', size: 'md' },
             {
               type: 'box', layout: 'vertical', spacing: '10px', contents: [
@@ -8686,7 +8688,6 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
             { type: 'separator' },
             { type: 'spacer', size: 'sm' },
 
-            // ===== Admin section =====
             { type: 'text', text: 'Owner / Admin', weight: 'bold', size: 'md' },
             {
               type: 'box', layout: 'vertical', spacing: '10px', contents: [
@@ -8734,7 +8735,7 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
         }
       };
 
-      // Quick replies (ข้อความอย่างเดียว)
+      // ถ้า replyFlex รองรับ quickReply เป็นอาร์กิวเมนต์ที่ 5 ให้ส่งไปด้วย; ถ้าไม่รองรับ ให้ลบทิ้งได้
       const quickReply = {
         items: [
           { type: 'action', action: { type: 'message', label: 'ลงเวลาเข้า', text: 'ลงเวลาเข้า' } },
@@ -8745,14 +8746,8 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
         ]
       };
 
-      await client.replyMessage(event.replyToken, {
-        type: 'flex',
-        altText: 'คู่มือการใช้งาน Time Attendance',
-        contents: flex,
-        quickReply
-      });
-
-      return;
+      // เหมือนกับบล็อก "ลางาน"
+      return replyFlex(replyToken, bubble, 'คู่มือการใช้งาน Time Attendance', tenantRef, quickReply);
     }
 
 
