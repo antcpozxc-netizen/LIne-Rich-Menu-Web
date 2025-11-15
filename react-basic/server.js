@@ -6741,12 +6741,17 @@ app.get('/api/tenants/:id/admin/paygroups', async (req, res) => {
       const meta = raw.meta || {};
       const payDay = raw.payDay ?? raw.payDayOfMonth ?? meta.payDay ?? meta.payDayOfMonth ?? null;
 
+      // ✅ ให้ใช้ meta.* เป็นแหล่งความจริงหลักก่อน แล้วค่อย fallback ไป field เก่า
+      const startRaw =
+        meta.startDate || meta.baseDate ||
+        raw.startDate || raw.baseDate || '';
+
       return {
         groupId:        raw.groupId || raw.id || '',
         name:           raw.name || '',
         type:           String(raw.type || '').trim(),            // 'monthly' | 'every_n_days'
         n:              (raw.n != null ? Number(raw.n) : null),
-        startDate:      (raw.startDate || meta.startDate || '')?.slice(0,10) || '',
+        startDate:      startRaw ? String(startRaw).slice(0,10) : '',
         payDayOfMonth:  (typeof payDay === 'number' || payDay === 'last') ? payDay : '',
         workdayOnly:    Boolean(raw.workdayOnly ?? meta.workdayOnly ?? false),
         notifyBeforeDays: Number(raw.notifyBeforeDays ?? meta.notifyBeforeDays ?? 0) || 0,
@@ -6979,7 +6984,11 @@ async function getDueGroupsFor(tenantId, todayISO) {
   for (const g of raw) {
     const type = String(g.type || '').trim();
     const n = Number(g.n || 0);
-    const startDate = g.startDate ? new Date(g.startDate) : null;
+
+    // ✅ ใช้ meta.startDate/baseDate ก่อน เหมือน API list
+    const startSrc = g.meta?.startDate || g.meta?.baseDate || g.startDate || g.baseDate || '';
+    const startDate = startSrc ? new Date(startSrc) : null;
+
 
     // normalize pay day
     const payDayRaw = g.payDay ?? g.payDayOfMonth ?? g.meta?.payDay ?? g.meta?.payDayOfMonth ?? null;
@@ -6993,7 +7002,7 @@ async function getDueGroupsFor(tenantId, todayISO) {
         name: g.name || '',
         type,
         n: n || null,
-        startDate: (g.startDate || g.meta?.startDate || '')?.slice(0,10) || '',
+        startDate: startSrc ? String(startSrc).slice(0,10) : '',
         payDayOfMonth: (typeof payDayRaw === 'number' || payDayRaw === 'last') ? payDayRaw : '',
         workdayOnly,
         notifyBeforeDays,
@@ -7009,7 +7018,7 @@ async function getDueGroupsFor(tenantId, todayISO) {
           name: g.name || '',
           type,
           n: (g.n ? Number(g.n) : null),
-          startDate: (g.startDate || g.meta?.startDate || '')?.slice(0,10) || '',
+          startDate: startSrc ? String(startSrc).slice(0,10) : '',
           // ส่งค่า config กลับให้ UI ด้วย (ตาม header ที่คุณใช้)
           payDayOfMonth: (g.payDay ?? g.payDayOfMonth ?? g.meta?.payDay ?? g.meta?.payDayOfMonth) ?? '',
           workdayOnly: Boolean(g.workdayOnly ?? g.meta?.workdayOnly ?? false),
@@ -7073,7 +7082,7 @@ async function listAdminIdsFromSheet(tenantId) {
   }
 }
 
-// GET: รายการกลุ่มที่ครบกำหนดแจ้งเตือนวันนี้ (เช็คสิทธิ์ด้วย GAS)
+// GET: รายการกลุ่มที่ครบกำหนดแจ้งเตือนวันนี้ (proxy ไปหา GAS pg_reminder_due)
 app.get('/api/tenants/:id/admin/paygroups/reminder-due', async (req, res) => {
   try {
     const tenantId = req.params.id;
@@ -7082,20 +7091,24 @@ app.get('/api/tenants/:id/admin/paygroups/reminder-due', async (req, res) => {
       return res.status(400).json({ ok:false, error:'actor required' });
     }
 
-    // ✅ ใช้สิทธิ์จาก GAS (owner/admin เท่านั้น)
+    // ตรวจสิทธิ์ owner/admin ผ่าน GAS
     await ensureAdminOrOwner(tenantId, actor);
 
-    // today (โซนเวลาไทยแบบง่าย)
     const todayStr = String(req.query?.today || '').trim();
-    const todayISO = todayStr || new Date(Date.now() + (7*60*60000)).toISOString().slice(0,10);
+    const todayISO = todayStr || new Date(Date.now() + (7*60*60000))
+      .toISOString().slice(0,10);
 
-    const due       = await getDueGroupsFor(tenantId, todayISO);
-    const adminIds  = await listAdminIdsFromSheet(tenantId);
+    // 🔧 ใช้ GAS เป็น source of truth
+    const r = await callTA(tenantId, 'pg_reminder_due', { today: todayISO });
+    if (!r || r.ok === false) throw new Error(r?.error || 'gas_failed');
 
-    // ส่ง 2 รูปแบบ เพื่อรองรับทั้ง UI ตอนนี้และ notify-run ที่เรียกซ้ำ
+    const data = r.data || r.result || {};
+    const due = Array.isArray(data.due) ? data.due : [];
+    const adminIds = Array.isArray(data.adminIds) ? data.adminIds : [];
+
     return res.json({
       ok: true,
-      today: todayISO,
+      today: data.today || todayISO,
       data: due,
       duePayload: { adminIds, due }
     });
@@ -7295,8 +7308,13 @@ app.post('/api/tenants/:id/admin/paygroups/notify-run', express.json(), async (r
     const today = String(req.body?.today || '').trim()
                || new Date(Date.now() + (7*60*60000)).toISOString().slice(0,10);
 
-    const due      = await getDueGroupsFor(tenantId, today);
-    const adminIds = await listAdminIdsFromSheet(tenantId);
+    // 🔧 ดึงข้อมูลครบกำหนดจาก GAS เช่นเดียวกับหน้า Due Today
+    const r = await callTA(tenantId, 'pg_reminder_due', { today });
+    if (!r || r.ok === false) throw new Error(r?.error || 'gas_failed');
+
+    const data = r.data || r.result || {};
+    const due = Array.isArray(data.due) ? data.due : [];
+    const adminIds = Array.isArray(data.adminIds) ? data.adminIds : [];
 
     if (!adminIds.length || !due.length) {
       return res.json({ ok:true, sent:0, groups: due.length, adminCount: adminIds.length });
@@ -7533,22 +7551,124 @@ app.post('/api/tenants/:id/admin/employees', express.json(), async (req, res) =>
 
 // บันทึกข้อมูลพนักงาน (โปรไฟล์ + บทบาท + ค่าจ้าง)
 
+// บันทึกข้อมูลพนักงาน (โปรไฟล์ + บทบาท + ค่าจ้าง + กลุ่มงวดเงินเดือน)
 app.post('/api/tenants/:id/admin/employee/save', express.json(), async (req, res) => {
   try {
     const { id } = req.params;
-    const { actor, profile = {}, settings = {}, role } = req.body || {};
+
+    // เพิ่ม groupIds เข้ามาด้วย (เป็น array ของ groupId)
+    const { actor, profile = {}, settings = {}, role, groupIds } = req.body || {};
 
     // (ออปชัน) เติมค่าป้องกันกรณีฟอร์มยังไม่ส่งฟิลด์ใหม่มา
     profile.registerDate   = profile.registerDate   || '';
     profile.employmentType = profile.employmentType || '';
 
+    // 1) เซฟข้อมูลพนักงานที่ GAS
     const r = await callTA(id, 'save_employee', { actor, profile, settings, role });
     if (!r || r.ok === false) throw new Error(r?.error || 'gas_failed');
+
+    // 2) ถ้ามี groupIds + มี lineUserId → sync กลุ่มงวดเงินเดือนให้พนักงานคนนี้ด้วย
+    if (Array.isArray(groupIds) && profile?.lineUserId) {
+      try {
+        await callTA(id, 'emp_groups_set', {
+          actor,
+          lineUserId: profile.lineUserId,
+          groupIds
+        });
+      } catch (e2) {
+        console.error('[ADMIN][employee/save][emp_groups_set] warn:', e2?.message || e2);
+        // ไม่ต้อง throw ต่อ: ถือว่าบันทึกพนักงานสำเร็จแล้ว แค่ sync กลุ่มไม่สำเร็จ
+      }
+    }
+
     return res.json({ ok:true });
   } catch (e) {
     return res.status(500).json({ ok:false, error:String(e?.message || e) });
   }
 });
+
+
+// ลบพนักงานออกจากระบบ (soft-delete + เคลียร์ role + เอาออกจากกลุ่มงวดเงินเดือน)
+app.post('/api/tenants/:id/admin/employee/delete', express.json(), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { actor, lineUserId } = req.body || {};
+
+    if (!actor?.lineUserId) {
+      return res.status(400).json({ ok:false, error:'actor(lineUserId) required' });
+    }
+    if (!lineUserId) {
+      return res.status(400).json({ ok:false, error:'lineUserId required' });
+    }
+
+    // ตรวจสิทธิ์ด้านหน้าอีกชั้น (ต้องเป็น admin/owner)
+    const roleObj = await getRoleViaGAS(id, actor.lineUserId);
+    if (!roleObj || (roleObj.role !== 'admin' && roleObj.role !== 'owner')) {
+      return res.status(403).json({ ok:false, error:'forbidden' });
+    }
+
+    const r = await callTA(id, 'delete_employee', { actor, lineUserId });
+    if (!r || r.ok === false) throw new Error(r?.error || 'gas_failed');
+
+    return res.json({ ok:true });
+  } catch (e) {
+    console.error('[ADMIN][employee/delete] error:', e);
+    return res.status(500).json({ ok:false, error:String(e?.message || e) });
+  }
+});
+
+// ดึงกลุ่มงวดเงินเดือนที่พนักงานคนนี้อยู่ (ตาม PGM sheet)
+app.post('/api/tenants/:id/admin/employee/groups/get', express.json(), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { actor, lineUserId } = req.body || {};
+
+    if (!actor?.lineUserId) {
+      return res.status(400).json({ ok:false, error:'actor(lineUserId) required' });
+    }
+    if (!lineUserId) {
+      return res.status(400).json({ ok:false, error:'lineUserId required' });
+    }
+
+    const r = await callTA(id, 'emp_groups_get', { actor, lineUserId });
+    if (!r || r.ok === false) throw new Error(r?.error || 'gas_failed');
+
+    // GAS ฝั่งนั้นคืน { ok:true, groupIds:[...] }
+    return res.json({ ok:true, groupIds: r.groupIds || [] });
+  } catch (e) {
+    console.error('[ADMIN][employee/groups/get] error:', e);
+    return res.status(500).json({ ok:false, error:String(e?.message || e) });
+  }
+});
+// ตั้งกลุ่มงวดเงินเดือนให้พนักงาน (เขียนทับชุดเดิมทั้งหมด)
+app.post('/api/tenants/:id/admin/employee/groups/set', express.json(), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { actor, lineUserId, groupIds } = req.body || {};
+
+    if (!actor?.lineUserId) {
+      return res.status(400).json({ ok:false, error:'actor(lineUserId) required' });
+    }
+    if (!lineUserId) {
+      return res.status(400).json({ ok:false, error:'lineUserId required' });
+    }
+
+    const arr = Array.from(new Set(groupIds || [])).filter(Boolean);
+
+    const r = await callTA(id, 'emp_groups_set', {
+      actor,
+      lineUserId,
+      groupIds: arr
+    });
+    if (!r || r.ok === false) throw new Error(r?.error || 'gas_failed');
+
+    return res.json({ ok:true, count: r.count ?? arr.length });
+  } catch (e) {
+    console.error('[ADMIN][employee/groups/set] error:', e);
+    return res.status(500).json({ ok:false, error:String(e?.message || e) });
+  }
+});
+
 
 
 // ตั้งค่าการจ่าย (กรณีอยากแยก)
@@ -8388,7 +8508,7 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
           contents: [
             {
               type: 'button', style: 'primary', height: 'sm',
-              action: { type: 'uri', label: 'เริ่มลงทะเบียน', uri: url }
+              action: { type: 'uri', label: 'เริ่มลงทะเบียน', uri: url } ,color: '#3B5BDB'
             }
           ]
         }
@@ -8435,8 +8555,8 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
           return reply(replyToken, 'คุณไม่มีสิทธิ์เข้าหน้าตั้งค่า (admin/owner เท่านั้น)', null, tenantRef);
         }
 
-        // 3) สร้าง URL (ส่ง role เข้าไปด้วย)
-        const url = await buildAdminLiffUrl(tenantRef, userId, { view: 'menu', role });
+        // 3) สร้าง URL (ส่ง role เข้าไปด้วย) → เปลี่ยน view: 'users'
+        const url = await buildAdminLiffUrl(tenantRef, userId, { view: 'users', role });
         dbg('final LIFF url', { url });
 
         // 4) ส่ง Flex
@@ -8448,7 +8568,7 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
           ]},
           footer: { type: 'box', layout: 'vertical', contents: [
             { type: 'button', style: 'primary',
-              action: { type: 'uri', label: 'เปิดหน้าตั้งค่า', uri: url } }
+              action: { type: 'uri', label: 'เปิดหน้าตั้งค่า', uri: url } ,color: '#3B5BDB'}
           ]}
         };
 
@@ -8475,7 +8595,7 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
             { type:'text', text:'ดูเข้า-ออกงาน + สรุปเดือน', size:'sm', color:'#666666' }
           ]},
           footer: { type:'box', layout:'vertical', contents:[
-            { type:'button', style:'primary', action:{ type:'uri', label:'เปิดรายการลงเวลา', uri: url } }
+            { type:'button', style:'primary', action:{ type:'uri', label:'เปิดรายการลงเวลา', uri: url } ,color: '#3B5BDB'}
           ]}
         };
         return replyFlex(replyToken, bubble, 'เปิดรายการลงเวลา', tenantRef);
@@ -8497,7 +8617,7 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
             { type:'text', text:'สรุปชั่วโมง/วัน หักสาย แล้วคำนวณเบื้องต้น', size:'sm', color:'#666666' }
           ]},
           footer: { type:'box', layout:'vertical', contents:[
-            { type:'button', style:'primary', action:{ type:'uri', label:'เปิดสรุปเดือน', uri: url } }
+            { type:'button', style:'primary', action:{ type:'uri', label:'เปิดสรุปเงินเดือน', uri: url } ,color: '#3B5BDB'}
           ]}
         };
         return replyFlex(replyToken, bubble, 'เปิดสรุปเดือน', tenantRef);
@@ -8519,7 +8639,7 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
             { type:'text', text:'ดูรายงานการทำงาน/เงินเดือน', size:'sm', color:'#666666' }
           ]},
           footer: { type:'box', layout:'vertical', contents:[
-            { type:'button', style:'primary', action:{ type:'uri', label:'เปิดรายงาน', uri: url } }
+            { type:'button', style:'primary', action:{ type:'uri', label:'เปิดรายงาน', uri: url } ,color: '#3B5BDB'}
           ]}
         };
         return replyFlex(replyToken, bubble, 'เปิดรายงาน', tenantRef);
@@ -8570,7 +8690,7 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
         ]},
         footer: { type: 'box', layout: 'vertical', spacing: 'sm', flex: 0, contents: [
           { type: 'button', style: 'primary', height: 'sm',
-            action: { type: 'uri', label: 'เปิดหน้าลงเวลา', uri: liffUrl } }
+            action: { type: 'uri', label: 'เปิดหน้าลงเวลา', uri: liffUrl } ,color: '#3B5BDB'}
         ]}
       };
 
@@ -8614,7 +8734,7 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
         ]},
         footer: { type:'box', layout:'vertical', spacing:'sm', flex:0, contents:[
           { type:'button', style:'primary', height:'sm',
-            action:{ type:'uri', label:'เปิดหน้าลางาน', uri:liffUrl } }
+            action:{ type:'uri', label:'เปิดหน้าลางาน', uri:liffUrl } ,color: '#3B5BDB'}
         ]}
       };
       return replyFlex(replyToken, bubble, 'เปิดหน้าลางาน', tenantRef);
@@ -10481,8 +10601,11 @@ const ATTEND_USER_AREAS_TH = [
 ];
 
 // รูป preset (เสิร์ฟจาก /public/static)
-const ATTEND_ADMIN_IMG = `${BASE_APP_URL}/static/hr_menu_admin.png`;
-const ATTEND_USER_IMG  = `${BASE_APP_URL}/static/ta_menu_user.png`;
+// รูป preset (เสิร์ฟจาก /public/static) + version กัน cache / บังคับ recreate
+const ATTEND_IMG_VERSION = '20251115_1';
+const ATTEND_ADMIN_IMG = `${BASE_APP_URL}/static/hr_menu_admin.png?v=${ATTEND_IMG_VERSION}`;
+const ATTEND_USER_IMG  = `${BASE_APP_URL}/static/ta_menu_user.png?v=${ATTEND_IMG_VERSION}`;
+
 
 
 // // ช่วยเลือกว่าบทบาทไหนจัดเป็น admin-like

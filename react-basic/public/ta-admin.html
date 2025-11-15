@@ -81,9 +81,124 @@
   .modal .bd{padding:14px 16px}
   .modal .close{appearance:none;border:0;background:#fff;border:1px solid var(--ring);border-radius:10px;padding:6px 10px;cursor:pointer}
   .run-kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin:10px 0}
-  .run-kpi .box{background:#fbfdff;border:1px dashed #e2e8f0;border-radius:12px;padding:12px}
   .run-kpi .box .lbl{font-size:12px;color:#64748b}
   .run-kpi .box .val{font-size:18px;font-weight:700}
+
+    /* ========= Payment modal – layout ========= */
+  .modal .panel.pay-panel{
+    max-width:520px;
+    width:100%;
+    border-radius:24px;
+    overflow:hidden;
+  }
+
+  .pay-header{
+    padding:14px 18px;
+  }
+  .pay-header-main{
+    display:flex;
+    flex-direction:column;
+    gap:2px;
+  }
+  .pay-header-title{
+    font-size:17px;
+    font-weight:700;
+  }
+  .pay-header-sub{
+    font-size:13px;
+    color:var(--muted);
+  }
+
+  .pay-header .close{
+    border-radius:999px;
+    padding:6px 12px;
+    font-size:13px;
+  }
+
+  /* กล่องสรุปยอดสุทธิ */
+  #pay-summary{
+    margin-top:0;
+    border-radius:18px;
+    padding:14px 16px;
+    background:#eff6ff;
+    border:1px solid #dbeafe;
+  }
+  #pay-summary .pay-summary-name{
+    font-weight:600;
+    margin-bottom:2px;
+  }
+  #pay-summary .pay-summary-label{
+    font-size:13px;
+    color:#64748b;
+    margin-top:4px;
+  }
+  #pay-summary .pay-summary-amount{
+    font-size:20px;
+    font-weight:800;
+    margin-left:4px;
+  }
+
+  /* กล่องธนาคาร/เงินสด */
+  #pay-bank-box{
+    margin-top:12px;
+    padding:14px 16px;
+    border-radius:18px;
+    background:#f8fafc;
+    border:1px dashed #e2e8f0;
+  }
+  .pay-bank-title{
+    font-size:14px;
+    font-weight:600;
+    margin-bottom:4px;
+  }
+  #pay-bank-line{
+    font-size:13px;
+    line-height:1.5;
+  }
+  .pay-bank-actions{
+    margin-top:10px;
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:8px;
+  }
+  .pay-bank-helper{
+    font-size:12px;
+    color:#64748b;
+    margin:10px 0 6px;
+  }
+  #pay-bank-apps{
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+  }
+  .bank-app-btn img{
+    box-shadow:0 4px 12px rgba(15,23,42,.16);
+  }
+
+  #pay-cash-box{
+    margin-top:12px;
+    border-radius:18px;
+    font-size:14px;
+  }
+
+  /* footer ปุ่ม */
+  .pay-footer{
+    margin-top:14px;
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:8px;
+  }
+  #pay-confirm{
+    flex:1;
+  }
+
+  #pay-msg{
+    font-size:12px;
+    color:var(--muted);
+  }
+
 
   /* preloader/skeleton */
   #app-preload{position:fixed;inset:0;background:rgba(248,250,252,.85);backdrop-filter:saturate(160%) blur(2px);display:flex;align-items:center;justify-content:center;z-index:70}
@@ -183,51 +298,68 @@
         </div>
 
         <div class="row">
-          <div class="col"><label>วันที่ลงทะเบียน</label><input id="registerDate" type="date"></div>
-          <div class="col"><label>ประเภทการจ้างงาน</label>
-            <select id="employmentType">
-              <option value="">—</option>
-              <option value="intern">intern</option>
-              <option value="รายวัน">รายวัน</option>
-              <option value="รายเดือน">รายเดือน</option>
-              <option value="รายชั่วโมง">รายชั่วโมง</option>
-              <option value="เหมา">เหมา</option>
-            </select>
+          <div class="col">
+            <label>วันที่ลงทะเบียน</label>
+            <input id="registerDate" type="date">
           </div>
         </div>
 
+        <!-- 🔸 ช่องทางการจ่ายเงินเดือน -->
+        <h4 style="margin:14px 0 6px">ช่องทางการจ่ายเงินเดือน</h4>
+
         <div class="row">
-          <div class="col"><label>ธนาคาร</label><input id="bankName" placeholder="กสิกรไทย"></div>
-          <div class="col"><label>เลขบัญชี</label><input id="bankAccount" placeholder="2222222222"></div>
-          <div class="col"><label>ช่องทางจ่าย</label>
+          <div class="col">
+            <label>วิธีจ่าย</label>
             <select id="payoutChannel">
-              <option value="none">ยังไม่จัดการช่องทางการจ่าย</option>
-              <option value="bank">bank</option>
-              <option value="cash">cash</option>
-              <option value="promptpay">promptpay</option>
+              <option value="cash">เงินสด</option>
+              <option value="bank">โอนเข้าบัญชีธนาคาร</option>
             </select>
           </div>
         </div>
 
-        <h4 style="margin:14px 0 6px">ค่าจ้าง / ชั่วโมงการจ้าง</h4>
-        <div class="seg" id="payTypeSeg" style="margin-bottom:8px">
-          <button data-v="daily">รายวัน</button>
-          <button data-v="hourly">รายชั่วโมง</button>
-          <button data-v="monthly">รายเดือน</button>
-          <button data-v="every_n_days">ทุก N วัน</button>
-          <button data-v="every_n_hours">ทุก N ชั่วโมง</button>
+        <div class="row" id="bankWrap">
+          <div class="col">
+            <label>ธนาคาร</label>
+            <input id="bankName" placeholder="กสิกรไทย">
+          </div>
+          <div class="col">
+            <label>เลขบัญชี</label>
+            <input id="bankAccount" placeholder="2222222222">
+          </div>
         </div>
+
+        <!-- ✅ ค่าจ้าง แยก "รูปแบบการจ่าย" และ "อัตราจ้าง" -->
+        <h4 style="margin:14px 0 6px">รูปแบบการจ่าย</h4>
+
+        <div class="row" style="margin-bottom:8px">
+          <div class="col">
+            <label>รูปแบบการจ่าย (ใช้กำหนดรอบ / การแจ้งเตือน)</label>
+            <select id="payCycleType">
+              <option value="">— เลือก —</option>
+              <option value="daily">รายวัน</option>
+              <option value="monthly">รายเดือน</option>
+              <option value="every_n_days">ราย N วัน</option>
+            </select>
+          </div>
+          <div class="col" id="wrapPayCycleN">
+            <label>N (จำนวนวัน เมื่อเลือกราย N วัน)</label>
+            <input id="payCycleN" type="number" step="1" placeholder="เช่น 5 = ทุก 5 วัน">
+          </div>
+        </div>
+
+        <h4 style="margin:10px 0 6px">อัตราค่าจ้าง</h4>
+        
         <div class="row">
-          <div class="col"><label>รูปแบบจ่าย</label>
+          <div class="col"><label>ประเภทอัตราจ้าง</label>
             <select id="payType">
+              <option value="monthly">รายเดือน</option>
               <option value="daily">รายวัน</option>
               <option value="hourly">รายชั่วโมง</option>
-              <option value="monthly">รายเดือน</option>
               <option value="every_n_days">ทุก N วัน</option>
               <option value="every_n_hours">ทุก N ชั่วโมง</option>
             </select>
           </div>
-          <div class="col"><label>อัตรา (ค่าจ้างพื้นฐาน)</label><input id="payRate" type="number" step="0.01" placeholder="เช่น 400 / 60 / 15000"></div>
+          <div class="col"><label>อัตรา (จำนวนเงิน)</label><input id="payRate" type="number" step="0.01" placeholder="เช่น 15000 / 400 / 60"></div>
           <div class="col"><label>ชั่วโมง/วัน (ใช้อ้างอิงคำนวณสาย)</label><input id="dailyHours" type="number" step="0.5" value="8"></div>
           <div class="col"><label>หักสายตามสัดส่วน</label>
             <select id="prorateLate"><option value="true">หักตามชั่วโมงที่ขาด</option><option value="false">ไม่หัก</option></select>
@@ -241,16 +373,34 @@
           <div class="col"><label>ผ่อนผันสาย (นาที)</label><input id="lateGraceMin" type="number" step="1" value="0"></div>
         </div>
 
-        <div class="muted" style="margin-top:4px">
-          <b>อธิบาย:</b> <b>อัตรา</b> คือค่าจ้างต่อ “หน่วย” ของรูปแบบที่เลือก (วัน/ชั่วโมง/เดือน) •
-          <b>หักตามสัดส่วน</b> จะลดตามชั่วโมงที่ขาดเมื่อมาสาย/ออกก่อน •
-          <b>Pay every N</b> ใช้เมื่อจ่ายเป็นรอบ (เช่น ทุก 5 วัน / ทุก 3 ชม.)
+        <div class="row" style="margin-top:12px">
+          <div class="col">
+            <label>อยู่ในกลุ่มงวดเงินเดือน</label>
+            <div id="emp-groups"
+                 style="max-height:140px;overflow:auto;border:1px dashed #e2e8f0;border-radius:10px;
+                        padding:6px;font-size:13px">
+              <div class="muted">กำลังโหลดรายการกลุ่ม…</div>
+            </div>
+            <div class="muted" style="margin-top:4px">
+              เลือกกลุ่ม เพื่อใช้ตอนคำนวณเงินเดือน
+            </div>
+          </div>
+          <div class="col">
+            <label>เวลาพักระหว่างวัน (นาที)</label>
+            <input id="breakMinutes" type="number" step="1" placeholder="เช่น 60">
+          </div>
+          <div class="col">
+            <label>โควต้าลาประจำปี (วัน)</label>
+            <input id="leaveQuotaDays" type="number" step="0.5" placeholder="เช่น 10">
+          </div>
         </div>
 
         <div class="row" style="margin-top:12px">
           <button id="save" class="btn">บันทึก</button>
+          <button id="remove" class="btn-ghost" style="margin-left:8px">ลบพนักงานนี้</button>
           <span class="muted" id="saveMsg" style="margin-left:10px"></span>
         </div>
+
       </div>
     </section>
 
@@ -337,7 +487,7 @@
                   <tr>
                     <th>เลือก</th>
                     <th>ชื่อกลุ่ม</th>
-                    <th>ประเภท</th>
+                    <th>รูปแบบการจ่าย</th>
                     <th>วันฐาน/วันจ่าย</th>
                     <th>สมาชิก (ตัวอย่าง)</th>
                   </tr>
@@ -349,26 +499,31 @@
 
           <!-- ตั้งวันที่ + คำนวณ -->
           <div class="row" style="align-items:flex-end;margin-top:10px">
-            <div class="col">
-              <label>เลือกรอบจากกลุ่ม (ซิงค์กับตารางด้านบน)</label>
-              <select id="pr-group"><option value="">— เลือกกลุ่มงวด —</option></select>
-            </div>
-            <div class="col">
-              <label>ตั้งแต่วันที่</label>
-              <input id="pr-start" type="date">
-            </div>
-            <div class="col">
-              <label>ถึงวันที่</label>
-              <input id="pr-end" type="date">
-            </div>
-            <div class="col">
-              <label>กรองชื่อ/ตำแหน่ง</label>
-              <input id="pr-q" placeholder="พิมพ์เพื่อกรองรายชื่อ">
-            </div>
-            <div class="col" style="flex:0 0 auto">
-              <button id="pr-draft" class="btn">คำนวณ</button>
-            </div>
+          <div class="col">
+            <label>เลือกรอบจากกลุ่ม (ซิงค์กับตารางด้านบน)</label>
+            <select id="pr-group"><option value="">— เลือกกลุ่มงวด —</option></select>
           </div>
+          <div class="col">
+            <label>เลือกช่วงงวดที่ต้องการคำนวณ</label>
+            <label style="margin-top:4px;display:block">ตั้งแต่วันที่</label>
+            <input id="pr-start" type="date">
+          </div>
+          <div class="col">
+            <label>ถึงวันที่</label>
+            <input id="pr-end" type="date">
+          </div>
+
+          <!-- 🔻 ซ่อนฟิลเตอร์ชื่อ (ยังปล่อย element ไว้กัน script error) -->
+          <div class="col" style="display:none">
+            <label>กรองชื่อ/ตำแหน่ง</label>
+            <input id="pr-q" placeholder="พิมพ์เพื่อกรองรายชื่อ">
+          </div>
+
+          <div class="col" style="flex:0 0 auto">
+            <button id="pr-draft" class="btn">คำนวณ</button>
+          </div>
+        </div>
+
 
           <div class="sum" id="pr-status" style="margin-top:10px">เลือกกลุ่ม/ช่วงวันที่ แล้วกด “คำนวณ”</div>
 
@@ -397,6 +552,7 @@
                   <th>วันทำงาน</th>
                   <th>ชม.ทำงาน</th>
                   <th>ชม.สาย</th>
+                  <th>ชม.ลา</th>
                   <th>ฐานจ่าย</th>
                   <th>หัก/ปรับ (-)</th>
                   <th>บวกปรับ (+)</th>
@@ -465,8 +621,9 @@
               <div class="col">
                 <label>ประเภท</label>
                 <select id="pg-type">
-                  <option value="every_n_days">ทุก N วัน</option>
+                  <option value="daily">รายวัน</option>
                   <option value="monthly">รายเดือน</option>
+                  <option value="every_n_days">ราย N วัน</option>
                 </select>
               </div>
               <div class="col" id="pg-payday-wrap">
@@ -483,7 +640,14 @@
             </div>
             <div class="table-wrap" style="margin-top:6px">
               <table class="log">
-                <thead><tr><th>เลือก</th><th>พนักงาน</th><th>ตำแหน่ง</th></tr></thead>
+                <thead>
+                  <tr>
+                    <th>เลือก</th>
+                    <th>พนักงาน</th>
+                    <th>ตำแหน่ง</th>
+                    <th>รูปแบบจ่าย (พนักงาน)</th>
+                  </tr>
+                </thead>
                 <tbody id="pg-members"></tbody>
               </table>
             </div>
@@ -498,14 +662,13 @@
         <div id="pane-payments" class="hidden">
           <div class="sum" style="margin-top:0">
             <b>จ่ายเงินพนักงานตาม Pay Run</b>
-            <div class="muted">เลือกเดือน → เลือกงวด (run) → ทำเครื่องหมาย “จ่ายแล้ว” ทีละคน</div>
+            <div class="muted">เลือกเดือน → เลือกงวด (run) → กด “จ่ายเงินพนักงาน” ทีละคน</div>
             <div class="row" style="align-items:flex-end;margin-top:6px">
             <div class="col"><label>เดือน</label><input id="py-month" type="month"></div>
             <div class="col">
                 <label>เลือก Pay Run</label>
                 <select id="py-run"><option value="">— เลือก Pay Run ภายในเดือน —</option></select>
             </div>
-            <div class="col"><label>ค้นหาชื่อ/ตำแหน่ง</label><input id="py-q" placeholder="พิมพ์เพื่อกรอง"></div>
             <div style="flex:0 0 auto"><button id="py-refresh" class="btn-ghost">รีเฟรช</button></div>
             </div>
           </div>
@@ -579,11 +742,11 @@
               <tr>
                 <th>พนักงาน</th>
                 <th>ตำแหน่ง</th>
-                <th>รูปแบบจ่าย</th>
+                <th>ประเภทการจ่าย</th>
                 <th>อัตรา</th>
                 <th>วันทำงาน</th>
                 <th>ชม.ทำงาน</th>
-                <th>ชม.สาย</th>
+                <th>ชม.สาย/ลา</th>
                 <th>ฐานจ่าย</th>
                 <th>หักสาย</th>
                 <th>รวมสุทธิ</th>
@@ -660,6 +823,55 @@
         <div class="row" style="margin-top:10px">
           <button class="btn" id="run-edit-here">แก้ไขงวดนี้ใน “ทำเงินเดือน”</button>
           <span class="muted" id="run-msg"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- ▶▶ Payment Modal: จ่ายเงินพนักงาน ทีละคน ◀◀ -->
+  <div id="pay-modal" class="modal hidden" aria-hidden="true">
+    <div class="backdrop"></div>
+    <div class="panel pay-panel">
+      <div class="hd pay-header">
+        <div class="pay-header-main">
+          <div id="pay-title" class="pay-header-title">จ่ายเงินพนักงาน</div>
+          <div id="pay-subtitle" class="pay-header-sub">-</div>
+        </div>
+        <button class="close" id="pay-close">ปิด</button>
+      </div>
+
+      <div class="bd">
+        <!-- สรุปยอดสุทธิ -->
+        <div id="pay-summary">
+          <!-- เติมด้วย JS -->
+        </div>
+
+        <!-- ถ้ามีบัญชีธนาคาร -->
+        <div id="pay-bank-box" style="display:none">
+          <div class="pay-bank-title">โอนเข้าบัญชีธนาคาร</div>
+          <div id="pay-bank-line" class="muted">-</div>
+
+          <div class="pay-bank-actions">
+            <button class="btn-ghost" id="pay-copy-account">คัดลอกเลขบัญชี</button>
+            <span class="muted" id="pay-copy-msg"></span>
+          </div>
+
+          <div class="pay-bank-helper">
+            ช่องทางการจ่ายเงิน
+          </div>
+          <div id="pay-bank-apps"></div>
+        </div>
+
+        <!-- ถ้าไม่มีบัญชีธนาคาร -->
+        <div id="pay-cash-box" class="sum" style="display:none">
+          วิธีจ่ายสำหรับพนักงานคนนี้: <b>จ่ายเงินสด</b>
+        </div>
+
+        <!-- ปุ่มยืนยัน / ยกเลิก -->
+        <div class="pay-footer">
+          <button class="btn" id="pay-confirm">ยืนยันว่าจ่ายเงินแล้ว</button>
+          <button class="btn-ghost" id="pay-cancel">ยกเลิก</button>
+          <span id="pay-msg"></span>
         </div>
       </div>
     </div>
@@ -816,6 +1028,34 @@ function displayPay(o){
   return label || '—';
 }
 
+// แปลง type ของกลุ่มงวดเงินเดือนเป็นข้อความไทย
+function groupTypeLabel(g){
+  const t = String(g.type || '').toLowerCase();
+  const meta = g.meta || {};
+  const n = Number(g.n ?? meta.n ?? 0);
+
+  if (t === 'daily') return 'รายวัน';
+  if (t === 'monthly') return 'รายเดือน';
+  if (t === 'every_n_days') {
+    return n ? `ราย ${n} วัน` : 'ราย N วัน';
+  }
+  return '—';
+}
+
+// แปลง payCycleType / payCycleN ของพนักงานเป็นข้อความไทย
+function payCycleLabel(u){
+  const t = String(u.payCycleType || u.settings?.payCycleType || '').toLowerCase();
+  const n = Number(u.payCycleN ?? u.settings?.payCycleN ?? 0);
+
+  if (t === 'daily') return 'รายวัน';
+  if (t === 'monthly') return 'รายเดือน';
+  if (t === 'every_n_days') {
+    return n ? `ราย ${n} วัน` : 'ราย N วัน';
+  }
+  return '—';
+}
+
+
 /* ---------- APIs ---------- */
 async function listEmployees(actor){
   const res = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/employees`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ actor }) });
@@ -840,6 +1080,8 @@ async function fetchLogs(lineUserId, monthKey, range) {
 
 /* ====== USERS (load fresh) ====== */
 let __users = [];
+let __empGroupIds = new Set();   // ✅ กลุ่มงวดเงินเดือนของพนักงานใน editor ปัจจุบัน
+
 async function loadUsers(force=false){
   if (!force && __users.length) return __users;
   try { __users = await listEmployees(await getActor()) || []; }
@@ -851,57 +1093,121 @@ const $cards=document.getElementById('cards'); const $reload=document.getElement
 function notOwner(x){ const r=String(x.role||'').toLowerCase(); const jt=String(x.jobTitle||'').toLowerCase(); return r!=='owner' && jt!=='owner'; }
 function renderCards(rows){
   $cards.innerHTML=''; const q = ($q?.value||'').toLowerCase(); let count=0;
-  rows.filter(notOwner).filter(x=> !q || `${x.fullName||''} ${x.jobTitle||''}`.toLowerCase().includes(q)).forEach(x=>{
-    const el=document.createElement('div'); el.className='emp';
-    el.innerHTML=`
-      <div class="top">
-        <div class="avatar">${initials(x.fullName||'User')}</div>
-        <div style="flex:1">
-          <div style="font-weight:700">${x.fullName||'-'}</div>
-          <div class="muted">${x.jobTitle||'-'}</div>
+  rows
+    .filter(notOwner)
+    .filter(x=> !q || `${x.fullName||''} ${x.jobTitle||''}`.toLowerCase().includes(q))
+    .forEach(x=>{
+      const el=document.createElement('div'); el.className='emp';
+
+      // แปลงช่องทางรับเงินให้เป็นข้อความไทยสั้นๆ
+      const payoutRaw = x.payoutChannel || x.settings?.payoutChannel || 'cash';
+      const payoutText = payoutRaw === 'bank'
+        ? 'โอนเข้าบัญชีธนาคาร'
+        : 'เงินสด';
+
+      el.innerHTML=`
+        <div class="top">
+          <div class="avatar">${initials(x.fullName||'User')}</div>
+          <div style="flex:1">
+            <div style="font-weight:700">${x.fullName||'-'}</div>
+            <div class="muted">${x.jobTitle||'-'}</div>
+          </div>
+          <span class="chip">${(x.role||'user')}</span>
         </div>
-        <span class="chip">${(x.role||'user')}</span>
-      </div>
-      <div class="kv"><b>วันที่ลงทะเบียน</b><div>${onlyDate(x.registerDate)||'-'}</div></div>
-      <div class="kv"><b>ประเภทการจ้างงาน</b><div>${x.employmentType||'-'}</div></div>
-      <div class="kv"><b>จ่าย</b><div>${displayPay(x)} / ${money(x.payRate)}</div></div>
-      <div style="margin-top:10px;display:flex;gap:8px">
-        <button class="btn" data-act="edit">แก้ไข</button>
-      </div>`;
-    el.querySelector('[data-act="edit"]').addEventListener('click',()=>openEditor(x));
-    $cards.appendChild(el); count++;
-  });
+        <div class="kv"><b>วันที่ลงทะเบียน</b><div>${onlyDate(x.registerDate)||'-'}</div></div>
+        <div class="kv"><b>อัตราค่าจ้าง</b><div>${displayPay(x)} / ${money(x.payRate)}</div></div>
+        <div class="kv"><b>ช่องทางรับเงิน</b><div>${payoutText}</div></div>
+        <div style="margin-top:10px;display:flex;gap:8px">
+          <button class="btn" data-act="edit">แก้ไข</button>
+        </div>`;
+      el.querySelector('[data-act="edit"]').addEventListener('click',()=>openEditor(x));
+      $cards.appendChild(el); count++;
+    });
   $lazyNote.textContent = count ? 'เลื่อนการ์ดในแนวนอนได้เพื่อดูคนถัดไป' : 'ไม่พบข้อมูลตามเงื่อนไขค้นหา';
 }
+
 const val = id => document.getElementById(id).value;
 const setv = (id, v) => document.getElementById(id).value = (v ?? '');
 
 function bindPayTypeSeg(segId, selectId){
-  const seg=document.getElementById(segId); const sel=document.getElementById(selectId);
-  const syncOn=()=>{ [...seg.querySelectorAll('button')].forEach(b=> b.classList.toggle('on', b.dataset.v===sel.value)); };
-  seg.addEventListener('click',e=>{ const v=e.target?.dataset?.v; if(!v) return; sel.value=v; syncOn(); togglePayEveryN(); });
-  sel.addEventListener('change', ()=>{ syncOn(); togglePayEveryN(); });
+  const seg = document.getElementById(segId);
+  const sel = document.getElementById(selectId);
+
+  // ถ้าไม่มี seg หรือ select ให้ไม่ทำอะไร ป้องกัน error
+  if (!seg || !sel) return;
+
+  const syncOn = () => {
+    [...seg.querySelectorAll('button')].forEach(b =>
+      b.classList.toggle('on', b.dataset.v === sel.value)
+    );
+  };
+
+  seg.addEventListener('click', e => {
+    const v = e.target?.dataset?.v;
+    if (!v) return;
+    sel.value = v;
+    syncOn();
+    togglePayEveryN();
+  });
+
+  sel.addEventListener('change', () => {
+    syncOn();
+    togglePayEveryN();
+  });
+
   syncOn();
 }
+
+// เรียกเหมือนเดิม แต่ตอนนี้ถ้าไม่มี payTypeSeg ก็แค่ return เฉยๆ
 bindPayTypeSeg('payTypeSeg','payType');
 
-/* NEW: bank fields toggle + hide payEveryN */
+/* helpers: bank + pay-type fields */
 function toggleBankInputs(){
-  const ch = document.getElementById('payoutChannel').value || 'none';
-  const $bn = document.getElementById('bankName');
-  const $ba = document.getElementById('bankAccount');
-  const disable = (ch==='none' || ch==='cash');
-  [$bn,$ba].forEach(i=>{ i.disabled = disable; i.placeholder = disable ? '— ปิดใช้งาน —' : i.placeholder; });
+  const ch   = document.getElementById('payoutChannel')?.value || 'cash';
+  const wrap = document.getElementById('bankWrap');
+  const $bn  = document.getElementById('bankName');
+  const $ba  = document.getElementById('bankAccount');
+
+  const showBank = (ch === 'bank');
+
+  if (wrap) wrap.style.display = showBank ? '' : 'none';
+  [$bn,$ba].forEach(i=>{
+    if (!i) return;
+    i.disabled = !showBank;
+  });
+}
+
+function updatePayRatePlaceholder(){
+  const t = document.getElementById('payType')?.value || '';
+  const input = document.getElementById('payRate');
+  if (!input) return;
+  if (t === 'monthly') input.placeholder = 'เช่น 15000 (บาท/เดือน)';
+  else if (t === 'daily' || t === 'every_n_days') input.placeholder = 'เช่น 400 (บาท/วันหรือรอบ)';
+  else if (t === 'hourly' || t === 'every_n_hours') input.placeholder = 'เช่น 60 (บาท/ชั่วโมงหรือรอบ)';
+  else input.placeholder = 'เช่น 15000 / 400 / 60';
 }
 function togglePayEveryN(){
   const t = document.getElementById('payType').value;
   const show = (t==='every_n_days' || t==='every_n_hours');
   document.getElementById('wrapPayEveryN').style.display = show ? '' : 'none';
+  updatePayRatePlaceholder();
+}
+function togglePayCycleN(){
+  const t = document.getElementById('payCycleType')?.value || '';
+  const el = document.getElementById('wrapPayCycleN');
+  if (!el) return;
+  el.style.display = (t === 'every_n_days') ? '' : 'none';
+}
+const $payCycleType = document.getElementById('payCycleType');
+if ($payCycleType){
+  $payCycleType.addEventListener('change', togglePayCycleN);
 }
 
-function openEditor(emp){
+async function openEditor(emp){
   document.getElementById('editor').classList.remove('hidden');
   document.getElementById('empTitle').textContent = `แก้ไข: ${emp.fullName || emp.lineUserId}`;
+
+  // ✅ เติมฟิลด์โปรไฟล์พื้นฐาน
   setv('lineUserId',     emp.lineUserId || '');
   setv('fullName',       emp.fullName || '');
   setv('nationalId',     emp.nationalId || '');
@@ -913,11 +1219,21 @@ function openEditor(emp){
   setv('jobTitle',       emp.jobTitle || '');
   setv('role',           (emp.role || 'user'));
   setv('registerDate',   onlyDate(emp.registerDate) || '');
-  setv('employmentType', emp.employmentType || '');
-  setv('bankName',       emp.bankName || '');
-  setv('bankAccount',    emp.bankAccount || '');
-  const defaultPayout = (emp.payoutChannel||'') || ((!(emp.bankName||emp.bankAccount)) ? 'none' : 'bank');
+  setv('bankName',       emp.bankName    || emp.settings?.bankName    || '');
+  setv('bankAccount',    emp.bankAccount || emp.settings?.bankAccount || '');
+
+  // ถ้ามีข้อมูลธนาคาร ให้เดาว่าเป็นโอนเข้าบัญชี, ถ้าไม่มีก็ default เป็นเงินสด
+  const defaultPayout =
+    emp.payoutChannel || emp.settings?.payoutChannel ||
+    ((emp.bankName || emp.bankAccount || emp.settings?.bankName || emp.settings?.bankAccount) ? 'bank' : 'cash');
+
   setv('payoutChannel',  defaultPayout);
+
+  // ✅ รูปแบบการจ่าย (ใช้แจ้งเตือน/รอบ)
+  setv('payCycleType',   emp.payCycleType || emp.settings?.payCycleType || '');
+  setv('payCycleN',      emp.payCycleN ?? emp.settings?.payCycleN ?? '');
+
+  // ✅ ฟิลด์ค่าจ้าง/กะการทำงาน
   setv('payType',        emp.payType || 'daily');
   setv('payRate',        emp.payRate || 0);
   setv('dailyHours',     emp.dailyHours || 8);
@@ -927,15 +1243,61 @@ function openEditor(emp){
   setv('shiftOut',       emp.shiftOut || '');
   setv('lateGraceMin',   emp.lateGraceMin || 0);
 
-  [...document.querySelectorAll('#payTypeSeg button')].forEach(b=> b.classList.toggle('on', b.dataset.v===val('payType')));
+  // ✅ quota ใหม่
+  setv('breakMinutes',   emp.breakMinutes   ?? emp.settings?.breakMinutes   ?? '');
+  setv('leaveQuotaDays', emp.leaveQuotaDays ?? emp.settings?.leaveQuotaDays ?? '');
+
+  // ปรับปุ่ม payType ให้ตรงกับ select
+  [...document.querySelectorAll('#payTypeSeg button')].forEach(b=> 
+    b.classList.toggle('on', b.dataset.v===val('payType'))
+  );
   toggleBankInputs();
   togglePayEveryN();
-  document.getElementById('payoutChannel').onchange = toggleBankInputs();
+  togglePayCycleN();
+  document.getElementById('payoutChannel').onchange = toggleBankInputs;
 
+  // ✅ โหลดกลุ่มงวดเงินเดือนที่พนักงานคนนี้อยู่
+  await loadEmployeeGroupsForEditor(emp);
+
+  // ✅ ปุ่มลบ (ห้ามลบ owner)
+  const $remove = document.getElementById('remove');
+  if ($remove){
+    const isOwner = String(emp.role||'').toLowerCase()==='owner' ||
+                    String(emp.jobTitle||'').toLowerCase()==='owner';
+    $remove.disabled = !emp.lineUserId || isOwner;
+    $remove.title = isOwner ? 'Owner ไม่สามารถลบได้' : '';
+
+    $remove.onclick = async ()=>{
+      try{
+        const id = val('lineUserId');
+        if (!id){ alert('ไม่มี LINE User ID'); return; }
+        if (!confirm('ต้องการลบพนักงานคนนี้ออกจากระบบหรือไม่?')) return;
+
+        const actor = await getActor();
+        const r = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/employee/delete`, {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json' },
+          body: JSON.stringify({ actor, lineUserId:id })
+        }).catch(()=>null);
+        const j = await (r ? r.json().catch(()=>({})) : {});
+        if (!r || !r.ok || !j.ok) throw new Error(j.error || 'delete_failed');
+
+        setMsg('ลบพนักงานสำเร็จ','ok');
+        document.getElementById('editor').classList.add('hidden');
+        await primeUsers(true);
+      }catch(e){
+        alert('ลบไม่สำเร็จ: ' + (e.message || e));
+      }
+    };
+  }
+
+  // ✅ ปุ่มเซฟ: ส่ง profile + settings + groupIds ไป server.js
   document.getElementById('save').onclick = async ()=>{
     try{
       setMsg('กำลังบันทึก…');
       const actor = await getActor();
+      const groupIds = Array.from(__empGroupIds || []).filter(Boolean);
+
       const payload = {
         actor,
         profile: {
@@ -950,10 +1312,14 @@ function openEditor(emp){
           jobTitle:   val('jobTitle'),
           bankName:   document.getElementById('bankName').disabled ? '' : val('bankName'),
           bankAccount:document.getElementById('bankAccount').disabled ? '' : val('bankAccount'),
-          registerDate:   val('registerDate'),
-          employmentType: val('employmentType')
+          registerDate:   val('registerDate')
         },
         settings: {
+          // รูปแบบการจ่าย (สำหรับแจ้งเตือน/รอบ)
+          payCycleType:  val('payCycleType') || '',
+          payCycleN:     Number(val('payCycleN') || 0),
+
+          // อัตราจ้าง / สูตรคำนวณ
           payType:       val('payType'),
           payRate:       Number(val('payRate') || 0),
           dailyHours:    Number(val('dailyHours') || 8),
@@ -963,24 +1329,130 @@ function openEditor(emp){
           shiftOut:      val('shiftOut'),
           lateGraceMin:  Number(val('lateGraceMin') || 0),
           payoutChannel: val('payoutChannel') || 'none',
+          // ✅ quota ใหม่
+          breakMinutes:   Number(val('breakMinutes') || 0),
+          leaveQuotaDays: Number(val('leaveQuotaDays') || 0),
+
           allowances:    [],
           deductions:    [],
         },
-        role: val('role')
+        role: val('role'),
+        // ✅ ผูกกับ API /admin/employee/save (server.js step 2)
+        groupIds
       };
+
       const r = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/employee/save`, {
-        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(payload)
       });
       const j = await r.json().catch(()=> ({}));
       if (!r.ok || !j.ok) throw new Error(j?.error || 'save_failed');
+
       document.getElementById('saveMsg').textContent = 'บันทึกสำเร็จ ✓';
       setMsg('พร้อมใช้งาน','ok');
+      await primeUsers(true);
     }catch(e){
       document.getElementById('saveMsg').textContent = 'บันทึกไม่สำเร็จ: ' + (e.message || e);
       setMsg('ผิดพลาด: ' + (e.message || e), 'err');
     }
   };
 }
+async function loadEmployeeGroupsForEditor(emp){
+  const $box = document.getElementById('emp-groups');
+  __empGroupIds = new Set();
+  if (!$box) return;
+
+  $box.innerHTML = '<div class="muted">กำลังโหลดรายการกลุ่ม…</div>';
+  try{
+    // ใช้ loadGroups เดิม (จะไปดึง /admin/paygroups + detail)
+    await loadGroups(false);
+
+    if (emp.lineUserId){
+      const actor = await getActor();
+      const r = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/employee/groups/get`, {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({ actor, lineUserId: emp.lineUserId })
+      }).catch(()=>null);
+      const j = await (r ? r.json().catch(()=>({})) : {});
+      const gids = (r && r.ok && j.ok && Array.isArray(j.groupIds)) ? j.groupIds : [];
+      __empGroupIds = new Set(gids.filter(Boolean));
+    } else {
+      __empGroupIds = new Set();
+    }
+
+    renderEmpGroupsCheckboxes(false);
+  }catch(e){
+    console.error('[emp_groups_get] error', e);
+    renderEmpGroupsCheckboxes(true);
+  }
+}
+
+function renderEmpGroupsCheckboxes(hasError){
+  const $box = document.getElementById('emp-groups');
+  if (!$box) return;
+
+  const groups = __groups || [];
+  let html = '';
+
+  // ถ้ายังไม่มีกลุ่ม แสดงข้อความเตือน
+  if (!groups.length){
+    html += `<div class="muted">ยังไม่มีกลุ่มงวดเงินเดือน</div>`;
+  }
+
+  // รายการกลุ่ม (checkbox)
+  html += groups.map(g=>{
+    const checked = __empGroupIds.has(g.groupId) ? 'checked' : '';
+    const sub = groupTypeLabel(g);
+    return `
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;padding:3px 4px">
+        <input type="checkbox" data-gid="${g.groupId}" ${checked}
+               style="width:auto;height:auto">
+        <span><b>${g.name || g.groupId}</b> <span class="muted">· ${sub}</span></span>
+      </label>
+    `;
+  }).join('');
+
+  // ✅ ปุ่มไปตั้งค่างวดเงินเดือน (แสดงตลอด)
+  html += `
+    <button type="button" class="btn-ghost" id="btnCreatePaygroupFromEmp"
+            style="margin-top:6px;width:100%">
+      ไปหน้าตั้งค่างวดเงินเดือน
+    </button>
+  `;
+
+  $box.innerHTML = html;
+
+  // ผูก event กับ checkbox กลุ่ม
+  [...$box.querySelectorAll('[data-gid]')].forEach(ch=>{
+    ch.addEventListener('change', ()=>{
+      const gid = ch.dataset.gid;
+      if (!gid) return;
+      if (ch.checked) __empGroupIds.add(gid);
+      else __empGroupIds.delete(gid);
+    });
+  });
+
+  // ผูก event ปุ่มไปหน้า “ตั้งค่างวดเงินเดือน”
+  const btn = document.getElementById('btnCreatePaygroupFromEmp');
+  if (btn){
+    btn.addEventListener('click', ()=>{
+      // หลังจากเปลี่ยน hash แล้ว ให้เปิดแท็บ "ตั้งค่างวดเงินเดือน" ให้อัตโนมัติ
+      __afterRoute = ()=> setPayrollTab('cycles');
+      location.hash = '#payroll';
+    });
+  }
+
+  if (hasError){
+    const warn = document.createElement('div');
+    warn.className = 'err';
+    warn.textContent = 'โหลดกลุ่มไม่สำเร็จ ลองรีเฟรชภายหลัง';
+    $box.appendChild(warn);
+  }
+}
+
+
 
 /* ---------- LOGS ---------- */
 const $cards2=document.getElementById('cards2'); const $q2=document.getElementById('q2'); const $lazy2=document.getElementById('lazyNote2');
@@ -1006,8 +1478,7 @@ async function renderUserStripLogs(){
         </div>
         <span class="chip">${(x.role||'user')}</span>
       </div>
-      <div class="kv"><b>จ้าง</b><div>${x.employmentType||'-'}</div></div>
-      <div class="kv"><b>รูปแบบจ่าย</b><div>${displayPay(x)} / ${money(x.payRate)}</div></div>
+      <div class="kv"><b>อัตราการจ่าย</b><div>${displayPay(x)} / ${money(x.payRate)}</div></div>
 
       <div style="margin-top:10px;display:flex;gap:8px"><button class="btn" data-act="view">ดูรายการเดือนนี้</button></div>`;
     el.querySelector('[data-act="view"]').addEventListener('click',()=> openLogs(x));
@@ -1113,6 +1584,12 @@ function setPayrollTab(name){
     $tabPayrun.classList.add('on');
     $panePayrun.classList.remove('hidden');
   }
+
+  // ✅ แสดง Due Today เฉพาะแท็บ "ทำเงินเดือน"
+  const dueBox = document.getElementById('pr-due');
+  if (dueBox) {
+    dueBox.classList.toggle('hidden', name !== 'payrun');
+  }
 }
 function currentPayrollTab(){
   if (!$paneCycles.classList.contains('hidden')) return 'cycles';
@@ -1156,24 +1633,34 @@ let __dueLoading = false;
 let __dueLastAt = 0;
 const __DUE_MIN_INTERVAL = 8000;
 
+// ✅ หาวันสุดท้ายของเดือน จากวันที่ไหนก็ได้
 function endOfMonthYMD(d){
   const dt = (d instanceof Date)? d : new Date(d);
   const last = new Date(dt.getFullYear(), dt.getMonth()+1, 0);
   return `${last.getFullYear()}-${String(last.getMonth()+1).padStart(2,'0')}-${String(last.getDate()).padStart(2,'0')}`;
 }
+// ✅ คำนวณ "วันจ่าย" ของกลุ่มรายเดือน จาก today + payDayOfMonth (1–31 หรือ 'last')
 function monthlyPayDateYMD(todayYMD, payDayOfMonth){
   const [Y,M] = todayYMD.split('-').map(Number);
   const mk = (y,m,d)=> `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+
   const thisLast = new Date(Y, M, 0).getDate();
-  const toDay = (payDayOfMonth==='last') ? thisLast : Math.min(Number(payDayOfMonth||1), 31);
-  const today = new Date(todayYMD);
-  const payThis = new Date(Y, M-1, (payDayOfMonth==='last')? thisLast : toDay);
-  if (today <= payThis) return mk(Y, M, (payDayOfMonth==='last')? thisLast : toDay);
+  const useLast  = (payDayOfMonth === 'last');
+  const dayNum   = useLast ? thisLast : Math.min(Number(payDayOfMonth||1), 31);
+
+  const today   = new Date(todayYMD);
+  const payThis = new Date(Y, M-1, dayNum);
+
+  // ถ้าวันนี้ยังไม่เกินวันจ่ายของเดือนนี้ → ใช้เดือนนี้
+  if (today <= payThis) return mk(Y, M, dayNum);
+
+  // ถ้าเลยแล้ว → ขยับไปเดือนหน้า
   const nY = (M===12)? (Y+1) : Y;
   const nM = (M===12)? 1 : (M+1);
   const nextLast = new Date(nY, nM, 0).getDate();
-  const d = (payDayOfMonth==='last')? nextLast : Math.min(Number(payDayOfMonth||1), 31);
-  return mk(nY, nM, d);
+  const nDay = useLast ? nextLast : Math.min(dayNum, 31);
+
+  return mk(nY, nM, nDay);
 }
 
 async function loadDueToday(force=false){
@@ -1221,29 +1708,47 @@ async function loadDueToday(force=false){
         `<div class="table-wrap"><table class="log">`,
         `<thead><tr><th>กลุ่ม</th><th>ช่วงงวด</th><th>วันจ่าย</th></tr></thead><tbody>`,
         ...due.map(g=>{
-            const name = g.name || g.groupId || '(ไม่ระบุชื่อกลุ่ม)';
-            let payTxt = g.payDate || '';
-            if ((!payTxt || payTxt==='—') && String(g.type).toLowerCase()==='monthly'){
-              const pdom = g.payDayOfMonth ?? g.meta?.payDayOfMonth ?? g.payDay ?? g.meta?.payDay ?? null;
-              if (pdom!=null && ($dueDate?.value)){
-                payTxt = monthlyPayDateYMD($dueDate.value, String(pdom).toLowerCase()==='last' ? 'last' : Number(pdom));
-              }
+          const name = g.name || g.groupId || '(ไม่ระบุชื่อกลุ่ม)';
+          const type = String(g.type || '').toLowerCase();
+
+          let payTxt = g.payDate || '';
+
+          // ✅ กลุ่มทุก N วัน: วันจ่าย = วันถัดจากวันสิ้นงวด (periodEnd + 1)
+          if (type === 'every_n_days' && g.periodEnd) {
+            const d = new Date(g.periodEnd);
+            if (!isNaN(d)) {
+              d.setDate(d.getDate() + 1);
+              payTxt = ymdLocal(d); // helper ด้านบน
             }
-            let range = '—';
-            if (g.periodStart && g.periodEnd){
-              range = `${g.periodStart} → ${g.periodEnd}`;
-            } else if (String(g.type).toLowerCase()==='monthly' && payTxt){
-              const d = new Date(payTxt);
-              const first = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`;
-              const last  = endOfMonthYMD(d);
-              range = `${first} → ${last}`;
+          }
+
+          // ✅ กลุ่มรายเดือน: ถ้า backend ยังไม่คำนวณ payTxt → คำนวณเองจาก payDayOfMonth
+          if ((!payTxt || payTxt === '—') && type === 'monthly'){
+            const meta = g.meta || {};
+            const pdom = g.payDayOfMonth ?? meta.payDayOfMonth ?? g.payDay ?? meta.payDay ?? null;
+            if (pdom != null && ($dueDate?.value)){
+              const as = String(pdom).toLowerCase() === 'last' ? 'last' : Number(pdom);
+              payTxt = monthlyPayDateYMD($dueDate.value, as);
             }
-            const pay = payTxt || '—';
-            return `<tr><td>${name}</td><td>${range}</td><td>${pay}</td></tr>`;
+          }
+
+          // ✅ ช่วงงวด
+          let range = '—';
+          if (g.periodStart && g.periodEnd){
+            range = `${g.periodStart} → ${g.periodEnd}`;
+          } else if (type === 'monthly' && payTxt){
+            const d = new Date(payTxt);
+            const first = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`;
+            const last  = endOfMonthYMD(d);
+            range = `${first} → ${last}`;
+          }
+
+          const pay = payTxt || '—';
+          return `<tr><td>${name}</td><td>${range}</td><td>${pay}</td></tr>`;
         }),
         `</tbody></table></div>`
-        ].join('');
-        $dueList.innerHTML = html;
+      ].join('');
+      $dueList.innerHTML = html;
     }
   }catch(e){
     $dueList.innerHTML = `<div class="err">โหลดรายการล้มเหลว: ${e.message || e}</div>`;
@@ -1285,17 +1790,43 @@ $btnLoadDue?.addEventListener('click', ()=>loadDueToday(true));
 $btnNotify?.addEventListener('click', notifyDueToday);
 
 /* ====== PATCH 6: lean refresh ====== */
+/* ====== PATCH 6: lean refresh ====== */
 async function refreshPayrollUI(){
   try{
     setMsg('กำลังรีเฟรช…');
-    __groupsCacheAt = 0;               // invalidate groups cache
-    await primePayroll(true);          // primePayroll มี loadUsers/loadGroups อยู่แล้ว
-    await loadDueToday(true);
+
+    const tab = currentPayrollTab();   // ✅ ดูก่อนว่าตอนนี้เราอยู่ tab ไหน
+
+    if (tab === 'payrun') {
+      // TAB 1: ทำเงินเดือน
+      __groupsCacheAt = 0;               // invalidate groups cache
+      await primePayroll(true);          // loadUsers + loadGroups
+      await loadDueToday(true);          // โหลด Due Today ใหม่
+      document.getElementById('pr-body').innerHTML = '';
+      document.getElementById('pr-total').textContent = '0.00';
+      $prMsg.textContent = '';
+    } else if (tab === 'cycles') {
+      // TAB 2: ตั้งค่างวดเงินเดือน
+      __groupsCacheAt = 0;
+      await loadUsers(true);
+      await loadGroups(true);
+      renderCyclesTable();
+      $pgEditor.classList.add('hidden');
+      $pgMsg.textContent = '';
+    } else if (tab === 'payments') {
+      // TAB 3: จ่ายเงินพนักงาน
+      await loadUsers(true);
+      await primePayments(true);   // โหลดรายชื่อ runs ใหม่ตามเดือน
+      await reloadPayments();      // โหลดรายการ approved/paid ใหม่
+    }
+
     setMsg('รีเฟรชแล้ว','ok');
   }catch(e){
+    console.error(e);
     setMsg('รีเฟรชล้มเหลว: ' + (e.message||e), 'err');
   }
 }
+
 
 const $prGroup = document.getElementById('pr-group');
 const $prStart = document.getElementById('pr-start');
@@ -1408,6 +1939,7 @@ function rowHTML(r){
     <td style="text-align:right">${r.workDays}</td>
     <td style="text-align:right">${r.workHours.toFixed(2)}</td>
     <td style="text-align:right">${r.lateHours.toFixed(2)}</td>
+    <td style="text-align:right">${(r.leaveHours||0).toFixed(2)}</td>
     <td style="text-align:right">${r.basePay.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
     <td><input class="adjMinus" type="number" step="0.01" value="${r.adjMinus||0}" style="width:110px"></td>
     <td><input class="adjPlus"  type="number" step="0.01" value="${r.adjPlus||0}"  style="width:110px"></td>
@@ -1425,6 +1957,11 @@ function parsePayBase(emp, logs, period){
   const lateHours = lateMinTotal/60;
   const workHours = Number(summary?.workHours||0);
   const workDays  = Number(summary?.workDays||0);
+
+    // 🔹 ดึงชั่วโมงลาและวันลา (จาก GAS /attendance/logs)
+  const leaveHours = Number(summary?.leaveHours || 0);
+  const leaveDays  = Number(summary?.leaveDays  || 0);
+  
   const payType   = String(emp.payType||'daily');
   const payRate   = Number(emp.payRate||0);
   const dailyHours= Number(emp.dailyHours||8);
@@ -1453,11 +1990,23 @@ function parsePayBase(emp, logs, period){
   }
 
   let lateDeduct=0;
-  if (String(emp.prorateLate||'false').toLowerCase()==='true' && hourlyForLate>0 && payType!=='hourly'){
+    if (String(emp.prorateLate||'false').toLowerCase()==='true' && hourlyForLate>0 && payType!=='hourly'){
     lateDeduct = hourlyForLate * lateHours;
   }
-  return { workDays, workHours, lateHours, basePay, lateDeduct, payType, payRate, dailyHours, payEveryN };
+  return {
+    workDays,
+    workHours,
+    lateHours,
+    leaveHours,   // ✅ เพิ่มออกมาด้วย
+    basePay,
+    lateDeduct,
+    payType,
+    payRate,
+    dailyHours,
+    payEveryN
+  };
 }
+
 
 async function computeOne(emp, periodStart, periodEnd){
   const logs = await fetchLogs(emp.lineUserId, null, { periodStart, periodEnd });
@@ -1477,11 +2026,11 @@ const __GROUPS_TTL_MS = 10_000;
 async function loadGroups(force=false){
   const now = Date.now();
   if (!force && __groups?.length && (now - __groupsCacheAt) < __GROUPS_TTL_MS) {
-    // use cache
+    // ใช้ cache
   } else {
     const r = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/paygroups`).catch(()=>null);
     const j = await (r ? r.json().catch(()=>({})) : {});
-    __groups = j?.data||[];
+    __groups = j?.data || [];
     __groupsCacheAt = now;
   }
 
@@ -1492,11 +2041,17 @@ async function loadGroups(force=false){
     __groupMembers[gid] = new Set((det.members||det.memberIds||[]).map(x=> x.lineUserId || x));
   });
 
+ 
   $prGroup.innerHTML = `<option value="">— เลือกกลุ่มงวด —</option>` +
-    (__groups||[]).map(g=> `<option value="${g.groupId}">${g.name} (${g.type}${g.n?(' '+g.n):''})</option>`).join('');
+    (__groups||[]).map(g =>
+      `<option value="${g.groupId}">${g.name} · ${groupTypeLabel(g)}</option>`
+    ).join('');
+
+
   renderGroupsOverview();
   renderCyclesTable();
 }
+
 
 async function fetchGroupDetail(groupId){
   try{
@@ -1505,40 +2060,84 @@ async function fetchGroupDetail(groupId){
     return j?.data || {};
   }catch{ return {}; }
 }
+// ใช้ "วันนี้" (หรือวันที่ในช่อง Due Today ถ้ามี) เป็น anchor เสมอ
 function computePeriodFromGroup(g){
   if (!g) return null;
 
-  const baseStart = $prStart.value ? new Date($prStart.value) : null;
-  const baseEnd   = $prEnd.value   ? new Date($prEnd.value)   : null;
-  const baseDate  = (baseStart && !isNaN(baseStart)) ? baseStart
-                 : (baseEnd && !isNaN(baseEnd)) ? baseEnd
-                 : new Date();
+  // 🔹 anchorDay = วันนี้ หรือค่าจากช่อง Due Today
+  let anchorStr = '';
+  const $due = document.getElementById('dueTodayInput');
+  if ($due && $due.value) {
+    anchorStr = $due.value;          // เช่น 2025-11-15
+  } else {
+    anchorStr = todayYMD();          // helper ด้านบน
+  }
+
+  const anchor = new Date(anchorStr);
+  if (isNaN(anchor)) return null;
 
   const toYMD = d => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+  const type  = String(g.type || '').toLowerCase();
+  const meta  = g.meta || {};
+  const N     = Number(g.n ?? meta.n ?? 0);
 
-  if (g.type==='monthly'){
-    const first = new Date(baseDate.getFullYear(), baseDate.getMonth(), 1);
-    const last  = new Date(baseDate.getFullYear(), baseDate.getMonth()+1, 0);
+  // 🔹 กลุ่ม "รายเดือน" → ใช้ทั้งเดือนของ anchor (1 → last)
+  if (type === 'monthly'){
+    const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+    const last  = new Date(anchor.getFullYear(), anchor.getMonth()+1, 0);
     return { start: toYMD(first), end: toYMD(last) };
   }
 
-  if (g.type==='every_n_days' && g.n>0 && onlyDate(g.startDate) ){
-    const N = Number(g.n);
-    const start0 = new Date(onlyDate(g.startDate) || '-');
-    if (isNaN(start0)) return null;
+  // 🔹 กลุ่ม "ราย N วัน"
+  //     ต้องการ: วันนี้ 15, N=3 → ช่วงงวด = 12–14 (ย้อนหลัง 3 วัน ไม่รวมวันนี้)
+  if (type === 'every_n_days' && N > 0){
+    // วันฐานเริ่มต้น (ไม่ให้ถอยย้อนหลังเลยจุดนี้)
+    const rawStart = onlyDate(
+      g.startDate || meta.startDate || meta.baseDate || ''
+    );
+    const start0 = rawStart ? new Date(rawStart) : null;
 
-    let cycleStart = new Date(start0);
-    let cycleEnd   = new Date(cycleStart);
-    cycleEnd.setDate(cycleEnd.getDate() + (N - 1));
+    // anchorDay = วันนี้ (หรือวันที่ใน Due Today) ตัดเวลาออก
+    const anchorDay = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate());
 
-    while (cycleEnd < baseDate) {
-      cycleStart.setDate(cycleStart.getDate() + N);
-      cycleEnd.setDate(cycleEnd.getDate() + N);
+    // วันสุดท้ายของงวด = วันก่อน anchor
+    const end = new Date(anchorDay);
+    end.setDate(end.getDate() - 1);  // วันนี้ 15 → end = 14
+
+    // วันเริ่มต้น = ถอยจาก end ไป N-1 วัน
+    const start = new Date(end);
+    start.setDate(start.getDate() - (N - 1));   // N=3 → 14 - (3-1) = 12
+
+    // ถ้ามีวันฐาน และ start < วันฐาน → ดันขึ้นเป็นวันฐาน
+    if (start0 && !isNaN(start0) && start < start0){
+      start.setTime(start0.getTime());
+      if (start > end) return null;
     }
-    return { start: toYMD(cycleStart), end: toYMD(cycleEnd) };
+
+    return { start: toYMD(start), end: toYMD(end) };
+  }
+
+  // 🔹 กลุ่มรายวัน daily → ใช้วันเดียว = anchor
+  if (type === 'daily'){
+    const d = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate());
+    return { start: toYMD(d), end: toYMD(d) };
   }
 
   return null;
+}
+
+
+function maybeSyncPeriodToGroup(g){
+  if (!g) return;
+  // ถ้า user เคยปรับช่วงวันที่เองแล้ว จะไม่ไปยุ่ง
+  if (USER_TOUCHED_PERIOD) return;
+
+  const p = computePeriodFromGroup(g);
+  if (!p || !p.start || !p.end) return;
+
+  $prStart.value = p.start;
+  $prEnd.value   = p.end;
+  savePeriod();
 }
 
 /* กลุ่มแบบตาราง (TAB1) */
@@ -1548,32 +2147,34 @@ function renderGroupsOverview(){
   tb.innerHTML = (__groups||[]).map(g=>{
 
     const meta = g.meta || {};
-    const sub = (g.type==='monthly') ? 'รายเดือน' : `ทุก ${g.n||'-'} วัน`;
+    const sub  = groupTypeLabel(g);
 
-    function pickExactYMD(...candidates){
-      for (const v of candidates){
-        const s = String(v||'').trim();
-        if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-        if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
-          const d = new Date(s); if (!isNaN(d)) {
-            return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-          }
+    // ✅ คำนวณข้อความ "วันฐาน/วันจ่าย"
+    let baseTxt = '—';
+    const type = String(g.type || '').toLowerCase();
+
+    if (type === 'monthly') {
+      // กลุ่มรายเดือน: แสดงวันจ่าย (1–31 หรือ last)
+      const rawPd = (g.payDayOfMonth ?? g.payDay ?? meta.payDayOfMonth ?? meta.payDay ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+
+      if (rawPd) {
+        if (rawPd === 'last') {
+          baseTxt = 'วันที่สุดท้ายของเดือน';
+        } else {
+          baseTxt = `วันที่ ${rawPd}`;
         }
       }
-      return '';
-    }
-
-    const rawBaseYMD =
-      (g.type === 'monthly')
-        ? ''
-        : pickExactYMD(g.startDate, g.baseDate, g.anchorDate, g.meta?.startDate, g.meta?.baseDate);
-
-    let baseTxt = '—';
-    if (g.type === 'monthly') {
-      const pd = (g.payDayOfMonth ?? g.payDay ?? g.meta?.payDayOfMonth ?? g.meta?.payDay ?? '').toString().toLowerCase();
-      baseTxt = pd ? (pd === 'last' ? 'last' : `วันที่ ${pd}`) : '—';
     } else {
-      baseTxt = rawBaseYMD || '—';
+      // กลุ่มรายวัน / ราย N วัน: ใช้วันเริ่มคำนวณ (วันฐาน)
+      const rawBase =
+        meta.startDate || meta.baseDate || meta.anchorDate || meta.start ||
+        g.startDate   || g.baseDate   || g.anchorDate   || g.start   || '';
+
+      const ymd = onlyDate(rawBase);
+      baseTxt = ymd || '—';
     }
 
     const ids = __groupMembers[g.groupId] || new Set();
@@ -1601,7 +2202,11 @@ function renderGroupsOverview(){
     btn.addEventListener('click', async ()=>{
       const gid = btn.dataset.pick;
       $prGroup.value = gid;
-      USER_TOUCHED_PERIOD = true;
+
+      // ✅ sync ช่วงงวดตามกลุ่ม ถ้ายังไม่ได้แก้วันที่เอง
+      const g = (__groups || []).find(x => x.groupId === gid);
+      if (g) maybeSyncPeriodToGroup(g);
+
       const det = await fetchGroupDetail(gid);
       const ids = new Set((det.members||det.memberIds||[]).map(x=> x.lineUserId || x));
       __groupMembers[gid] = ids;
@@ -1614,6 +2219,7 @@ function renderGroupsOverview(){
   });
 }
 
+
 $prGroup.onchange = async ()=>{
   __editingRunId = null;  
   __editRunMembers = null;
@@ -1624,6 +2230,11 @@ $prGroup.onchange = async ()=>{
     $prMembersBox.classList.add('hidden');
     return;
   }
+
+  // ✅ ซิงค์ช่วงงวดตามกลุ่ม (ถ้ายังไม่ได้แก้วันที่เอง)
+  const g = (__groups || []).find(x => x.groupId === gid);
+  if (g) maybeSyncPeriodToGroup(g);
+
   await loadUsers(true);
   const det = await fetchGroupDetail(gid);
   const ids = new Set((det.members||det.memberIds||[]).map(x=> x.lineUserId || x));
@@ -1631,6 +2242,7 @@ $prGroup.onchange = async ()=>{
   renderGroupMembers(gid);
   $prStatus.textContent = 'เลือกกลุ่มแล้ว — ตั้งช่วงวันที่ แล้วกด “คำนวณ”';
 };
+
 
 /* ====== PATCH 5: cancel stale draft ====== */
 async function draftCompute(periodStart, periodEnd){
@@ -1718,6 +2330,7 @@ document.getElementById('pr-commit-selected').onclick = async ()=>{
           workDays:   Number(r.workDays||0),
           workHours:  Number(r.workHours||0),
           lateHours:  Number(r.lateHours||0),
+          leaveHours:  Number(r.leaveHours||0), 
           basePay:    Number(r.basePay||0),
           lateDeduct: Number(r.lateDeduct||0),
           payType:    String(r.payType||''),
@@ -1811,7 +2424,7 @@ async function openGroupEditor(groupId){
   __editingGroupId = groupId || null;
   $pgMsg.textContent = '';
   const creating = !groupId;
-  let meta = { name:'', type:'every_n_days', n: null, startDate: '' };
+  let meta = { name:'', type:'daily', n: null, startDate: '' };
 
   if (!creating){
     meta = await fetchGroupDetail(groupId);
@@ -1819,7 +2432,7 @@ async function openGroupEditor(groupId){
 
   $pgEditTitle.textContent = creating ? 'สร้างกลุ่มใหม่' : `แก้ไขกลุ่ม: ${meta.name||groupId}`;
   $pgName.value = meta.name || '';
-  $pgType.value = meta.type || 'every_n_days';
+  $pgType.value = meta.type || 'daily';
   $pgN.value = meta.n || '';
 
   function normYMD(v){
@@ -1851,15 +2464,32 @@ async function openGroupEditor(groupId){
 
 function renderMemberChecklist(){
   const kw = ($pgMemberQ.value||'').trim().toLowerCase();
-  const rows = (__users||[]).filter(notOwner).filter(u=> !kw || `${u.fullName||''} ${u.jobTitle||''}`.toLowerCase().includes(kw));
+  const rows = (__users||[])
+    .filter(notOwner)
+    .filter(u=> !kw || `${u.fullName||''} ${u.jobTitle||''}`.toLowerCase().includes(kw));
+
+  const currentType = ($pgType?.value || '').toLowerCase();
+
   $pgMembers.innerHTML = rows.map(u=>{
     const checked = __membersDraft.has(u.lineUserId) ? 'checked' : '';
+    const cycleTxt = payCycleLabel(u);
+    const tCycle = String(u.payCycleType || u.settings?.payCycleType || '').toLowerCase();
+
+    // ถ้าเลือกประเภทกลุ่มแล้ว และรูปแบบจ่ายของพนักงานไม่ตรง → แสดงสีแดงเตือน
+    const mismatch = currentType && tCycle && currentType !== 'every_n_days'
+      ? (currentType !== tCycle)
+      : false;
+
+    const cycleClass = mismatch ? 'err' : 'muted';
+
     return `<tr>
       <td><input type="checkbox" data-mid value="${u.lineUserId}" ${checked}></td>
       <td>${u.fullName||u.lineUserId}</td>
       <td>${u.jobTitle||'-'}</td>
+      <td class="${cycleClass}">${cycleTxt}</td>
     </tr>`;
   }).join('');
+
   [...$pgMembers.querySelectorAll('[data-mid]')].forEach(ch=>{
     ch.addEventListener('change', ()=>{
       const id = ch.value;
@@ -1880,13 +2510,22 @@ $pgSave.onclick = async ()=>{
     const type = $pgType.value;
 
     if (!name){ $pgMsg.textContent = 'โปรดระบุชื่อกลุ่ม'; return; }
-    if (type !== 'monthly' && type !== 'every_n_days'){ 
-      $pgMsg.textContent = 'ประเภทไม่ถูกต้อง'; return; 
+    if (!['daily','monthly','every_n_days'].includes(type)){ 
+      $pgMsg.textContent = 'ประเภทไม่ถูกต้อง'; 
+      return; 
     }
 
     let n = null, startDate = null;
     let payDay = null;
 
+    // รายวัน: แจ้งเตือนทุกวัน ไม่ต้องมี N / วันฐาน / วันจ่าย
+    if (type === 'daily'){
+      n = 1;          // เผื่อ GAS/Server ใช้ n ร่วมด้วย → ให้เป็น 1 วัน
+      startDate = null;
+      payDay = null;
+    }
+
+    // รายเดือน: ใช้วันจ่ายของเดือน (1–31 หรือ last)
     if (type === 'monthly'){
       const raw = (document.getElementById('pg-payday').value || '').trim().toLowerCase();
       if (raw) {
@@ -1902,6 +2541,7 @@ $pgSave.onclick = async ()=>{
       startDate = null;
     }
 
+    // ราย N วัน: ต้องมี N และวันเริ่ม (วันฐาน)
     if (type === 'every_n_days'){
       n = Number.parseInt($pgN.value, 10);
       if (!(n >= 1)) { $pgMsg.textContent = 'โปรดกรอก N เป็นจำนวนเต็มตั้งแต่ 1 ขึ้นไป'; return; }
@@ -1918,12 +2558,13 @@ $pgSave.onclick = async ()=>{
     const payload = {
       actor: await getActor(),
       name,
-      type,
+      type,             // ส่ง type ตรง ๆ: daily / monthly / every_n_days
       n,
       startDate,
       payDayOfMonth: payDay,
       payDay: payDay
     };
+
 
     const url   = `/api/tenants/${encodeURIComponent(TENANT)}/admin/paygroups${__editingGroupId?('/'+__editingGroupId):''}`;
     const method= __editingGroupId ? 'PUT' : 'POST';
@@ -1974,6 +2615,225 @@ const $pyPbody   = document.getElementById('py-paid-body');
 
 if ($pyMonth && !$pyMonth.value) $pyMonth.value = todayMonthKey();
 
+// 🔹 ข้อมูลแอปธนาคารยอดนิยม (ใช้กับ icon ที่อยู่ใน /public/static)
+const BANK_APPS = {
+  kbank: {
+    key: 'kbank',
+    name: 'กสิกรไทย',
+    logo: '/static/กสิกร.jpg',
+    schemeUrl: null, // ตอนนี้ยังไม่ใช้ deep link
+    appStoreUrl:  'https://apps.apple.com/th/app/k-plus/id361170631',
+    playStoreUrl: 'https://play.google.com/store/apps/details?id=com.kasikorn.retail.mbanking.wap'
+  },
+  scb: {
+    key: 'scb',
+    name: 'ไทยพาณิชย์',
+    logo: '/static/ไทยพาณิชย์ SCB.png',
+    schemeUrl: 'scbeasy://login', // ลองเปิดแอปก่อน
+    appStoreUrl:  'https://apps.apple.com/th/app/scb-easy/id568388474',
+    playStoreUrl: 'https://play.google.com/store/apps/details?id=com.scb.phone'
+  },
+  ktb: {
+    key: 'ktb',
+    name: 'กรุงไทย',
+    logo: '/static/กรุงไทย.png',
+    schemeUrl: null,
+    appStoreUrl:  'https://apps.apple.com/th/app/krungthai-next/id436753378',
+    playStoreUrl: 'https://play.google.com/store/apps/details?id=ktbcs.netbank'
+  },
+  bbl: {
+    key: 'bbl',
+    name: 'กรุงเทพ',
+    logo: '/static/กรุงเทพ.png',
+    schemeUrl: null,
+    appStoreUrl:  'https://apps.apple.com/th/app/bangkok-bank-mobile-banking/id660238716?l=th',
+    playStoreUrl: 'https://play.google.com/store/apps/details?id=com.bbl.mobilebanking'
+  }
+};
+
+function getStoreUrlForDevice(app) {
+  const ua = navigator.userAgent || '';
+  const isAndroid = /Android/i.test(ua);
+  const isIOS    = /iPhone|iPad|iPod/i.test(ua);
+
+  if (isAndroid && app.playStoreUrl) return app.playStoreUrl;
+  if (isIOS && app.appStoreUrl)      return app.appStoreUrl;
+
+  // กรณีเปิดจากคอม ฯลฯ ให้ fallback อะไรก็ได้ที่มี
+  return app.appStoreUrl || app.playStoreUrl || null;
+}
+
+function openBankApp(app) {
+  const storeUrl = getStoreUrlForDevice(app);
+
+  // ถ้ามี scheme (ตอนนี้มีแค่ SCB) → ลองเปิดแอปก่อน แล้วค่อย fallback ไป Store
+  if (app.schemeUrl && storeUrl) {
+    let didHide = false;
+
+    const onVis = () => {
+      if (document.hidden) didHide = true;
+    };
+    document.addEventListener('visibilitychange', onVis);
+
+    setTimeout(() => {
+      document.removeEventListener('visibilitychange', onVis);
+      if (!didHide) {
+        window.location.href = storeUrl;
+      }
+    }, 1500);
+
+    window.location.href = app.schemeUrl;
+  } else if (storeUrl) {
+    // ไม่มี scheme → ไปหน้าโหลดแอปเลย (Play หรือ App Store ตามเครื่อง)
+    window.location.href = storeUrl;
+  }
+}
+
+
+
+// 🔹 element ต่าง ๆ ใน pay-modal
+const $payModal    = document.getElementById('pay-modal');
+const $paySummary  = document.getElementById('pay-summary');
+const $payBankBox  = document.getElementById('pay-bank-box');
+const $payCashBox  = document.getElementById('pay-cash-box');
+const $payBankLine = document.getElementById('pay-bank-line');
+const $payBankApps = document.getElementById('pay-bank-apps');
+const $payCopyBtn  = document.getElementById('pay-copy-account');
+const $payCopyMsg  = document.getElementById('pay-copy-msg');
+const $payMsg      = document.getElementById('pay-msg');
+const $payConfirm  = document.getElementById('pay-confirm');
+
+let __payModalRow = null;
+
+function openPayModalDom(){
+  if ($payModal) $payModal.classList.remove('hidden');
+}
+function closePayModal(){
+  if ($payModal) $payModal.classList.add('hidden');
+  __payModalRow = null;
+  if ($payMsg) $payMsg.textContent = '';
+  if ($payCopyMsg) $payCopyMsg.textContent = '';
+}
+
+// ปุ่มปิด / ยกเลิก บน modal
+document.getElementById('pay-close')?.addEventListener('click', closePayModal);
+document.getElementById('pay-cancel')?.addEventListener('click', closePayModal);
+document.querySelector('#pay-modal .backdrop')?.addEventListener('click', closePayModal);
+
+// ฟังก์ชันหลักเปิดหน้าจ่ายเงิน
+async function openPayModal(row){
+  if (!$payModal) return;
+  __payModalRow = row;
+
+  const titleEl = document.getElementById('pay-title');
+  const subEl   = document.getElementById('pay-subtitle');
+  if (titleEl) titleEl.textContent = 'จ่ายเงินพนักงาน';
+  if (subEl)   subEl.textContent   = `${row.fullName || '-'} · ${row.jobTitle || '-'}`;
+
+  const netStr = Number(row.netPay||0).toLocaleString(undefined,{maximumFractionDigits:2});
+  if ($paySummary){
+    $paySummary.innerHTML = `
+      <div>พนักงาน: <b>${row.fullName || '-'}</b> (${row.jobTitle || '-'})</div>
+      <div style="margin-top:4px">
+        ยอดสุทธิที่ต้องจ่าย:
+        <span style="font-size:16px;font-weight:700">${netStr}</span> บาท
+      </div>
+    `;
+  }
+
+  // โหลดข้อมูลพนักงานเพื่อดูช่องทางจ่าย + บัญชีธนาคาร
+  await loadUsers(false);
+  const emp = (__users || []).find(u => u.lineUserId === row.lineUserId) || {};
+  const payoutChannel = emp.payoutChannel || emp.settings?.payoutChannel || 'cash';
+  const bankName      = emp.bankName      || emp.settings?.bankName      || '';
+  const bankAccount   = emp.bankAccount   || emp.settings?.bankAccount   || '';
+
+  if (payoutChannel === 'bank' && bankAccount){
+    if ($payBankBox) $payBankBox.style.display = '';
+    if ($payCashBox) $payCashBox.style.display = 'none';
+
+    if ($payBankLine){
+      $payBankLine.innerHTML = `
+        <div>ธนาคาร: <b>${bankName || '-'}</b></div>
+        <div>เลขบัญชี: <b id="pay-account-text">${bankAccount}</b></div>
+      `;
+    }
+
+    // แสดง icon แอปธนาคาร 4 ตัว
+    if ($payBankApps) {
+      $payBankApps.innerHTML = Object.values(BANK_APPS).map(app => `
+        <button type="button"
+                class="bank-app-btn"
+                data-bank="${app.key}"
+                style="border:none;background:transparent;padding:0;
+                      display:flex;flex-direction:column;align-items:center;
+                      cursor:pointer">
+          <img src="${app.logo}" alt="${app.name}"
+              style="width:52px;height:52px;border-radius:16px;object-fit:cover">
+          <div style="font-size:11px;color:#64748b;margin-top:4px;text-align:center">
+            ${app.name}
+          </div>
+        </button>
+      `).join('');
+
+      $payBankApps.querySelectorAll('.bank-app-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const key = btn.dataset.bank;
+          const app = BANK_APPS[key];
+          if (!app) return;
+          openBankApp(app);
+        });
+      });
+    }
+
+
+    if ($payCopyBtn){
+      $payCopyBtn.style.display = '';
+      $payCopyBtn.disabled = false;
+    }
+  } else {
+    // ไม่มีบัญชี → แสดง "จ่ายเงินสด"
+    if ($payBankBox) $payBankBox.style.display = 'none';
+    if ($payCashBox) $payCashBox.style.display = '';
+    if ($payCopyBtn){
+      $payCopyBtn.style.display = 'none';
+      $payCopyBtn.disabled = true;
+    }
+  }
+
+  openPayModalDom();
+}
+
+// ปุ่ม copy เลขบัญชี
+$payCopyBtn?.addEventListener('click', async ()=>{
+  try{
+    const acc = document.getElementById('pay-account-text')?.textContent || '';
+    if (!acc){
+      if ($payCopyMsg) $payCopyMsg.textContent = 'ไม่พบเลขบัญชี';
+      return;
+    }
+    if (navigator.clipboard?.writeText){
+      await navigator.clipboard.writeText(acc);
+      if ($payCopyMsg) $payCopyMsg.textContent = 'คัดลอกแล้ว ✓';
+    }else{
+      if ($payCopyMsg) $payCopyMsg.textContent = 'เบราว์เซอร์ไม่รองรับการคัดลอกอัตโนมัติ';
+    }
+  }catch(e){
+    if ($payCopyMsg) $payCopyMsg.textContent = 'คัดลอกไม่สำเร็จ';
+  }
+});
+
+// ปุ่ม "ยืนยันว่าจ่ายเงินแล้ว" → เรียก logic เดิม markPaidOne แล้วปิด modal
+$payConfirm?.addEventListener('click', async ()=>{
+  if (!__payModalRow) return;
+  $payConfirm.disabled = true;
+  if ($payMsg) $payMsg.textContent = 'กำลังบันทึกสถานะจ่ายแล้ว…';
+  await markPaidOne(__payModalRow);   // ใช้ฟังก์ชันเดิม (เปลี่ยนสถานะ approved → paid)
+  $payConfirm.disabled = false;
+  closePayModal();                    // กลับไปที่ Tab 3 เหมือนเดิม
+});
+
+
 async function primePayments(force=true){
   const runs = await fetchRuns();
   window.__runsById = Object.fromEntries(
@@ -1991,7 +2851,7 @@ async function primePayments(force=true){
 
 async function reloadPayments(){
   const runId = $pyRun.value || '';
-  const kw = ($pyQ.value||'').trim().toLowerCase();
+  const kw = ($pyQ && $pyQ.value ? $pyQ.value : '').trim().toLowerCase();
   if (!runId){ $pyMsg.textContent = 'ยังไม่ได้เลือก Pay Run'; $pyAbody.innerHTML=''; $pyPbody.innerHTML=''; return; }
 
   const items = await fetchItems({ runId }) || [];
@@ -2024,16 +2884,17 @@ async function reloadPayments(){
   approved.forEach((r,idx)=>{
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>${idx+1}</td>
-      <td>${r.fullName}</td>
-      <td>${r.jobTitle}</td>
-      <td style="text-align:right"><b>${Number(r.netPay||0).toLocaleString(undefined,{maximumFractionDigits:2})}</b></td>
-      <td>${(r.note||'')}</td>
-      <td>
-        <button class="btn" data-pay>ทำเครื่องหมายจ่ายแล้ว</button>
-      </td>
-    `;
-    tr.querySelector('[data-pay]').onclick = ()=> markPaidOne(r);
+        <td>${idx+1}</td>
+        <td>${r.fullName}</td>
+        <td>${r.jobTitle}</td>
+        <td style="text-align:right"><b>${Number(r.netPay||0).toLocaleString(undefined,{maximumFractionDigits:2})}</b></td>
+        <td>${(r.note||'')}</td>
+        <td>
+          <button class="btn" data-pay>จ่ายเงินพนักงาน</button>
+        </td>
+      `;
+    // ⬅ แทนที่ markPaidOne ด้วยหน้าจ่ายเงินใหม่
+    tr.querySelector('[data-pay]').onclick = ()=> openPayModal(r);
     $pyAbody.appendChild(tr);
   });
 
@@ -2085,7 +2946,11 @@ async function markPaidOne(row){
         payEveryN:  Number(row.payEveryN  ?? d.payEveryN  ?? 0)
       }
     }];
-    await commitPays(jobs, { runId: row.runId || null, overwrite: true, notify:false });
+    await commitPays(jobs, { 
+      runId: row.runId || ($pyRun.value || null),  // ✅ ถ้า row.runId ไม่มี ให้ใช้ run ที่เลือกใน dropdown
+      overwrite: true, 
+      notify:false 
+    });
     if (btn) { const tr = btn.closest('tr'); if (tr) tr.remove(); }
     $pyMsg.textContent = `ทำเครื่องหมายจ่ายแล้ว: ${row.fullName} ✓`;
     await reloadPayments();
@@ -2182,6 +3047,7 @@ async function loadReportOverview(){
     const workDays   = Number(r.workDays ?? d.workDays ?? 0);
     const workHours  = Number(r.workHours ?? d.workHours ?? 0);
     const lateHours  = Number(r.lateHours ?? d.lateHours ?? 0);
+    const leaveHours = Number(r.leaveHours ?? d.leaveHours ?? 0);
     const basePay    = Number(r.basePay ?? d.basePay ?? 0);
     const lateDeduct = Number(r.lateDeduct ?? d.lateDeduct ?? 0);
     const netPay     = Number(r.netPay ?? d.netPay ?? (basePay - lateDeduct));
@@ -2208,7 +3074,10 @@ async function loadReportOverview(){
 
       <td style="text-align:right">${Number(r.workDays||0)}</td>
       <td style="text-align:right">${Number(r.workHours||0).toFixed(2)}</td>
-      <td style="text-align:right">${Number(r.lateHours||0).toFixed(2)}</td>
+      <td style="text-align:right">
+        ${Number(r.lateHours||0).toFixed(2)} / ${Number(r.leaveHours||0).toFixed(2)}
+      </td>
+
       <td style="text-align:right">${Number(r.basePay||0).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
       <td style="text-align:right">${Number(r.lateDeduct||0).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
       <td style="text-align:right"><b>${Number(r.netPay||0).toLocaleString(undefined,{maximumFractionDigits:2})}</b></td>
@@ -2372,7 +3241,7 @@ async function primeReports(force=true){
 
 /* ====== PATCH 2: serialize routing & skip same view ====== */
 let __routeBusy = false;
-let __currentView = INITIAL_VIEW;
+let __currentView = '';
 
 async function applyRoute(){
   if (__routeBusy) return;
@@ -2380,16 +3249,18 @@ async function applyRoute(){
   try{
     const h=(location.hash||'').replace('#','').trim().toLowerCase();
     const v=h||DEFAULT_VIEW||'menu';
-    if (v === __currentView) {
-      show(v);
-      return;
-    }
+
+    // อัปเดต view ปัจจุบัน
     __currentView = v;
 
+    // แสดง section ตาม view
     show(v);
+
+    // แล้วค่อยโหลดข้อมูลตาม view
     if (v==='users')   await primeUsers(true);
     if (v==='logs')    await primeLogs(true);
     if (v==='reports') await primeReports(true);
+
     if (v==='payroll'){ 
       show('payroll');
       setPayrollTab('payrun');
@@ -2404,6 +3275,7 @@ async function applyRoute(){
     __routeBusy = false;
   }
 }
+
 
 window.addEventListener('hashchange', async ()=>{
   showPreloader('กำลังรีเฟรชข้อมูลล่าสุด…');

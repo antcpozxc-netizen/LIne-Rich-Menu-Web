@@ -33,14 +33,6 @@ const TH_BANKS = [
 
 const todayYMD = () => new Date().toISOString().slice(0,10);
 
-const EMPLOYMENT_TYPES = [
-  { value: '',        label: '—' },
-  { value: 'daily',   label: 'รายวัน' },
-  { value: 'hourly',  label: 'รายชั่วโมง' },
-  { value: 'monthly', label: 'รายเดือน' },
-  { value: 'contract',label: 'สัญญาจ้าง' },
-  { value: 'intern',  label: 'นักศึกษาฝึกงาน' },
-];
 
 // helper: ค่าฟอร์มเริ่มต้น
 const makeInitialForm = () => ({
@@ -49,8 +41,8 @@ const makeInitialForm = () => ({
   birthDate: '', gender: '', jobTitle: '',
   bankName: '', bankAccount: '',
   registerDate: todayYMD(),
-  employmentType: '',
 });
+
 
 /* ========== PAGE ========== */
 export default function TARegisterPage() {
@@ -125,9 +117,8 @@ export default function TARegisterPage() {
             // ✅ บังคับรูปแบบวัน
             merged.birthDate    = toYMD(merged.birthDate);
             merged.registerDate = toYMD(merged.registerDate) || todayYMD();
-
-            merged.employmentType = merged.employmentType || '';
             return merged;
+
           });
 
           setMode('update'); // สลับเป็นโหมดแก้ไข
@@ -306,7 +297,7 @@ export default function TARegisterPage() {
     <Box sx={{ p: { xs: 1.5, md: 0 } }}>
       <Stack spacing={0.5} sx={{ mb: 1.5 }}>
         <Typography variant="h6" fontWeight={800}>
-          {mode === 'update' ? 'แก้ไขโปรไฟล์เข้างาน' : 'ลงทะเบียนเข้างาน'}
+          {mode === 'update' ? 'แก้ไขโปรไฟล์เข้างาน' : 'ลงทะเบียนเข้าใช้งาน'}
         </Typography>
         {/* ซ่อนการแสดงค่า tenant/lineUserId ตามที่ขอ */}
         {/* <Typography variant="body2" color="text.secondary">
@@ -462,22 +453,6 @@ export default function TARegisterPage() {
                 value={form.registerDate}
                 onChange={setF('registerDate')}
               />
-            </Grid>
-
-            <Grid item xs={12} sm={6}>
-              <FormControl fullWidth size="small">
-                <InputLabel id="emp-type-label">ประเภทการจ้าง</InputLabel>
-                <Select
-                  labelId="emp-type-label"
-                  label="ประเภทการจ้าง"
-                  value={form.employmentType}
-                  onChange={setF('employmentType')}
-                >
-                  {EMPLOYMENT_TYPES.map(t => (
-                    <MenuItem key={t.value} value={t.value}>{t.label}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
             </Grid>
 
             <Grid item xs={12} sm={6}>
