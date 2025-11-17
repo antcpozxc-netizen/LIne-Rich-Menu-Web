@@ -1514,15 +1514,47 @@ async function openLogs(emp){
 
 
 
-  (days||[]).forEach(d=>{
-    const inTxt  = d.inTime  ? new Date(d.inTime).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}) : '-';
-    const outTxt = d.outTime ? new Date(d.outTime).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}) : '-';
-    const lateMin = lateMinutesForDay(d, shiftIn, grace); totalLateMin += lateMin;
+  const dayByDate = {};
+  (days || []).forEach(d => {
+    if (d.date) dayByDate[d.date] = d;
+  });
+
+  // รวมวันที่จากทั้งวันทำงาน + วันลา
+  const allDates = Array.from(
+    new Set([
+      ...Object.keys(dayByDate),
+      ...(leave || []).map(l => l.date).filter(Boolean)
+    ])
+  ).sort(); // ให้เรียงวันที่
+
+  allDates.forEach(date => {
+    const d = dayByDate[date] || {
+      date,
+      inTime: null,
+      outTime: null,
+      hours: 0,
+      inAddr: '',
+      outAddr: ''
+    };
+
+    const inTxt  = d.inTime
+      ? new Date(d.inTime).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'})
+      : '-';
+    const outTxt = d.outTime
+      ? new Date(d.outTime).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'})
+      : '-';
+
+    const lateMin = lateMinutesForDay(d, shiftIn, grace);
+    totalLateMin += lateMin;
+
     const loc = `${d.inAddr||'-'}${d.outAddr?(' → '+d.outAddr):''}`;
-    const leaveTxt = (leaveByDate[d.date]||[]).map(l=> (l.reason||'ลา') + (l.hours?` ${l.hours}ชม.`:'')).join(', ');
-    const tr=document.createElement('tr');
+    const leaveTxt = (leaveByDate[date] || [])
+      .map(l => (l.reason || 'ลา') + (l.hours ? ` ${l.hours}ชม.` : ''))
+      .join(', ');
+
+    const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>${d.date}</td>
+      <td>${date}</td>
       <td>${inTxt}</td>
       <td>${outTxt}</td>
       <td style="text-align:right"
@@ -1535,7 +1567,8 @@ async function openLogs(emp){
       </td>
       <td style="text-align:right">${lateMin}</td>
       <td style="min-width:260px">${loc}</td>
-      <td style="color:#0ea5e9">${leaveTxt||''}</td>`;
+      <td style="color:#0ea5e9">${leaveTxt||''}</td>
+    `;
     $tbody.appendChild(tr);
   });
   const workHours = Number(summary?.workHours || 0);
