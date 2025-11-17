@@ -433,6 +433,7 @@
               <th>เข้า</th>
               <th>ออก</th>
               <th>ชั่วโมงทำงาน</th>
+              <th>พักเบรก</th>
               <th>สาย (นาที)</th>
               <th>สถานที่</th>
               <th>ลา</th>
@@ -1507,6 +1508,14 @@ async function openLogs(emp){
   const leaveByDate={}; (leave||[]).forEach(l=>{ (leaveByDate[l.date]||(leaveByDate[l.date]=[])).push(l); });
   const shiftIn = emp.shiftIn || ''; const grace = Number(emp.lateGraceMin||0);
   let totalLateMin = 0;
+
+  const breakMinPerDay = Number(emp.breakMinutes ?? emp.settings?.breakMinutes ?? 0);
+  const breakPerDayText = breakMinPerDay ? formatHoursHM(breakMinPerDay / 60) : '-';
+
+  const totalBreakHours = breakMinPerDay && workDays
+    ? (breakMinPerDay * workDays) / 60
+    : 0;
+
   (days||[]).forEach(d=>{
     const inTxt  = d.inTime  ? new Date(d.inTime).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}) : '-';
     const outTxt = d.outTime ? new Date(d.outTime).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}) : '-';
@@ -1522,6 +1531,10 @@ async function openLogs(emp){
           title="${Number(d.hours||0).toFixed(2)} ชม.">
         ${formatHoursHM(d.hours)}
       </td>
+      <td style="text-align:right"
+          title="${breakMinPerDay || 0} นาที">
+        ${breakPerDayText}
+      </td>
       <td style="text-align:right">${lateMin}</td>
       <td style="min-width:260px">${loc}</td>
       <td style="color:#0ea5e9">${leaveTxt||''}</td>`;
@@ -1530,6 +1543,8 @@ async function openLogs(emp){
   const workHours = Number(summary?.workHours || 0);
   const workDays  = Number(summary?.workDays  || 0);
   const lateHours = totalLateMin/60;
+
+  
 
   const payType     = String(emp.payType || 'daily');
   const payRate     = Number(emp.payRate || 0);
@@ -1567,6 +1582,8 @@ async function openLogs(emp){
     <div>
       วันทำงานรวม <b>${workDays}</b> วัน •
       ชั่วโมงทำงานรวม <b>${formatHoursHM(workHours)}</b> •
+      พักเบรกตามสิทธิ์รวม
+      <b>${formatHoursHM(totalBreakHours)}</b> •
       สาย <b>${formatHoursHM(lateHours)}</b>
     </div>
     <hr style="border:none;border-top:1px dashed #e2e8f0;margin:8px 0">
@@ -1953,9 +1970,18 @@ function rowHTML(r){
     <td>${displayPay(r)}</td>
     <td style="text-align:right">${Number(r.payRate||0).toLocaleString()}</td>
     <td style="text-align:right">${r.workDays}</td>
-    <td style="text-align:right">${r.workHours.toFixed(2)}</td>
-    <td style="text-align:right">${r.lateHours.toFixed(2)}</td>
-    <td style="text-align:right">${(r.leaveHours||0).toFixed(2)}</td>
+    <td style="text-align:right"
+        title="${r.workHours.toFixed(2)} ชม.">
+      ${formatHoursHM(r.workHours)}
+    </td>
+    <td style="text-align:right"
+        title="${r.lateHours.toFixed(2)} ชม.">
+      ${formatHoursHM(r.lateHours)}
+    </td>
+    <td style="text-align:right"
+        title="${(r.leaveHours||0).toFixed(2)} ชม.">
+      ${formatHoursHM(r.leaveHours || 0)}
+    </td>
     <td style="text-align:right">${r.basePay.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
     <td><input class="adjMinus" type="number" step="0.01" value="${r.adjMinus||0}" style="width:110px"></td>
     <td><input class="adjPlus"  type="number" step="0.01" value="${r.adjPlus||0}"  style="width:110px"></td>
@@ -3089,10 +3115,13 @@ async function loadReportOverview(){
       <td style="text-align:right">${Number(r.payRate||0).toLocaleString()}</td>
 
       <td style="text-align:right">${Number(r.workDays||0)}</td>
-      <td style="text-align:right">${Number(r.workHours||0).toFixed(2)}</td>
       <td style="text-align:right">
-        ${Number(r.lateHours||0).toFixed(2)} / ${Number(r.leaveHours||0).toFixed(2)}
+        ${formatHoursHM(r.workHours || 0)}
       </td>
+      <td style="text-align:right">
+        ${formatHoursHM(r.lateHours || 0)} / ${formatHoursHM(r.leaveHours || 0)}
+      </td>
+
 
       <td style="text-align:right">${Number(r.basePay||0).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
       <td style="text-align:right">${Number(r.lateDeduct||0).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
@@ -3198,8 +3227,12 @@ async function openRunDetail(runId){
         <td>${r.fullName||r.lineUserId||'-'}</td>
         <td>${label}/${payRate.toLocaleString()}</td>
         <td style="text-align:right">${workDays}</td>
-        <td style="text-align:right">${workHours.toFixed(2)}</td>
-        <td style="text-align:right">${lateHours.toFixed(2)} / ${leaveHours.toFixed(2)}</td>
+        <td style="text-align:right">
+          ${formatHoursHM(workHours)}
+        </td>
+        <td style="text-align:right">
+          ${formatHoursHM(lateHours)} / ${formatHoursHM(leaveHours)}
+        </td>
         <td style="text-align:right">${basePay.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
         <td style="text-align:right">${lateDeduct.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
         <td style="text-align:right"><b>${netPay.toLocaleString(undefined,{maximumFractionDigits:2})}</b></td>
