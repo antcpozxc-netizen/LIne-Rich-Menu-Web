@@ -348,7 +348,7 @@
         </div>
 
         <h4 style="margin:10px 0 6px">อัตราค่าจ้าง</h4>
-        
+
         <div class="row">
           <div class="col"><label>ประเภทอัตราจ้าง</label>
             <select id="payType">
@@ -359,13 +359,23 @@
               <option value="every_n_hours">ทุก N ชั่วโมง</option>
             </select>
           </div>
-          <div class="col"><label>อัตรา (จำนวนเงิน)</label><input id="payRate" type="number" step="0.01" placeholder="เช่น 15000 / 400 / 60"></div>
-          <div class="col"><label>ชั่วโมง/วัน (ใช้อ้างอิงคำนวณสาย)</label><input id="dailyHours" type="number" step="0.5" value="8"></div>
-          <div class="col"><label>หักสายตามสัดส่วน</label>
-            <select id="prorateLate"><option value="true">หักตามชั่วโมงที่ขาด</option><option value="false">ไม่หัก</option></select>
+          <div class="col">
+            <label>อัตรา (จำนวนเงิน)</label>
+            <input id="payRate" type="number" step="0.01" placeholder="เช่น 15000 / 400 / 60">
           </div>
-          <div class="col" id="wrapPayEveryN"><label>Pay every N</label><input id="payEveryN" type="number" step="1" placeholder="ใช้กับโหมด every_n_* เท่านั้น"></div>
+          <div class="col">
+            <label>หักสายตามสัดส่วน</label>
+            <select id="prorateLate">
+              <option value="true">หักตามชั่วโมงที่ขาด</option>
+              <option value="false">ไม่หัก</option>
+            </select>
+          </div>
+          <div class="col" id="wrapPayEveryN">
+            <label>Pay every N</label>
+            <input id="payEveryN" type="number" step="1" placeholder="ใช้กับโหมด every_n_* เท่านั้น">
+          </div>
         </div>
+
 
         <div class="row">
           <div class="col"><label>เข้า (HH:MM)</label><input id="shiftIn" placeholder="09:00"></div>
@@ -1016,6 +1026,24 @@ function daysBetweenInclusive(a, b){
 }
 function parseHm(hm){ const m=String(hm||'').match(/^(\d{1,2}):(\d{2})$/); if(!m) return null; const h=+m[1], mi=+m[2]; if(h<0||h>23||mi<0||mi>59) return null; return {h, m:mi}; }
 
+// ✅ คำนวณชั่วโมงทำงานมาตรฐานต่อวันจากเวลาเข้างาน-ออกงาน และเวลาพัก
+function effectiveDailyHours(emp){
+  const s = parseHm(emp.shiftIn || emp.settings?.shiftIn || '');
+  const e = parseHm(emp.shiftOut || emp.settings?.shiftOut || '');
+  const breakMin = Number(emp.breakMinutes ?? emp.settings?.breakMinutes ?? 0);
+
+  if (!s || !e) return 8;   // fallback 8 ชม. หากไม่ได้ตั้งกะ
+
+  const startMin = s.h * 60 + s.m;
+  const endMin   = e.h * 60 + e.m;
+  let workMin    = endMin - startMin - breakMin;
+
+  if (workMin <= 0) return 8;  // กันค่าติดลบ/แปลก ๆ
+
+  const hours = workMin / 60;
+  return hours > 0 ? hours : 8;
+}
+
 // === pay-type display helpers ===
 const safe = v => (v===undefined || v===null || v==='') ? '' : v;
 const mapPayTypeTH = (t, n) => {
@@ -1244,7 +1272,6 @@ async function openEditor(emp){
   // ✅ ฟิลด์ค่าจ้าง/กะการทำงาน
   setv('payType',        emp.payType || 'daily');
   setv('payRate',        emp.payRate || 0);
-  setv('dailyHours',     emp.dailyHours || 8);
   setv('prorateLate',    (String(emp.prorateLate).toLowerCase()==='true' ? 'true' : 'false'));
   setv('payEveryN',      emp.payEveryN || '');
   setv('shiftIn',        emp.shiftIn || '');
@@ -1330,7 +1357,6 @@ async function openEditor(emp){
           // อัตราจ้าง / สูตรคำนวณ
           payType:       val('payType'),
           payRate:       Number(val('payRate') || 0),
-          dailyHours:    Number(val('dailyHours') || 8),
           prorateLate:   (val('prorateLate') === 'true'),
           payEveryN:     (['every_n_days','every_n_hours'].includes(val('payType')) ? (Number(val('payEveryN')||'')||'') : ''),
           shiftIn:       val('shiftIn'),
@@ -1344,6 +1370,7 @@ async function openEditor(emp){
           allowances:    [],
           deductions:    [],
         },
+
         role: val('role'),
         // ✅ ผูกกับ API /admin/employee/save (server.js step 2)
         groupIds
@@ -1581,31 +1608,43 @@ async function openLogs(emp){
 
   const payType     = String(emp.payType || 'daily');
   const payRate     = Number(emp.payRate || 0);
-  const dailyHours  = Number(emp.dailyHours || 8);
+  const dailyHours  = effectiveDailyHours(emp);
   const prorateLate = String(emp.prorateLate||'false').toLowerCase()==='true';
 
-  let basePay=0, hourlyForLate=0;
-  if (payType==='hourly'){
-    basePay = workHours*payRate;
-    hourlyForLate = payRate;
-  } else if (payType==='daily'){
-    basePay = workDays*payRate;
-    hourlyForLate = dailyHours>0 ? (payRate/dailyHours) : 0;
-  } else if (payType==='monthly'){
+  let basePay = 0;
+  let hourlyForLate = 0;
+
+  if (payType === 'hourly') {
+    // จ่ายรายชั่วโมง → คิดตรง ๆ ตามชั่วโมงทำงาน
+    basePay = workHours * payRate;
+    // ไม่หักสายเพิ่ม (เพราะ workHours มันโดนหักไปตามชั่วโมงที่ทำจริงอยู่แล้ว)
+    hourlyForLate = 0;
+  } else if (payType === 'daily') {
+    // รายวัน → คิดตามจำนวนวันทำงาน ไม่ได้แปลงเป็นรายชั่วโมง
+    basePay = workDays * payRate;
+    hourlyForLate = 0; // ❌ ไม่ใช้ dailyHours แล้ว
+  } else if (payType === 'monthly') {
+    // รายเดือน → ให้เป็นฐานเงินเดือนเต็ม ไม่แตกเป็นรายชั่วโมง
     basePay = payRate;
-    const { first, last } = monthRangeStr(m);
-    const daysInThisMonth = daysBetweenInclusive(first,last);
-    hourlyForLate = (dailyHours>0) ? ((payRate/daysInThisMonth)/dailyHours) : 0;
-  } else if (payType==='every_n_days'){
-    basePay = (workDays/Number(emp.payEveryN||0))*payRate;
-    hourlyForLate = dailyHours>0 ? (payRate/dailyHours) : 0;
-  } else if (payType==='every_n_hours'){
-    basePay = (workHours/Number(emp.payEveryN||0))*payRate;
-    hourlyForLate = payRate/Number(emp.payEveryN||1);
+    hourlyForLate = 0;
+  } else if (payType === 'every_n_days') {
+    // ทุก N วัน → ใช้จำนวนวันทำงาน / N
+    const everyN = Number(emp.payEveryN || 0);
+    basePay = everyN > 0 ? (workDays / everyN) * payRate : 0;
+    hourlyForLate = 0;
+  } else if (payType === 'every_n_hours') {
+    // ทุก N ชั่วโมง → ไม่ใช้ dailyHours เหมือนกัน ใช้ N จาก payEveryN
+    const everyN = Number(emp.payEveryN || 0);
+    basePay = everyN > 0 ? (workHours / everyN) * payRate : 0;
+    hourlyForLate = everyN > 0 ? (payRate / everyN) : 0; // rate ต่อ 1 ชม.
   }
 
-  let lateDeduct=0;
-  if (prorateLate && hourlyForLate>0 && payType!=='hourly') lateDeduct = hourlyForLate * lateHours;
+  let lateDeduct = 0;
+  // ตอนนี้จะมีโอกาสหักสายแค่กรณี every_n_hours (ที่เราตั้ง hourlyForLate > 0)
+  if (prorateLate && hourlyForLate > 0 && payType !== 'hourly') {
+    lateDeduct = hourlyForLate * lateHours;
+  }
+
   const netPay = Math.max(0, basePay - lateDeduct);
 
   $summary.innerHTML = `
@@ -2027,60 +2066,79 @@ function rowHTML(r){
 /* ฐานจ่าย (monthly = เงินเดือนเต็ม) */
 function parsePayBase(emp, logs, period){
   const { days, summary } = logs;
-  const shiftIn = emp.shiftIn || ''; const grace = Number(emp.lateGraceMin||0);
-  let lateMinTotal=0; (days||[]).forEach(d=> lateMinTotal += lateMinutesForDay(d, shiftIn, grace));
-  const lateHours = lateMinTotal/60;
-  const workHours = Number(summary?.workHours||0);
-  const workDays  = Number(summary?.workDays||0);
+  const shiftIn = emp.shiftIn || '';
+  const grace   = Number(emp.lateGraceMin || 0);
 
-    // 🔹 ดึงชั่วโมงลาและวันลา (จาก GAS /attendance/logs)
+  let lateMinTotal = 0;
+  (days || []).forEach(d => {
+    lateMinTotal += lateMinutesForDay(d, shiftIn, grace);
+  });
+
+  const lateHours = lateMinTotal / 60;
+  const workHours = Number(summary?.workHours || 0);
+  const workDays  = Number(summary?.workDays  || 0);
+
+  // 🔹 ดึงชั่วโมงลาและวันลา (จาก GAS /attendance/logs)
   const leaveHours = Number(summary?.leaveHours || 0);
-  const leaveDays  = Number(summary?.leaveDays  || 0);
-  
+  const leaveDays  = Number(summary?.leaveDays  || 0); // เผื่อใช้ต่อภายหลัง
+
   const payType   = String(emp.payType||'daily');
   const payRate   = Number(emp.payRate||0);
-  const dailyHours= Number(emp.dailyHours||8);
+  // ✅ ใช้ชั่วโมง/วันจากกะทำงาน
+  const dailyHours= effectiveDailyHours(emp);
   const payEveryN = Number(emp.payEveryN||0);
+
 
   const daysInPeriod = (period?.periodStart && period?.periodEnd)
     ? daysBetweenInclusive(period.periodStart, period.periodEnd)
     : 30;
 
-  let basePay=0, hourlyForLate=0;
-  if (payType==='hourly'){
+  let basePay = 0;
+  let hourlyForLate = 0;
+
+  if (payType === 'hourly') {
+    // รายชั่วโมง
     basePay = workHours * payRate;
-    hourlyForLate = payRate;
-  } else if (payType==='daily'){
+    hourlyForLate = 0; // ไม่คิด late เพิ่ม
+  } else if (payType === 'daily') {
+    // รายวัน
     basePay = workDays * payRate;
-    hourlyForLate = dailyHours>0 ? (payRate/dailyHours) : 0;
-  } else if (payType==='monthly'){
+    hourlyForLate = 0;
+  } else if (payType === 'monthly') {
+    // รายเดือน
     basePay = payRate;
-    hourlyForLate = (dailyHours>0) ? ((payRate/daysInPeriod)/dailyHours) : 0;
-  } else if (payType==='every_n_days' && payEveryN>0){
-    basePay = (workDays/payEveryN) * payRate;
-    hourlyForLate = dailyHours>0 ? (payRate/dailyHours) : 0;
-  } else if (payType==='every_n_hours' && payEveryN>0){
-    basePay = (workHours/payEveryN) * payRate;
-    hourlyForLate = payRate/payEveryN;
+    hourlyForLate = 0;
+  } else if (payType === 'every_n_days' && payEveryN > 0) {
+    // ทุก N วัน
+    basePay = (workDays / payEveryN) * payRate;
+    hourlyForLate = 0;
+  } else if (payType === 'every_n_hours' && payEveryN > 0) {
+    // ทุก N ชั่วโมง → ไม่อิง dailyHours ใช้ N จาก payEveryN
+    basePay = (workHours / payEveryN) * payRate;
+    hourlyForLate = payRate / payEveryN; // rate ต่อ 1 ชม.
   }
 
-  let lateDeduct=0;
-    if (String(emp.prorateLate||'false').toLowerCase()==='true' && hourlyForLate>0 && payType!=='hourly'){
+  let lateDeduct = 0;
+  if (String(emp.prorateLate || 'false').toLowerCase() === 'true' &&
+      hourlyForLate > 0 &&
+      payType !== 'hourly') {
     lateDeduct = hourlyForLate * lateHours;
   }
+
   return {
     workDays,
     workHours,
     lateHours,
-    leaveHours,   // ✅ เพิ่มออกมาด้วย
+    leaveHours,
     basePay,
     lateDeduct,
     payType,
     payRate,
-    dailyHours,
+    dailyHours,  // แค่ส่งออกไปเฉย ๆ ไม่ใช้คำนวณแล้ว
     payEveryN
   };
 }
+
 
 
 async function computeOne(emp, periodStart, periodEnd){
@@ -2465,7 +2523,10 @@ function renderCyclesTable(){
   $pgGroupsBody.innerHTML = (__groups||[]).map((g,idx)=>{
     const ids = __groupMembers[g.groupId] || new Set();
     const memCount = ids.size;
-    const typeTxt = (g.type==='monthly') ? 'รายเดือน' : `ทุก ${g.n||'-'} วัน`;
+    let typeTxt = '';
+    if (g.type === 'monthly') typeTxt = 'รายเดือน';
+    else if (g.type === 'daily') typeTxt = 'รายวัน';
+    else typeTxt = `ทุก ${g.n||'-'} วัน`;
     return `<tr>
       <td>${idx+1}</td>
       <td>${g.name}</td>

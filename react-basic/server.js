@@ -122,6 +122,7 @@ const isProd     = process.env.NODE_ENV === 'production';
 const TRUST_PROXY= String(process.env.TRUST_PROXY||'0') === '1';
 
 let ParsersMod = require('./src/core/parsers');
+const { report } = require('process');
 
 const draftAssign = new Map();
 
@@ -716,39 +717,7 @@ function buildPayslipCard({ month, employeeName, netPay, pdfUrl, actorName }) {
   return { alt, bubble };
 }
 
-// 2) Payroll/Report CSV card (ส่งให้ owner)
-function buildReportCard({ title, month, fileName, fileUrl, actorName }) {
-  const alt = `${title} (${month})`;
-  const bubble = {
-    type: 'bubble',
-    header: {
-      type: 'box', layout: 'vertical', paddingAll: '16px',
-      contents: [
-        { type: 'text', text: title, weight: 'bold', size: 'lg' },
-        { type: 'text', text: `เดือน ${month}`, color: '#64748B', size: 'sm' }
-      ]
-    },
-    body: {
-      type: 'box', layout: 'vertical', spacing: 'sm', contents: [
-        { type: 'box', layout: 'baseline', contents: [
-          { type: 'text', text: 'ไฟล์', size: 'sm', color: '#64748B', flex: 3 },
-          { type: 'text', text: fileName || '-', size: 'sm', weight: 'bold', flex: 5, wrap: true }
-        ]},
-        { type: 'separator', margin: 'md' },
-        { type: 'text', text: `สร้างโดย ${actorName||'-'}`, size: 'xs', color: '#94A3B8' },
-        { type: 'text', text: new Date().toLocaleString('th-TH'), size: 'xs', color: '#94A3B8' }
-      ]
-    },
-    footer: {
-      type: 'box', layout: 'vertical', spacing: 'sm', contents: [
-        { type: 'button', style: 'primary',
-          action: { type: 'uri', label: 'เปิดไฟล์', uri: fileUrl } }
-      ]
-    },
-    styles: { header: { backgroundColor: '#F1F5FF' } }
-  };
-  return { alt, bubble };
-}
+
 
 
 // IAPP OCR Proxy: รับไฟล์จากฟรอนต์ → ส่งต่อไป IAPP → map 4 ฟิลด์กลับมา
@@ -5189,7 +5158,6 @@ app.post('/api/tenants/:id/integrations/taskbot/disable',
 
 
 
-
 // API TA
 
 // ==== Enable Time Attendance (สร้าง/อัปโหลด Rich Menu ของ Attendance แล้วบันทึกสถานะ) ====
@@ -8609,7 +8577,7 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
     if (/^ทำเงินเดือน$/i.test(text)) {
       try {
         const role = await requireAdminRole(tenantRef, userId);
-        const url = await buildAdminLiffUrl(tenantRef, userId, { view: 'logs', payroll: 1, role });
+        const url = await buildAdminLiffUrl(tenantRef, userId, { view: 'payroll', payroll: 1, role });
         const bubble = {
           type: 'bubble',
           body: { type:'box', layout:'vertical', contents:[
@@ -8746,11 +8714,9 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
 
 
     // ======= HELP (คำสั่ง: ช่วยเหลือ) – Single Bubble (multi-line items) =======
-    if (/^ช่วยเหลือ$/i.test(text)) {
-      if (!(await isAttendanceEnabled(tenantRef))) {
-        return reply(replyToken, 'ยังไม่ได้เปิดใช้ระบบ Time Attendance ใน OA นี้', null, tenantRef);
-      }
-
+    if (/^ช่วยเหลือ$/i.test(text) && (await isAttendanceEnabled(tenantRef)) && !(await isTaskbotEnabled(tenantRef))) 
+    {
+      
       const THEME_PRIMARY = '#3B5BDB';   // ฟ้าอมม่วง
       const THEME_SOFT    = '#EEF2FF';   // พื้นอ่อน
       const TEXT_MUTED    = '#6B7280';
@@ -8892,13 +8858,6 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
 
 
     // ---------- /Time Attendance ----------
-
-
-
-
-
-
-
     if (!(await isTaskbotEnabled(tenantRef))) {
       // ปิดใช้ Task Bot → ไม่ตอบส่วนสั่งงาน/ดึงงาน แต่ยังให้ QnA & live chat ทำงานได้
       return;
