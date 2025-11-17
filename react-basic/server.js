@@ -8631,7 +8631,11 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
     if (/^รายงาน$/i.test(text)) {
       try {
         const role = await requireAdminRole(tenantRef, userId);
-        const url = await buildAdminLiffUrl(tenantRef, userId, { view: 'logs', report: 1, role });
+        const url = await buildAdminLiffUrl(tenantRef, userId, {
+          view: 'reports',   
+          report: 1,
+          role
+        });
         const bubble = {
           type: 'bubble',
           body: { type:'box', layout:'vertical', contents:[

@@ -892,6 +892,13 @@
 /* ---------- Helpers: month key & status ---------- */
 function pad2(n){ return String(n).padStart(2,'0'); }
 function todayMonthKey(){ const d=new Date(); return `${d.getFullYear()}-${pad2(d.getMonth()+1)}`; }
+function formatHoursHM(v) {
+  const hours = Number(v || 0);
+  const h = Math.floor(hours);
+  const m = Math.round((hours - h) * 60);
+  const mm = String(m).padStart(2, '0');
+  return `${h} ชม. ${mm} นาที`;
+}
 function getMonthKey(v){
   const s=String(v||'').trim(); if(!s) return '';
   if (/^\d{4}-\d{2}$/.test(s)) return s;
@@ -1511,7 +1518,10 @@ async function openLogs(emp){
       <td>${d.date}</td>
       <td>${inTxt}</td>
       <td>${outTxt}</td>
-      <td style="text-align:right">${Number(d.hours||0).toFixed(2)}</td>
+      <td style="text-align:right"
+          title="${Number(d.hours||0).toFixed(2)} ชม.">
+        ${formatHoursHM(d.hours)}
+      </td>
       <td style="text-align:right">${lateMin}</td>
       <td style="min-width:260px">${loc}</td>
       <td style="color:#0ea5e9">${leaveTxt||''}</td>`;
@@ -1551,8 +1561,14 @@ async function openLogs(emp){
   const netPay = Math.max(0, basePay - lateDeduct);
 
   $summary.innerHTML = `
-    <div style="font-weight:700;margin-bottom:6px">สรุปการทำงาน เดือน ${m}</div>
-    <div>วันทำงานรวม <b>${workDays}</b> วัน • ชั่วโมงทำงานรวม <b>${workHours.toFixed(2)}</b> ชม. • สาย <b>${lateHours.toFixed(2)}</b> ชม.</div>
+    <div style="font-weight:700;margin-bottom:6px">
+      สรุปการทำงาน เดือน ${m}
+    </div>
+    <div>
+      วันทำงานรวม <b>${workDays}</b> วัน •
+      ชั่วโมงทำงานรวม <b>${formatHoursHM(workHours)}</b> •
+      สาย <b>${formatHoursHM(lateHours)}</b>
+    </div>
     <hr style="border:none;border-top:1px dashed #e2e8f0;margin:8px 0">
     <div>รูปแบบจ่าย: <b>${displayPay(emp)}</b> — อัตรา: <b>${payRate.toLocaleString()}</b></div>
     <div>ฐานจ่าย: <b>${basePay.toLocaleString(undefined,{maximumFractionDigits:2})}</b> • หักสาย: <b>${lateDeduct.toLocaleString(undefined,{maximumFractionDigits:2})}</b></div>
