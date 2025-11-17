@@ -1512,9 +1512,7 @@ async function openLogs(emp){
   const breakMinPerDay = Number(emp.breakMinutes ?? emp.settings?.breakMinutes ?? 0);
   const breakPerDayText = breakMinPerDay ? formatHoursHM(breakMinPerDay / 60) : '-';
 
-  const totalBreakHours = breakMinPerDay && workDays
-    ? (breakMinPerDay * workDays) / 60
-    : 0;
+
 
   (days||[]).forEach(d=>{
     const inTxt  = d.inTime  ? new Date(d.inTime).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}) : '-';
@@ -1544,7 +1542,9 @@ async function openLogs(emp){
   const workDays  = Number(summary?.workDays  || 0);
   const lateHours = totalLateMin/60;
 
-  
+  const totalBreakHours = breakMinPerDay && workDays
+    ? (breakMinPerDay * workDays) / 60
+    : 0;
 
   const payType     = String(emp.payType || 'daily');
   const payRate     = Number(emp.payRate || 0);
