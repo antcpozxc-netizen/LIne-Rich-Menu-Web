@@ -1532,27 +1532,38 @@ async function openLogs(emp){
   $tbody.innerHTML = ''; $summary.textContent = 'กำลังคำนวณสรุป…';
   const m = getMonthKey($month.value) || todayMonthKey();
   const { days, leave, summary } = await fetchLogs(emp.lineUserId, m);
-  const leaveByDate={}; (leave||[]).forEach(l=>{ (leaveByDate[l.date]||(leaveByDate[l.date]=[])).push(l); });
-  const shiftIn = emp.shiftIn || ''; const grace = Number(emp.lateGraceMin||0);
-  let totalLateMin = 0;
-
-  const breakMinPerDay = Number(emp.breakMinutes ?? emp.settings?.breakMinutes ?? 0);
-  const breakPerDayText = breakMinPerDay ? formatHoursHM(breakMinPerDay / 60) : '-';
-
-
-
-  const dayByDate = {};
-  (days || []).forEach(d => {
-    if (d.date) dayByDate[d.date] = d;
+    // 🔹 รวมข้อมูลลา โดย normalize วันที่ให้เป็น YYYY-MM-DD เสมอ
+  const leaveByDate = {};
+  (leave || []).forEach(l => {
+    const key = onlyDate(l.date);
+    if (!key) return;
+    (leaveByDate[key] || (leaveByDate[key] = [])).push({ ...l, date: key });
   });
 
-  // รวมวันที่จากทั้งวันทำงาน + วันลา
+  const shiftIn = emp.shiftIn || '';
+  const grace   = Number(emp.lateGraceMin || 0);
+  let totalLateMin = 0;
+
+  const breakMinPerDay   = Number(emp.breakMinutes ?? emp.settings?.breakMinutes ?? 0);
+  const breakTotalMin    = breakMinPerDay * (summary?.workDays || 0);
+  const totalBreakHours  = breakTotalMin / 60;
+  const breakPerDayText  = breakMinPerDay ? formatHoursHM(breakMinPerDay / 60) : '-';
+
+  // 🔹 รวมวันทำงาน โดย normalize วันที่เช่นกัน
+  const dayByDate = {};
+  (days || []).forEach(d => {
+    const key = onlyDate(d.date);
+    if (!key) return;
+    dayByDate[key] = { ...d, date: key };
+  });
+
+  // 🔹 รวมวันที่จากทั้งวันทำงาน + วันลาแบบไม่ซ้ำแน่นอน
   const allDates = Array.from(
     new Set([
       ...Object.keys(dayByDate),
-      ...(leave || []).map(l => l.date).filter(Boolean)
+      ...Object.keys(leaveByDate)
     ])
-  ).sort(); // ให้เรียงวันที่
+  ).sort();
 
   allDates.forEach(date => {
     const d = dayByDate[date] || {
@@ -1598,54 +1609,30 @@ async function openLogs(emp){
     `;
     $tbody.appendChild(tr);
   });
-  const workHours = Number(summary?.workHours || 0);
-  const workDays  = Number(summary?.workDays  || 0);
-  const lateHours = totalLateMin/60;
 
-  const totalBreakHours = breakMinPerDay && workDays
-    ? (breakMinPerDay * workDays) / 60
-    : 0;
+    // ใช้สูตรเดียวกับ payroll (parsePayBase)
+  const [yStr, mStr] = m.split('-');   // m = YYYY-MM
+  const year  = Number(yStr);
+  const month = Number(mStr);
+  const lastDay = new Date(year, month, 0).getDate();
 
-  const payType     = String(emp.payType || 'daily');
-  const payRate     = Number(emp.payRate || 0);
-  const dailyHours  = effectiveDailyHours(emp);
-  const prorateLate = String(emp.prorateLate||'false').toLowerCase()==='true';
+  const calc = parsePayBase(
+    emp,
+    { days, summary },
+    {
+      periodStart: `${m}-01`,
+      periodEnd:   `${m}-${pad2(lastDay)}`
+    }
+  );
 
-  let basePay = 0;
-  let hourlyForLate = 0;
-
-  if (payType === 'hourly') {
-    // จ่ายรายชั่วโมง → คิดตรง ๆ ตามชั่วโมงทำงาน
-    basePay = workHours * payRate;
-    // ไม่หักสายเพิ่ม (เพราะ workHours มันโดนหักไปตามชั่วโมงที่ทำจริงอยู่แล้ว)
-    hourlyForLate = 0;
-  } else if (payType === 'daily') {
-    // รายวัน → คิดตามจำนวนวันทำงาน ไม่ได้แปลงเป็นรายชั่วโมง
-    basePay = workDays * payRate;
-    hourlyForLate = 0; // ❌ ไม่ใช้ dailyHours แล้ว
-  } else if (payType === 'monthly') {
-    // รายเดือน → ให้เป็นฐานเงินเดือนเต็ม ไม่แตกเป็นรายชั่วโมง
-    basePay = payRate;
-    hourlyForLate = 0;
-  } else if (payType === 'every_n_days') {
-    // ทุก N วัน → ใช้จำนวนวันทำงาน / N
-    const everyN = Number(emp.payEveryN || 0);
-    basePay = everyN > 0 ? (workDays / everyN) * payRate : 0;
-    hourlyForLate = 0;
-  } else if (payType === 'every_n_hours') {
-    // ทุก N ชั่วโมง → ไม่ใช้ dailyHours เหมือนกัน ใช้ N จาก payEveryN
-    const everyN = Number(emp.payEveryN || 0);
-    basePay = everyN > 0 ? (workHours / everyN) * payRate : 0;
-    hourlyForLate = everyN > 0 ? (payRate / everyN) : 0; // rate ต่อ 1 ชม.
-  }
-
-  let lateDeduct = 0;
-  // ตอนนี้จะมีโอกาสหักสายแค่กรณี every_n_hours (ที่เราตั้ง hourlyForLate > 0)
-  if (prorateLate && hourlyForLate > 0 && payType !== 'hourly') {
-    lateDeduct = hourlyForLate * lateHours;
-  }
-
-  const netPay = Math.max(0, basePay - lateDeduct);
+  const workHours = calc.workHours;
+  const workDays  = calc.workDays;
+  const lateHours = calc.lateHours;
+  const basePay   = calc.basePay;
+  const lateDeduct= calc.lateDeduct;
+  const netPay    = Math.max(0, basePay - lateDeduct);
+  
+  const payRate = Number(calc.payRate ?? emp.payRate ?? emp.settings?.payRate ?? 0);
 
   $summary.innerHTML = `
     <div style="font-weight:700;margin-bottom:6px">
@@ -1659,7 +1646,7 @@ async function openLogs(emp){
       สาย <b>${formatHoursHM(lateHours)}</b>
     </div>
     <hr style="border:none;border-top:1px dashed #e2e8f0;margin:8px 0">
-    <div>รูปแบบจ่าย: <b>${displayPay(emp)}</b> — อัตรา: <b>${payRate.toLocaleString()}</b></div>
+    <div>รูปแบบจ่าย: <b>${displayPay(emp)}</b> — อัตรา: <b>${payRate.toLocaleString(undefined,{maximumFractionDigits:2})}</b></div>
     <div>ฐานจ่าย: <b>${basePay.toLocaleString(undefined,{maximumFractionDigits:2})}</b> • หักสาย: <b>${lateDeduct.toLocaleString(undefined,{maximumFractionDigits:2})}</b></div>
     <div style="font-size:16px;margin-top:4px">รวมสุทธิ: <b>${netPay.toLocaleString(undefined,{maximumFractionDigits:2})}</b></div>
   `;
@@ -1703,20 +1690,26 @@ function currentPayrollTab(){
 }
 
 /* ====== PATCH 1: tab handlers (no double prime) ====== */
+
 document.getElementById('pr-global-refresh')?.addEventListener('click', refreshPayrollUI);
-$tabPayrun.onclick = ()=>{
-  setPayrollTab('payrun');
-  // ไม่ prime ซ้ำ ปล่อยให้ route/refresh ทำงานพอ
-  loadDueToday(true);
+
+// TAB 1: ทำเงินเดือน
+$tabPayrun.onclick = async () => {
+  setPayrollTab('payrun');       // สลับแท็บก่อน
+  await refreshPayrollUI();      // แล้วค่อยรีเฟรชข้อมูลของแท็บนี้
+  await loadDueToday(true);      // โหลด Due Today อีกรอบเพื่อความชัวร์
 };
-$tabCycles.onclick = ()=>{
+
+// TAB 2: ตั้งค่างวดเงินเดือน
+$tabCycles.onclick = async () => {
   setPayrollTab('cycles');
+  await refreshPayrollUI();      // รีเฟรชกลุ่ม + สมาชิกใหม่ทุกครั้งที่กด
 };
-$tabPayments.onclick = ()=>{
+
+// TAB 3: จ่ายเงินพนักงาน
+$tabPayments.onclick = async () => {
   setPayrollTab('payments');
-  if (!$pyRun.options || $pyRun.options.length <= 1) {
-    primePayments(true);
-  }
+  await refreshPayrollUI();      // รีเฟรช runs + รายการ approved/paid ทุกครั้ง
 };
 
 // ===== DUE TODAY (Reminders) =====
@@ -1820,11 +1813,8 @@ async function loadDueToday(force=false){
 
           // ✅ กลุ่มทุก N วัน: วันจ่าย = วันถัดจากวันสิ้นงวด (periodEnd + 1)
           if (type === 'every_n_days' && g.periodEnd) {
-            const d = new Date(g.periodEnd);
-            if (!isNaN(d)) {
-              d.setDate(d.getDate() + 1);
-              payTxt = ymdLocal(d); // helper ด้านบน
-            }
+            // ใช้ g.periodEnd ตรง ๆ เช่น 2025-11-03
+            payTxt = g.periodEnd;
           }
 
           // ✅ กลุ่มรายเดือน: ถ้า backend ยังไม่คำนวณ payTxt → คำนวณเองจาก payDayOfMonth
@@ -2069,6 +2059,7 @@ function parsePayBase(emp, logs, period){
   const shiftIn = emp.shiftIn || '';
   const grace   = Number(emp.lateGraceMin || 0);
 
+  // รวมชั่วโมงสายจากทุกวัน
   let lateMinTotal = 0;
   (days || []).forEach(d => {
     lateMinTotal += lateMinutesForDay(d, shiftIn, grace);
@@ -2078,50 +2069,78 @@ function parsePayBase(emp, logs, period){
   const workHours = Number(summary?.workHours || 0);
   const workDays  = Number(summary?.workDays  || 0);
 
-  // 🔹 ดึงชั่วโมงลาและวันลา (จาก GAS /attendance/logs)
   const leaveHours = Number(summary?.leaveHours || 0);
-  const leaveDays  = Number(summary?.leaveDays  || 0); // เผื่อใช้ต่อภายหลัง
 
-  const payType   = String(emp.payType||'daily');
-  const payRate   = Number(emp.payRate||0);
-  // ✅ ใช้ชั่วโมง/วันจากกะทำงาน
-  const dailyHours= effectiveDailyHours(emp);
-  const payEveryN = Number(emp.payEveryN||0);
-
+  const payType    = String(emp.payType || 'daily');
+  const payRate    = Number(emp.payRate || 0);
+  const dailyHours = effectiveDailyHours(emp);
+  const payEveryN  = Number(emp.payEveryN || 0);
+  const prorateLate =
+    String(emp.prorateLate || emp.settings?.prorateLate || 'false')
+      .toLowerCase() === 'true';
 
   const daysInPeriod = (period?.periodStart && period?.periodEnd)
     ? daysBetweenInclusive(period.periodStart, period.periodEnd)
     : 30;
 
   let basePay = 0;
-  let hourlyForLate = 0;
+  let hourlyForLate = 0;   // “ค่าแรงต่อชั่วโมง” สำหรับหักสาย
 
-  if (payType === 'hourly') {
-    // รายชั่วโมง
-    basePay = workHours * payRate;
-    hourlyForLate = 0; // ไม่คิด late เพิ่ม
-  } else if (payType === 'daily') {
-    // รายวัน
-    basePay = workDays * payRate;
-    hourlyForLate = 0;
-  } else if (payType === 'monthly') {
-    // รายเดือน
-    basePay = payRate;
-    hourlyForLate = 0;
-  } else if (payType === 'every_n_days' && payEveryN > 0) {
-    // ทุก N วัน
-    basePay = (workDays / payEveryN) * payRate;
-    hourlyForLate = 0;
-  } else if (payType === 'every_n_hours' && payEveryN > 0) {
-    // ทุก N ชั่วโมง → ไม่อิง dailyHours ใช้ N จาก payEveryN
-    basePay = (workHours / payEveryN) * payRate;
-    hourlyForLate = payRate / payEveryN; // rate ต่อ 1 ชม.
+  switch (payType) {
+    case 'hourly':
+      // รายชั่วโมง – แค่นับชั่วโมงที่ทำจริง ไม่หักสายเพิ่ม (workHours ลดไปเองอยู่แล้ว)
+      basePay = workHours * payRate;
+      hourlyForLate = 0;   // ไม่หักเพิ่ม
+      break;
+
+    case 'daily':
+      // รายวัน – ถ้าให้หักสาย ก็แตกค่าจ้างรายวันเป็นรายชั่วโมง
+      basePay = workDays * payRate;
+      if (prorateLate && dailyHours > 0) {
+        hourlyForLate = payRate / dailyHours;
+      }
+      break;
+
+    case 'monthly': {
+      // รายเดือน – แบ่งเงินเดือนออกเป็นรายชั่วโมงตามช่วงงวด
+      basePay = payRate;
+      if (prorateLate && dailyHours > 0) {
+        const totalHours = daysInPeriod * dailyHours;
+        if (totalHours > 0) hourlyForLate = payRate / totalHours;
+      }
+      break;
+    }
+
+    case 'every_n_days': {
+      // ทุก N วัน – คิดฐานจากจำนวนวันทำงาน แล้วแตกต่อชั่วโมงตาม dailyHours
+      if (payEveryN > 0) {
+        basePay = (workDays / payEveryN) * payRate;
+        if (prorateLate && dailyHours > 0) {
+          const hoursPerN = dailyHours * payEveryN; // ชั่วโมงต่อ 1 รอบจ่าย
+          if (hoursPerN > 0) hourlyForLate = payRate / hoursPerN;
+        }
+      }
+      break;
+    }
+
+    case 'every_n_hours': {
+      // ทุก N ชั่วโมง – ค่า payRate คือ “เงินต่อ N ชั่วโมง”
+      if (payEveryN > 0) {
+        basePay = (workHours / payEveryN) * payRate;
+        if (prorateLate) {
+          hourlyForLate = payRate / payEveryN;
+        }
+      }
+      break;
+    }
+
+    default:
+      basePay = 0;
+      hourlyForLate = 0;
   }
 
   let lateDeduct = 0;
-  if (String(emp.prorateLate || 'false').toLowerCase() === 'true' &&
-      hourlyForLate > 0 &&
-      payType !== 'hourly') {
+  if (prorateLate && hourlyForLate > 0) {
     lateDeduct = hourlyForLate * lateHours;
   }
 
@@ -2134,10 +2153,11 @@ function parsePayBase(emp, logs, period){
     lateDeduct,
     payType,
     payRate,
-    dailyHours,  // แค่ส่งออกไปเฉย ๆ ไม่ใช้คำนวณแล้ว
+    dailyHours,
     payEveryN
   };
 }
+
 
 
 
@@ -2156,33 +2176,48 @@ async function computeOne(emp, periodStart, periodEnd){
 let __groupsCacheAt = 0;
 const __GROUPS_TTL_MS = 10_000;
 
-async function loadGroups(force=false){
+async function loadGroups(force = false){
   const now = Date.now();
-  if (!force && __groups?.length && (now - __groupsCacheAt) < __GROUPS_TTL_MS) {
-    // ใช้ cache
-  } else {
+
+  // 🔥 ถ้า force ให้ล้าง cache ทั้งกลุ่ม + สมาชิกเลย
+  if (force) {
+    __groupsCacheAt = 0;
+    __groupMembers = {};          // <<--- จุดสำคัญ ทำให้ไปดึงสมาชิกใหม่ทุกกลุ่ม
+  }
+
+  // โหลด list กลุ่ม (ไม่รวมสมาชิก)
+  if (!__groups?.length || (now - __groupsCacheAt) >= __GROUPS_TTL_MS) {
     const r = await fetch(`/api/tenants/${encodeURIComponent(TENANT)}/admin/paygroups`).catch(()=>null);
     const j = await (r ? r.json().catch(()=>({})) : {});
     __groups = j?.data || [];
     __groupsCacheAt = now;
   }
 
-  const missing = (__groups||[]).filter(g => !(__groupMembers[g.groupId] instanceof Set));
-  const detailList = await Promise.all(missing.map(g => fetchGroupDetail(g.groupId).catch(()=>({}))));
-  detailList.forEach((det, idx)=>{
-    const gid = missing[idx].groupId;
-    __groupMembers[gid] = new Set((det.members||det.memberIds||[]).map(x=> x.lineUserId || x));
+  // ต้องดึง detail (สมาชิก) สำหรับทุกกลุ่มที่ยังไม่มีใน __groupMembers
+  const needDetail = (__groups || []).filter(
+    g => !(__groupMembers[g.groupId] instanceof Set)
+  );
+
+  const detailList = await Promise.all(
+    needDetail.map(g => fetchGroupDetail(g.groupId).catch(()=>({})))
+  );
+
+  detailList.forEach((det, idx) => {
+    const gid = needDetail[idx].groupId;
+    __groupMembers[gid] = new Set(
+      (det.members || det.memberIds || []).map(x => x.lineUserId || x)
+    );
   });
 
- 
-  $prGroup.innerHTML = `<option value="">— เลือกกลุ่มงวด —</option>` +
-    (__groups||[]).map(g =>
+  // อัปเดตรายการกลุ่มใน dropdown + ตารางต่าง ๆ
+  $prGroup.innerHTML =
+    `<option value="">— เลือกกลุ่มงวด —</option>` +
+    (__groups || []).map(g =>
       `<option value="${g.groupId}">${g.name} · ${groupTypeLabel(g)}</option>`
     ).join('');
 
-
-  renderGroupsOverview();
-  renderCyclesTable();
+  renderGroupsOverview(); // ตารางที่มีคอลัมน์ “สมาชิก (ตัวอย่าง)”
+  renderCyclesTable();    // ตารางในแท็บ “ตั้งค่างวดเงินเดือน”
 }
 
 
@@ -2197,14 +2232,11 @@ async function fetchGroupDetail(groupId){
 function computePeriodFromGroup(g){
   if (!g) return null;
 
-  // 🔹 anchorDay = วันนี้ หรือค่าจากช่อง Due Today
+  // 🔹 anchor = วันที่เลือกใน DueTodayInput (หรือวันนี้)
   let anchorStr = '';
   const $due = document.getElementById('dueTodayInput');
-  if ($due && $due.value) {
-    anchorStr = $due.value;          // เช่น 2025-11-15
-  } else {
-    anchorStr = todayYMD();          // helper ด้านบน
-  }
+  if ($due && $due.value) anchorStr = $due.value;
+  else anchorStr = todayYMD();
 
   const anchor = new Date(anchorStr);
   if (isNaN(anchor)) return null;
@@ -2214,43 +2246,37 @@ function computePeriodFromGroup(g){
   const meta  = g.meta || {};
   const N     = Number(g.n ?? meta.n ?? 0);
 
-  // 🔹 กลุ่ม "รายเดือน" → ใช้ทั้งเดือนของ anchor (1 → last)
+  // ========= รายเดือน =========
   if (type === 'monthly'){
     const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
     const last  = new Date(anchor.getFullYear(), anchor.getMonth()+1, 0);
     return { start: toYMD(first), end: toYMD(last) };
   }
 
-  // 🔹 กลุ่ม "ราย N วัน"
-  //     ต้องการ: วันนี้ 15, N=3 → ช่วงงวด = 12–14 (ย้อนหลัง 3 วัน ไม่รวมวันนี้)
+  // ========= ราย N วัน =========
   if (type === 'every_n_days' && N > 0){
-    // วันฐานเริ่มต้น (ไม่ให้ถอยย้อนหลังเลยจุดนี้)
-    const rawStart = onlyDate(
-      g.startDate || meta.startDate || meta.baseDate || ''
-    );
-    const start0 = rawStart ? new Date(rawStart) : null;
+    // ⚠️ anchor = วันสุดท้ายของงวด (วันที่เลือก)
+    const end = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate());
 
-    // anchorDay = วันนี้ (หรือวันที่ใน Due Today) ตัดเวลาออก
-    const anchorDay = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate());
-
-    // วันสุดท้ายของงวด = วันก่อน anchor
-    const end = new Date(anchorDay);
-    end.setDate(end.getDate() - 1);  // วันนี้ 15 → end = 14
-
-    // วันเริ่มต้น = ถอยจาก end ไป N-1 วัน
+    // start = end - (N-1)
     const start = new Date(end);
-    start.setDate(start.getDate() - (N - 1));   // N=3 → 14 - (3-1) = 12
+    start.setDate(start.getDate() - (N - 1));
 
-    // ถ้ามีวันฐาน และ start < วันฐาน → ดันขึ้นเป็นวันฐาน
-    if (start0 && !isNaN(start0) && start < start0){
-      start.setTime(start0.getTime());
-      if (start > end) return null;
+    // ถ้ามีวันฐานและ start < วันฐาน → ดันขึ้นถึงวันฐาน
+    const rawBase = onlyDate(
+      g.startDate || meta.startDate || meta.baseDate || meta.anchorDate || ''
+    );
+    if (rawBase){
+      const base = new Date(rawBase);
+      if (!isNaN(base) && start < base){
+        start.setTime(base.getTime());
+      }
     }
 
     return { start: toYMD(start), end: toYMD(end) };
   }
 
-  // 🔹 กลุ่มรายวัน daily → ใช้วันเดียว = anchor
+  // ========= รายวัน =========
   if (type === 'daily'){
     const d = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate());
     return { start: toYMD(d), end: toYMD(d) };
@@ -2258,6 +2284,7 @@ function computePeriodFromGroup(g){
 
   return null;
 }
+
 
 
 function maybeSyncPeriodToGroup(g){
@@ -2638,6 +2665,13 @@ $pgMemberQ.oninput = renderMemberChecklist;
 $pgCreate.onclick = ()=> openGroupEditor(null);
 $pgCancel.onclick = ()=>{ $pgEditor.classList.add('hidden'); __editingGroupId=null; __membersDraft=new Set(); };
 
+function clean(v){
+  if (v === undefined || v === null) return null;
+  const s = String(v).trim();
+  if (!s || s.toLowerCase()==='null') return null;
+  return s;
+}
+
 $pgSave.onclick = async ()=>{
   try{
     $pgMsg.textContent = 'กำลังบันทึก…';
@@ -2694,11 +2728,11 @@ $pgSave.onclick = async ()=>{
     const payload = {
       actor: await getActor(),
       name,
-      type,             // ส่ง type ตรง ๆ: daily / monthly / every_n_days
-      n,
-      startDate,
-      payDayOfMonth: payDay,
-      payDay: payDay
+      type,
+      n: clean(n),
+      startDate: clean(startDate),
+      payDayOfMonth: clean(payDay),
+      payDay: clean(payDay)
     };
 
 
@@ -3373,7 +3407,18 @@ function hidePreloader(){
 
 /* ---------- boot & route (fast-first-paint) ---------- */
 async function primeUsers(force=true){ document.getElementById('lazyNote').textContent='รอสักครู่ กำลังโหลดข้อมูล…'; await loadUsers(!!force); renderCards(__users); }
-async function primeLogs(force=true){ document.getElementById('lazyNote2').textContent='รอสักครู่ กำลังโหลดรายชื่อ…'; await loadUsers(!!force); renderUserStripLogs(); if (!CURRENT_USER && __users.length) openLogs(__users[0]); }
+async function primeLogs(force=true){
+  document.getElementById('lazyNote2').textContent='รอสักครู่ กำลังโหลดรายชื่อ…';
+  await loadUsers(!!force);
+  renderUserStripLogs();
+
+  // รีเซ็ต state หน้า panel
+  CURRENT_USER = null;
+  $panelLogs.classList.add('hidden');
+  $logStatus.textContent = '';
+  $tbody.innerHTML = '';
+  $summary.textContent = 'เลือกพนักงานเพื่อดูสรุปประจำเดือน';
+}
 async function primePayroll(force=true){ await loadUsers(!!force); await loadGroups(true); $prStatus.textContent='พร้อมคำนวณ — เลือกกลุ่ม/ช่วงวัน แล้วกด “คำนวณ”'; }
 async function primeReports(force=true){
   await loadUsers(!!force);
@@ -3432,7 +3477,17 @@ window.addEventListener('hashchange', async ()=>{
   } finally { hidePreloader(); }
 });
 
-document.getElementById('btnHome').addEventListener('click', e=>{ e.preventDefault(); go('menu'); });
+document.getElementById('btnHome').addEventListener('click', e => {
+  e.preventDefault();
+
+  // เปลี่ยน hash ให้ router ทำงานตามปกติ
+  if (location.hash !== '#menu') {
+    location.hash = '#menu';
+  }
+
+  // กันเผื่อ hashchange ไม่ยิง ก็สั่งโชว์เมนูเองไปเลย
+  show('menu');
+});
 
 // ตั้งค่า month inputs ให้เป็น YYYY-MM เสมอ
 document.addEventListener('DOMContentLoaded', ()=>{

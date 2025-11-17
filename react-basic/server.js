@@ -457,13 +457,28 @@ function withInflight(key, factory) {
 
 // ---- Apps Script (Time Attendance) proxy helpers ----
 // เพิ่ม log ให้ละเอียดสำหรับการเรียก GAS/TA
-async function callTA(tenantId, action, payload = {}, timeoutMs = 12_000) {
-  // helpers (เฉพาะในฟังก์ชันนี้)
+// 🔧 แก้ใหม่ทั้งฟังก์ชัน (เน้นเปลี่ยนแค่เรื่อง timeout)
+async function callTA(tenantId, action, payload = {}, timeoutMs) {
   const t0 = Date.now();
   const j = (x) => { try { return JSON.stringify(x); } catch { return String(x); } };
   const trim300 = (s) => String(s || '').slice(0, 300);
 
-  console.log('[GAS/TA]', 'tenant=', tenantId, 'action=', action, 'timeoutMs=', timeoutMs);
+  // ✅ NEW: กำหนด timeout ตามประเภท action
+  const LONG_ACTIONS = new Set([
+    'run_payroll',
+    'pg_members_save',
+    'emp_groups_set',
+    'emp_groups_get',
+  ]);
+
+  // ถ้า caller ส่ง timeoutMs มาเอง ให้ใช้ค่านั้น
+  // ถ้าไม่ส่ง → ใช้ 25s สำหรับ LONG_ACTIONS, อื่น ๆ 12s
+  const effectiveTimeoutMs =
+    typeof timeoutMs === 'number' && timeoutMs > 0
+      ? timeoutMs
+      : (LONG_ACTIONS.has(action) ? 25_000 : 12_000);
+
+  console.log('[GAS/TA]', 'tenant=', tenantId, 'action=', action, 'timeoutMs=', effectiveTimeoutMs);
 
   const cfg = await getTenantCfg(tenantId).catch((e) => {
     console.error('[GAS/TA] getTenantCfg error', e);
@@ -510,7 +525,8 @@ async function callTA(tenantId, action, payload = {}, timeoutMs = 12_000) {
     if ('sharedKey' in bodyForLog) bodyForLog.sharedKey = '***';
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    // ✅ ใช้ effectiveTimeoutMs แทน timeoutMs เดิม
+    const timer = setTimeout(() => controller.abort(), effectiveTimeoutMs);
 
     let res, text, json;
     try {
@@ -7239,10 +7255,6 @@ if (TA_REMIND_ENABLED) {
 // ---- add response logger for these paths ----
 app.use(wrapJsonForRoute('/api/tenants/'));
 
-
-// GET: รายการกลุ่มที่ครบกำหนดแจ้งเตือนวันนี้ (proxy GAS)
-// GET /admin/paygroups/reminder-due?today=YYYY-MM-DD
-// GET /api/tenants/:id/admin/paygroups/reminder-due?today=YYYY-MM-DD
 
 
 
