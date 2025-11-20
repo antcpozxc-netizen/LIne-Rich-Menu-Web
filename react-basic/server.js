@@ -8348,6 +8348,7 @@ async function getAttendanceRichMenuId(tenantRef, kind) {
 
 
 // สลับ Attendance Rich Menu ให้ user ตาม kind
+// ✅ สลับ Attendance Rich Menu ให้ user ตาม kind (admin / user)
 async function switchAttendanceMenuForUser(tenantRef, userId, kind) {
   const richMenuId = await getAttendanceRichMenuId(tenantRef, kind);
   if (!richMenuId) {
@@ -8356,15 +8357,27 @@ async function switchAttendanceMenuForUser(tenantRef, userId, kind) {
 
   const accessToken = await getTenantSecretAccessToken(tenantRef);
 
-  // ✅ 1) unlink เมนูเก่าก่อน
-  await fetchFn(`https://api.line.me/v2/bot/user/${userId}/richmenu`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${accessToken}` }
-  }).catch(() => {});
+  console.log('[TA][switchMenu:start]', { tenant: tenantRef.id, userId, kind, richMenuId });
 
-  // ✅ 2) link เมนูใหม่
-  await ensureUserLinkedRichMenuByToken(tenantRef, userId, accessToken, richMenuId);
+  try {
+    // ✅ 1) unlink rich menu เก่าออกก่อน (กันเมนูค้าง)
+    await fetchFn(`https://api.line.me/v2/bot/user/${userId}/richmenu`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${accessToken}` }
+    }).catch((e) => {
+      console.warn('[TA][switchMenu] unlink fail (ignore)', e?.status || e);
+    });
+
+    // ✅ 2) link rich menu ใหม่
+    await ensureUserLinkedRichMenuByToken(accessToken, userId, richMenuId);
+    console.log('[TA][switchMenu:linked]', { userId, kind, richMenuId });
+
+  } catch (e) {
+    console.error('[TA][switchMenu:error]', e?.stack || e);
+    throw new Error('เปลี่ยนเมนูไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+  }
 }
+
 
 
 
