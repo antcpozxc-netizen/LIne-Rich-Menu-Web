@@ -8297,6 +8297,33 @@ async function isAttendanceEnabled(tenantRef) {
   }
 }
 
+// ดึง LINE RichMenu ID ของ Time Attendance ตามประเภท (user/admin)
+async function getAttendanceRichMenuId(tenantRef, kind) {
+  // kind: 'user' | 'admin'
+  const docId = kind === 'admin' ? 'ATTEND_MAIN_ADMIN' : 'ATTEND_MAIN_USER';
+  try {
+    const snap = await tenantRef.collection('richmenus').doc(docId).get();
+    const id = String(snap.get('id') || '').trim();
+    return id || '';
+  } catch (e) {
+    console.warn('[TA][richmenu] getAttendanceRichMenuId error', kind, e);
+    return '';
+  }
+}
+
+// สลับ Attendance Rich Menu ให้ user ตาม kind
+async function switchAttendanceMenuForUser(tenantRef, userId, kind) {
+  const richMenuId = await getAttendanceRichMenuId(tenantRef, kind);
+  if (!richMenuId) {
+    throw new Error('ยังไม่ได้ตั้งค่าเมนูสำหรับโหมดนี้ (ติดต่อผู้ดูแลระบบ)');
+  }
+
+  const accessToken = await getTenantSecretAccessToken(tenantRef);
+  // helper นี้มีอยู่แล้วด้านบน ใช้เพื่อ unlink + link rich menu ใหม่
+  await ensureUserLinkedRichMenuByToken(tenantRef, userId, accessToken, richMenuId);
+}
+
+
 // เพิ่มเมนู/คำสั่งงานแบบภาษาพูดเข้าไปครบ ชนกับของเดิมน้อยที่สุด
 async function handleLineEvent(ev, tenantRef, accessToken) {
   const replyToken = ev.replyToken;
@@ -8554,6 +8581,47 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
     }
 
 
+     // ===== TA Rich Menu Switch (เฉพาะ Owner/Admin) =====
+
+    // รีเซ็ตเมนู -> กลับไปใช้เมนูของ user (ATTEND_MAIN_USER)
+    if (/^รีเซ็ตเมนู$/i.test(text)) {
+      // ต้องเปิดใช้ระบบ Time Attendance ก่อน
+      if (!(await isAttendanceEnabled(tenantRef))) {
+        return reply(replyToken, 'ยังไม่ได้เปิดใช้ระบบลงเวลาใน OA นี้', null, tenantRef);
+      }
+
+      try {
+        // ยืนยันสิทธิ์ admin/owner/developer
+        await requireAdminRole(tenantRef, userId);
+
+        await switchAttendanceMenuForUser(tenantRef, userId, 'user');
+        return reply(replyToken, 'รีเซ็ตเป็นเมนูสำหรับผู้ใช้งานทั่วไปแล้วค่ะ', null, tenantRef);
+      } catch (e) {
+        console.error('[TA][richmenu-reset] error', e);
+        const msg = e?.message || 'ไม่สามารถรีเซ็ตเมนูได้ กรุณาลองใหม่อีกครั้ง';
+        return reply(replyToken, msg, null, tenantRef);
+      }
+    }
+
+    // เมนู admin -> สลับไปใช้เมนูของ admin (ATTEND_MAIN_ADMIN)
+    if (/^เมนู\s*admin$/i.test(text)) {
+      if (!(await isAttendanceEnabled(tenantRef))) {
+        return reply(replyToken, 'ยังไม่ได้เปิดใช้ระบบลงเวลาใน OA นี้', null, tenantRef);
+      }
+
+      try {
+        await requireAdminRole(tenantRef, userId);
+
+        await switchAttendanceMenuForUser(tenantRef, userId, 'admin');
+        return reply(replyToken, 'สลับไปใช้เมนูสำหรับผู้ดูแลแล้วค่ะ', null, tenantRef);
+      } catch (e) {
+        console.error('[TA][richmenu-admin] error', e);
+        const msg = e?.message || 'ไม่สามารถสลับเมนูได้ กรุณาลองใหม่อีกครั้ง';
+        return reply(replyToken, msg, null, tenantRef);
+      }
+    }
+
+
     // ===== Admin Settings =====
     
     if (/^ตั้งค่า$/i.test(text)) {
@@ -8772,9 +8840,9 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
 
 
     // ======= HELP (คำสั่ง: ช่วยเหลือ) – Single Bubble (multi-line items) =======
+        // ======= HELP – User (คำสั่ง: ช่วยเหลือ) =======
     if (/^ช่วยเหลือ$/i.test(text) && (await isAttendanceEnabled(tenantRef)) && !(await isTaskbotEnabled(tenantRef))) 
     {
-      
       const THEME_PRIMARY = '#3B5BDB';   // ฟ้าอมม่วง
       const THEME_SOFT    = '#EEF2FF';   // พื้นอ่อน
       const TEXT_MUTED    = '#6B7280';
@@ -8789,19 +8857,26 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
         ]
       });
 
-      // รองรับหลายบรรทัด: item('หัวข้อ', 'บรรทัด1', 'บรรทัด2', '...', '')
-      function item(title, ...lines) {
+      // item ที่ "แตะทั้งกล่องแล้วส่งคำสั่งข้อความให้บอท" ได้ (ไม่ต้องใช้ปุ่ม)
+      // ใช้แบบ: item('ลงเวลา', 'ลงเวลา', 'บรรทัดอธิบาย1', 'บรรทัดอธิบาย2', ...)
+      function item(title, commandText, ...lines) {
         const texts = [];
 
         // หัวข้อ
-        texts.push({ type: 'text', text: title, weight: 'bold', size: 'sm', wrap: true });
+        texts.push({
+          type: 'text',
+          text: title,
+          weight: 'bold',
+          size: 'sm',
+          wrap: true
+        });
 
         // เนื้อหาอื่น ๆ
         for (const raw of lines) {
           const line = String(raw ?? '').trim();
           if (!line) continue; // ข้ามบรรทัดว่าง
 
-          const isHint = /^หมายเหตุ|^เฉพาะ|^พิมพ์:/.test(line);
+          const isHint = /^หมายเหตุ|^แตะกล่องนี้|^เฉพาะ|^พิมพ์:/.test(line);
           texts.push({
             type: 'text',
             text: line,
@@ -8812,7 +8887,7 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
           });
         }
 
-        return {
+        const box = {
           type: 'box',
           layout: 'vertical',
           backgroundColor: THEME_SOFT,
@@ -8820,6 +8895,17 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
           margin: 'md',
           contents: texts
         };
+
+        // ทำให้ทั้งกล่องส่งข้อความ commandText เมื่อแตะ (เหมือนกดเมนู แต่ไม่ใช่ปุ่ม)
+        if (commandText) {
+          box.action = {
+            type: 'message',
+            label: title,
+            text: commandText
+          };
+        }
+
+        return box;
       }
 
       const bubble = {
@@ -8831,8 +8917,8 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
           paddingAll: '16px',
           backgroundColor: '#E9EFFF',
           contents: [
-            { type: 'text', text: 'Help', weight: 'bold', size: 'xl', color: '#111111' },
-            { type: 'text', text: 'คู่มือการใช้งาน Time Attendance', size: 'sm', color: TEXT_MUTED, wrap: true }
+            { type: 'text', text: 'Help (ผู้ใช้งาน)', weight: 'bold', size: 'xl', color: '#111111' },
+            { type: 'text', text: 'แตะกล่องคำสั่งด้านล่างเพื่อใช้งานได้ทันที', size: 'sm', color: TEXT_MUTED, wrap: true }
           ]
         },
         body: {
@@ -8840,62 +8926,34 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
           layout: 'vertical',
           spacing: '14px',
           contents: [
-            // ===== User =====
             sectionTitle('User (พนักงาน)', 'Employee'),
+
             item(
               'ลงเวลา',
+              'ลงเวลา',
               'บันทึกเวลามาทำงานของวันนี้ พร้อมพิกัด ใช้ยึดเวลาเริ่มงานเพื่อคิดชั่วโมงทำงาน/สาย',
-              'หมายเหตุ : ลงเวลาเข้าสามารถลงซ้ำได้ โดยยึดการลงเวลาล่าสุด',
-              'พิมพ์: "ลงเวลา"'
+              'หมายเหตุ : ลงเวลาเข้า สามารถลงซ้ำได้ โดยยึดการลงเวลาล่าสุด',
+              'แตะกล่องนี้ หรือพิมพ์: "ลงเวลา"'
             ),
             item(
               'ออกงาน',
+              'ออกงาน',
               'บันทึกเวลาเลิกงานของวันนี้ ระบบจะจับคู่กับเวลาเข้าและคำนวณชั่วโมงทำงานให้อัตโนมัติ',
-              'หมายเหตุ : สามารถลงเวลาออกได้เพียงครั้งเดี่ยว ไม่สามารถลงซ้ำได้',
-              'พิมพ์: "ออกงาน"'
+              'หมายเหตุ : สามารถลงเวลาออกได้เพียงครั้งเดียว ไม่สามารถลงซ้ำได้',
+              'แตะกล่องนี้ หรือพิมพ์: "ออกงาน"'
             ),
             item(
               'ลางาน',
+              'ลางาน',
               'ส่งคำขอลา ระบุวันที่ จำนวนชั่วโมง/เต็มวัน และเหตุผล เพื่อให้ผู้ดูแลตรวจสอบและเก็บประวัติ',
-              'พิมพ์: "ลางาน"'
+              'แตะกล่องนี้ หรือพิมพ์: "ลางาน"'
             ),
             item(
               'ลงทะเบียนเข้าใช้งาน',
+              'ลงทะเบียนเข้าใช้งาน',
               'บันทึกโปรไฟล์พื้นฐาน เช่น ชื่อ–สกุล เบอร์โทร ตำแหน่ง ช่องทางรับเงิน (ธนาคาร/เงินสด) เพื่อใช้ทำเงินเดือน',
               'หมายเหตุ : การลงทะเบียนซ้ำจะเป็นการแก้ไขข้อมูลเดิม',
-              'พิมพ์: "ลงทะเบียนเข้าใช้งาน"'
-            ),
-
-            { type: 'separator', margin: 'lg' },
-
-            // ===== Admin =====
-            sectionTitle('Owner / Admin', 'Administrator'),
-            item(
-              'บันทึกการทำงาน',
-              'ตรวจทานเวลาเข้า–ออก เพื่อใช้ดูตารางเข้า-ออกของพนักงาน รายละเอียดเข้าสาย/สถานที่ลงเวลา',
-              'เฉพาะ Owner / Admin',
-              'พิมพ์: "บันทึกการทำงาน"'
-            ),
-            item(
-              'ทำเงินเดือน',
-              'tab 1 "ทำเงินเดือน" รวมชั่วโมง/วันทำงาน คิดฐานจ่ายตามรูปแบบ (รายชั่วโมง/รายวัน/รายเดือน/ทุก N วัน) คิดหักสาย/ลา และสรุปจ่ายรายกลุ่มที่ตั้งค่าไว้',
-              'tab 2 "ตั้งค่างวดเงินเดือน" สร้างกลุ่มและกำหนดวันจ่าย เพื่อนำไปคำนวณหน้าทำเงินเดือน',
-              'tab 3 "จ่ายเงินพนักงาน" เรียกดูงวดที่ทำแล้ว เพื่อตั้งสถานะจ่ายตามผลคำนวณ',
-              'เฉพาะ Owner / Admin',
-              'พิมพ์: "ทำเงินเดือน"'
-            ),
-            item(
-              'รายงาน',
-              'ดูสรุปการจ่ายตามช่วงเวลา ดูรายละเอียดและย้อนกลับไปแก้ไขงวดเงินเดือนที่เกี่ยวข้องได้',
-              'เฉพาะ Owner / Admin',
-              'พิมพ์: "รายงาน"'
-            ),
-            item(
-              'ตั้งค่า',
-              'รวมการตั้งค่าหลัก 4 เมนู: รายชื่อพนักงาน/โปรไฟล์และสิทธิ์, การตั้งค่าการจ่าย, กลุ่มงวดเงินเดือน, การแจ้งเตือนรอบจ่าย',
-              'Owner สามารถกำหนดสิทธิ์ให้ Admin/User ได้',
-              'เฉพาะ Owner / Admin',
-              'พิมพ์: "ตั้งค่า"'
+              'แตะกล่องนี้ หรือพิมพ์: "ลงทะเบียนเข้าใช้งาน"'
             )
           ]
         },
@@ -8903,13 +8961,171 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
           type: 'box',
           layout: 'vertical',
           contents: [
-            { type: 'text', text: 'เมนูจะเปลี่ยนไปตาม role ในระบบ', size: 'xs', color: TEXT_HINT, align: 'center', margin: 'sm', wrap: true }
+            { type: 'text', text: 'สำหรับผู้ใช้งานทั่วไป (User)', size: 'xs', color: TEXT_HINT, align: 'center', margin: 'sm', wrap: true },
+            { type: 'text', text: 'ผู้ดูแลดูคำสั่งเพิ่มเติม: "ช่วยเหลือ admin"', size: 'xs', color: TEXT_HINT, align: 'center', margin: 'sm', wrap: true }
           ]
         }
       };
 
-      return replyFlex(replyToken, bubble, 'คู่มือการใช้งาน Time Attendance', tenantRef);
+      return replyFlex(replyToken, bubble, 'คู่มือการใช้งาน Time Attendance (ผู้ใช้งาน)', tenantRef);
     }
+
+        // ======= HELP – Admin / Owner (คำสั่ง: ช่วยเหลือ admin, ช่วยเหลือ ผู้ดูแล) =======
+    if (/^ช่วยเหลือ\s*(admin|ผู้ดูแล)$/i.test(text) && (await isAttendanceEnabled(tenantRef)) && !(await isTaskbotEnabled(tenantRef))) 
+    {
+      try {
+        // ยืนยันว่าเป็น owner/admin/developer ก่อน
+        await requireAdminRole(tenantRef, userId);
+      } catch (e) {
+        return reply(replyToken, 'คำสั่งนี้สำหรับ Owner / Admin เท่านั้น', null, tenantRef);
+      }
+
+      const THEME_PRIMARY = '#3B5BDB';
+      const THEME_SOFT    = '#EEF2FF';
+      const TEXT_MUTED    = '#6B7280';
+      const TEXT_HINT     = '#9CA3AF';
+
+      const sectionTitle = (th, en) => ({
+        type: 'box',
+        layout: 'baseline',
+        contents: [
+          { type: 'text', text: th, weight: 'bold', size: 'md', color: THEME_PRIMARY, wrap: true },
+          { type: 'text', text: en, size: 'xs', color: TEXT_HINT, margin: 'sm', flex: 0 }
+        ]
+      });
+
+      // กล่องที่แตะแล้วส่งคำสั่ง text ได้
+      function item(title, commandText, ...lines) {
+        const texts = [];
+
+        texts.push({
+          type: 'text',
+          text: title,
+          weight: 'bold',
+          size: 'sm',
+          wrap: true
+        });
+
+        for (const raw of lines) {
+          const line = String(raw ?? '').trim();
+          if (!line) continue;
+
+          const isHint = /^หมายเหตุ|^แตะกล่องนี้|^เฉพาะ|^พิมพ์:/.test(line);
+          texts.push({
+            type: 'text',
+            text: line,
+            size: isHint ? 'xs' : 'sm',
+            color: isHint ? TEXT_HINT : TEXT_MUTED,
+            margin: isHint ? 'sm' : 'xs',
+            wrap: true
+          });
+        }
+
+        const box = {
+          type: 'box',
+          layout: 'vertical',
+          backgroundColor: THEME_SOFT,
+          paddingAll: '12px',
+          margin: 'md',
+          contents: texts
+        };
+
+        if (commandText) {
+          box.action = {
+            type: 'message',
+            label: title,
+            text: commandText
+          };
+        }
+
+        return box;
+      }
+
+      const bubble = {
+        type: 'bubble',
+        size: 'mega',
+        header: {
+          type: 'box',
+          layout: 'vertical',
+          paddingAll: '16px',
+          backgroundColor: '#E9EFFF',
+          contents: [
+            { type: 'text', text: 'Admin Help', weight: 'bold', size: 'xl', color: '#111111' },
+            { type: 'text', text: 'คู่มือสำหรับ Owner / Admin\nแตะกล่องคำสั่งเพื่อใช้งานได้ทันที', size: 'sm', color: TEXT_MUTED, wrap: true }
+          ]
+        },
+        body: {
+          type: 'box',
+          layout: 'vertical',
+          spacing: '14px',
+          contents: [
+            sectionTitle('Owner / Admin', 'Administrator'),
+
+            item(
+              'บันทึกการทำงาน',
+              'บันทึกการทำงาน',
+              'ตรวจทานเวลาเข้า–ออก เพื่อใช้ดูตารางเข้า-ออกของพนักงาน รายละเอียดเข้าสาย/สถานที่ลงเวลา',
+              'เฉพาะ Owner / Admin',
+              'แตะกล่องนี้ หรือพิมพ์: "บันทึกการทำงาน"'
+            ),
+            item(
+              'ทำเงินเดือน',
+              'ทำเงินเดือน',
+              'tab 1 "ทำเงินเดือน" รวมชั่วโมง/วันทำงาน คิดฐานจ่ายตามรูปแบบ (รายชั่วโมง/รายวัน/รายเดือน/ทุก N วัน) คิดหักสาย/ลา และสรุปจ่ายรายกลุ่มที่ตั้งค่าไว้',
+              'tab 2 "ตั้งค่างวดเงินเดือน" สร้างกลุ่มและกำหนดวันจ่าย เพื่อนำไปคำนวณหน้าทำเงินเดือน',
+              'tab 3 "จ่ายเงินพนักงาน" เรียกดูงวดที่ทำแล้ว เพื่อตั้งสถานะจ่ายตามผลคำนวณ',
+              'เฉพาะ Owner / Admin',
+              'แตะกล่องนี้ หรือพิมพ์: "ทำเงินเดือน"'
+            ),
+            item(
+              'รายงาน',
+              'รายงาน',
+              'ดูสรุปการจ่ายตามช่วงเวลา ดูรายละเอียดและย้อนกลับไปแก้ไขงวดเงินเดือนที่เกี่ยวข้องได้',
+              'เฉพาะ Owner / Admin',
+              'แตะกล่องนี้ หรือพิมพ์: "รายงาน"'
+            ),
+            item(
+              'ตั้งค่า',
+              'ตั้งค่า',
+              'รวมการตั้งค่าหลัก 4 เมนู: รายชื่อพนักงาน/โปรไฟล์และสิทธิ์, การตั้งค่าการจ่าย, กลุ่มงวดเงินเดือน, การแจ้งเตือนรอบจ่าย',
+              'Owner สามารถกำหนดสิทธิ์ให้ Admin/User ได้',
+              'เฉพาะ Owner / Admin',
+              'แตะกล่องนี้ หรือพิมพ์: "ตั้งค่า"'
+            ),
+
+            // ==== เพิ่มคำอธิบายคำสั่ง เมนู admin / รีเซ็ตเมนู ====
+            item(
+              'เมนู admin',
+              'เมนู admin',
+              'สลับ Rich Menu ไปเป็นเมนูสำหรับผู้ดูแล (admin) ของระบบ Time Attendance',
+              'ใช้ในกรณีที่เมนูตอนนี้เป็นเมนู user แล้วต้องการกลับไปใช้เมนูผู้ดูแล',
+              'เฉพาะ Owner / Admin',
+              'แตะกล่องนี้ หรือพิมพ์: "เมนู admin"'
+            ),
+            item(
+              'รีเซ็ตเมนู',
+              'รีเซ็ตเมนู',
+              'สลับ Rich Menu กลับไปเป็นเมนูสำหรับผู้ใช้งานทั่วไป (user)',
+              'ใช้ในกรณีที่เคยสลับเป็นเมนู admin แล้วต้องการกลับไปเมนู user',
+              'เฉพาะ Owner / Admin',
+              'แตะกล่องนี้ หรือพิมพ์: "รีเซ็ตเมนู"'
+            )
+          ]
+        },
+        footer: {
+          type: 'box',
+          layout: 'vertical',
+          contents: [
+            { type: 'text', text: 'เมนูจะเปลี่ยนไปตาม role ในระบบ', size: 'xs', color: TEXT_HINT, align: 'center', margin: 'sm', wrap: true },
+            { type: 'text', text: 'ผู้ใช้งานทั่วไป ใช้คำสั่ง: "ช่วยเหลือ"', size: 'xs', color: TEXT_HINT, align: 'center', margin: 'sm', wrap: true }
+          ]
+        }
+      };
+
+      return replyFlex(replyToken, bubble, 'คู่มือการใช้งาน Time Attendance (Admin)', tenantRef);
+    }
+
+
 
 
 
