@@ -8355,9 +8355,17 @@ async function switchAttendanceMenuForUser(tenantRef, userId, kind) {
   }
 
   const accessToken = await getTenantSecretAccessToken(tenantRef);
-  // helper นี้มีอยู่แล้วด้านบน ใช้เพื่อ unlink + link rich menu ใหม่
+
+  // ✅ 1) unlink เมนูเก่าก่อน
+  await fetchFn(`https://api.line.me/v2/bot/user/${userId}/richmenu`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` }
+  }).catch(() => {});
+
+  // ✅ 2) link เมนูใหม่
   await ensureUserLinkedRichMenuByToken(tenantRef, userId, accessToken, richMenuId);
 }
+
 
 
 // เพิ่มเมนู/คำสั่งงานแบบภาษาพูดเข้าไปครบ ชนกับของเดิมน้อยที่สุด
