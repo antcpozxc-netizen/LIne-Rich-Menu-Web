@@ -8298,18 +8298,54 @@ async function isAttendanceEnabled(tenantRef) {
 }
 
 // ดึง LINE RichMenu ID ของ Time Attendance ตามประเภท (user/admin)
+// ดึง LINE RichMenu ID ของ Time Attendance ตามประเภท (user/admin)
+// ดึง LINE RichMenu ID ของ Time Attendance ตามประเภท (user/admin)
 async function getAttendanceRichMenuId(tenantRef, kind) {
   // kind: 'user' | 'admin'
-  const docId = kind === 'admin' ? 'ATTEND_MAIN_ADMIN' : 'ATTEND_MAIN_USER';
+  const cfgRef = tenantRef.collection('integrations').doc('attendance');
+
   try {
+    const cfgSnap = await cfgRef.get();
+
+    // เลือก doc id จาก integrations.attendance ก่อน ถ้าไม่มีค่อย fallback เป็นชื่อ default
+    let docId;
+    if (kind === 'admin') {
+      docId = (cfgSnap.exists ? cfgSnap.get('adminRichMenuDoc') : '') || 'ATTEND_MAIN_ADMIN';
+    } else {
+      docId = (cfgSnap.exists ? cfgSnap.get('userRichMenuDoc') : '') || 'ATTEND_MAIN_USER';
+    }
+    docId = String(docId || '').trim();
+    if (!docId) {
+      console.warn('[TA][richmenu] missing docId for kind=', kind);
+      return '';
+    }
+
     const snap = await tenantRef.collection('richmenus').doc(docId).get();
-    const id = String(snap.get('id') || '').trim();
-    return id || '';
+    if (!snap.exists) {
+      console.warn('[TA][richmenu] doc not found', tenantRef.id, docId);
+      return '';
+    }
+
+    // 🔧 ตรงนี้คือจุดสำคัญ: ใช้ lineRichMenuId (ของระบบเดิม)
+    const richMenuId = String(
+      snap.get('lineRichMenuId') ||
+      snap.get('richMenuId') ||
+      snap.get('id') ||           // กันไว้เผื่อบาง tenant ใช้ชื่ออื่น
+      ''
+    ).trim();
+
+    if (!richMenuId) {
+      console.warn('[TA][richmenu] missing lineRichMenuId', tenantRef.id, docId, snap.data());
+    }
+
+    return richMenuId || '';
   } catch (e) {
-    console.warn('[TA][richmenu] getAttendanceRichMenuId error', kind, e);
+    console.warn('[TA][richmenu] getAttendanceRichMenuId error', { kind, err: e && e.message });
     return '';
   }
 }
+
+
 
 // สลับ Attendance Rich Menu ให้ user ตาม kind
 async function switchAttendanceMenuForUser(tenantRef, userId, kind) {
