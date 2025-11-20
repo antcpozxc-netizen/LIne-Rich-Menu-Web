@@ -578,8 +578,6 @@ async function callTA(tenantId, action, payload = {}, timeoutMs) {
 }
 
 
-
-
 // --- Helper: ตรวจสิทธิ์ admin/owner ของ tenant ผ่าน Apps Script + Fallback Firestore ---
 async function canAdminForTenant(tenantId, lineUserId) {
   if (!tenantId || !lineUserId) return false;
@@ -5528,15 +5526,18 @@ app.post('/api/tenants/:id/attendance/profile', express.json({ limit: '6mb' }), 
     // --- [A] เขียนโปรไฟล์ลงชีต TA ก่อน
     await callTA(id, 'upsert_profile', { lineUserId, profile, actor });
 
-    // --- [B] ตีความ jobTitle -> role (owner/admin = สิทธิ์สูง, อื่นๆ = user)
+    
+    // --- [B] ตีความ jobTitle -> role
+    // ✅ เฉพาะคนที่กรอกตำแหน่ง owner/เจ้าของ เท่านั้น ที่จะได้สิทธิ์ owner
+    //    ส่วน admin / แอดมิน / supervisor ฯลฯ จะถือเป็น user ธรรมดา
     const jtRaw = String(profile?.jobTitle || '').trim();
     const jt = jtRaw.toLowerCase();
 
-    const isOwner = ['owner','เจ้าของ'].includes(jt);
-    const isAdmin = ['admin','administrator','แอดมิน','ผู้ดูแล','supervisor','หัวหน้า'].includes(jt);
+    const isOwner = ['owner', 'เจ้าของ'].includes(jt);
 
-    // ถ้าไม่ใช่ owner หรือ admin → เป็น user ทั้งหมด
-    const desiredRole = isOwner ? 'owner' : (isAdmin ? 'admin' : 'user');
+    // ไม่ auto ตั้ง admin จากตำแหน่งแล้ว — admin จะถูกตั้งจากหน้า Admin เท่านั้น
+    const desiredRole = isOwner ? 'owner' : 'user';
+
 
     // --- [C] เซ็ต role ไปที่ชีต (ให้สิทธิ์ตั้ง owner ด้วย isSystem:true)
     await callTA(id, 'set_role', {
@@ -5556,28 +5557,9 @@ app.post('/api/tenants/:id/attendance/profile', express.json({ limit: '6mb' }), 
       if (fromTop || fromObj) role = (fromTop || fromObj);
     } catch { /* keep desiredRole */ }
 
-    // --- [E] ลิงก์/ปลดเมนูตาม role
-    const tRef = db.collection('tenants').doc(id);
-    const accessToken = await getTenantSecretAccessToken(tRef);
+    // --- [E] ลิงก์/ปลดเมนูตาม role (ใช้ helper กลาง)
+    await syncAttendanceRichMenuForUser(id, lineUserId, role);
 
-    if (role === 'owner' || role === 'admin') {
-      const rmSnap = await tRef.collection('richmenus').doc('ATTEND_MAIN_ADMIN').get();
-      const rmData = rmSnap.exists ? (rmSnap.data() || {}) : {};
-      const adminMenuId = rmData.lineRichMenuId || rmData.richMenuId || '';
-      if (!adminMenuId) {
-        console.warn('[TA/profile] ADMIN richmenu not ready');
-      } else {
-        const ok = await ensureUserLinkedRichMenuByToken(accessToken, lineUserId, adminMenuId, 2);
-        console.log(`[TA/profile] link ADMIN verify=${ok} for ${lineUserId}`);
-      }
-    } else {
-      // role=user → ปลดเมนูรายคนให้ใช้ default OA (USER)
-      await unlinkRichMenuFromUserByToken(accessToken, lineUserId).catch(() => {});
-      try {
-        const cur = await getUserRichMenuIdByToken(accessToken, lineUserId);
-        console.log(`[TA/profile] unlink to default, current user menu id="${cur}" (empty=ok)`);
-      } catch {}
-    }
 
 
     return res.json({ ok: true, role, menu: (role === 'owner' || role === 'admin') ? 'admin' : 'user' });
@@ -5922,6 +5904,42 @@ async function ensureAdminOrOwner(tenantId, actor) {
   }
   return true;
 }
+
+// Sync LINE Rich Menu ของ Time Attendance ให้ตรงกับ role ปัจจุบัน
+async function syncAttendanceRichMenuForUser(tenantId, lineUserId, role) {
+  if (!tenantId || !lineUserId) return;
+
+  const norm = String(role || '').toLowerCase();
+  const tRef = db.collection('tenants').doc(tenantId);
+  const accessToken = await getTenantSecretAccessToken(tRef);
+
+  // owner / admin → ผูกเมนู ATTEND_MAIN_ADMIN ให้
+  if (norm === 'owner' || norm === 'admin') {
+    const rmSnap = await tRef.collection('richmenus').doc('ATTEND_MAIN_ADMIN').get();
+    const rmData = rmSnap.exists ? (rmSnap.data() || {}) : {};
+    const adminMenuId = rmData.lineRichMenuId || rmData.richMenuId || '';
+
+    if (!adminMenuId) {
+      console.warn('[TA/richmenu] ADMIN richmenu not ready for tenant', tenantId);
+      return;
+    }
+
+    const ok = await ensureUserLinkedRichMenuByToken(accessToken, lineUserId, adminMenuId, 2);
+    console.log('[TA/richmenu] link ADMIN menu ->', lineUserId, 'role=', norm, 'verify=', ok);
+    return;
+  }
+
+  // role อื่นๆ (user, staff, ...) → ถอดเมนูรายคน ให้ใช้ default USER menu ของ OA
+  try {
+    await unlinkRichMenuFromUserByToken(accessToken, lineUserId).catch(() => {});
+    const cur = await getUserRichMenuIdByToken(accessToken, lineUserId);
+    console.log('[TA/richmenu] unlink to default for', lineUserId, 'current=', cur || '(none)');
+  } catch (e) {
+    console.warn('[TA/richmenu] unlink error for', lineUserId, String(e?.message || e));
+  }
+}
+
+
 
 // ---------- Attendance config (single source of truth) ----------
 async function getAttendanceConfig(tenantId) {
@@ -7557,8 +7575,25 @@ app.post('/api/tenants/:id/admin/employee/save', express.json(), async (req, res
         });
       } catch (e2) {
         console.error('[ADMIN][employee/save][emp_groups_set] warn:', e2?.message || e2);
-        // ไม่ต้อง throw ต่อ: ถือว่าบันทึกพนักงานสำเร็จแล้ว แค่ sync กลุ่มไม่สำเร็จ
+        // ไม่ต้อง throw ต่อ
       }
+    }
+
+    // 3) sync Rich Menu ตาม role ปัจจุบัน (admin → เมนูแอดมิน / user → เมนูปกติ)
+    try {
+      const finalRole =
+        String(
+          r.role ||
+          (r.data && r.data.role) ||
+          role ||
+          ''
+        ).toLowerCase();
+
+      if (profile?.lineUserId && finalRole) {
+        await syncAttendanceRichMenuForUser(id, profile.lineUserId, finalRole);
+      }
+    } catch (e3) {
+      console.error('[ADMIN][employee/save][richmenu] warn:', e3?.message || e3);
     }
 
     return res.json({ ok:true });
@@ -7664,18 +7699,29 @@ app.post('/api/tenants/:id/admin/pay_settings', express.json(), async (req, res)
   }
 });
 
+
 // กำหนดบทบาท (owner/admin/user/ตำแหน่งอื่น ๆ)
 app.post('/api/tenants/:id/admin/set_role', express.json(), async (req, res) => {
   try {
     const { id } = req.params;
     const { actor, target, role } = req.body || {};
+
     const r = await callTA(id, 'set_role', { actor, target, role });
     if (!r || r.ok === false) throw new Error(r?.error || 'gas_failed');
-    return res.json({ ok:true, role:r.role });
+
+    const finalRole = String(r.role || role || '').toLowerCase();
+
+    // ถ้า target มี lineUserId → sync Rich Menu ให้ตรงกับบทบาทใหม่
+    if (target?.lineUserId && finalRole) {
+      await syncAttendanceRichMenuForUser(id, target.lineUserId, finalRole);
+    }
+
+    return res.json({ ok:true, role: finalRole });
   } catch (e) {
     return res.status(500).json({ ok:false, error:String(e?.message || e) });
   }
 });
+
 
 // รันงวดเงินเดือน (เขียน ITEM จากช่วงวันที่)
 app.post('/api/tenants/:id/admin/payroll/run', express.json(), async (req, res) => {
