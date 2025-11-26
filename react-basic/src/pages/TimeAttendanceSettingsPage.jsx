@@ -2,13 +2,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Paper, Stack, Typography, Switch, FormControlLabel,
-  Button, Alert, Divider, TextField, Grid, Box, Chip
+  Button, Alert, Divider, TextField, Grid, Box, Chip,
+  FormControl, InputLabel, Select, MenuItem
 } from '@mui/material';
 import SettingsIcon from '@mui/icons-material/Settings';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import MenuOpenIcon from '@mui/icons-material/MenuOpen';
 import { getAuth } from 'firebase/auth';
-
+import { useNavigate } from 'react-router-dom';
 
 function useQuery() { return new URLSearchParams(window.location.search); }
 
@@ -27,57 +28,85 @@ async function safeJson(res) {
 const ADMIN_PREVIEW = '/static/hr_menu_admin.png';
 const USER_PREVIEW  = '/static/ta_menu_user.png';
 
-
-
 export default function TimeAttendanceSettingsPage() {
   const q = useQuery();
   const tenantId = q.get('tenant') || '';
-
-  const redirectPath  = '/homepage/settings/attendance';
-  const redirectParam = encodeURIComponent(redirectPath);
-
-  const richMenuConsoleUrl = tenantId
-    ? `/homepage/rich-menus?tenant=${tenantId}&redirect=${redirectParam}`
-    : `/homepage/rich-menus?redirect=${redirectParam}`;
+  const navigate = useNavigate();
 
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState(null);
 
-  // เหลือแค่ 2 ฟิลด์หลัก
+  // ฟิลด์หลัก
   const [enabled, setEnabled] = useState(false);
   const [appsSheetId, setAppsSheetId] = useState('');
   const canEnable = (appsSheetId || '').trim().length > 0;
+
+  // รายการ Rich menu ของ OA นี้
+  const [richMenus, setRichMenus] = useState([]);
+
+  // เลือกเมนูสำหรับ Admin/User (เก็บเป็น docId ของ collection richmenus)
+  const [adminRichMenuDoc, setAdminRichMenuDoc] = useState('');
+  const [userRichMenuDoc, setUserRichMenuDoc]   = useState('');
 
   const webhookUrl = useMemo(
     () => `${window.location.origin.replace(/\/$/, '')}/webhook/line`,
     []
   );
 
-  // โหลดค่าเดิม
+  // path สำหรับ redirect กลับจากหน้า RichMenusPage
+  const redirectPath   = tenantId
+    ? `/homepage/settings/attendance?tenant=${encodeURIComponent(tenantId)}`
+    : '/homepage/settings/attendance';
+  const richMenuConsolePath = tenantId
+    ? `/homepage/rich-menus?tenant=${encodeURIComponent(tenantId)}&redirect=${encodeURIComponent(redirectPath)}`
+    : '/homepage/rich-menus';
+
+  // โหลดค่าเดิม + รายการ Rich menu
   useEffect(() => {
     let alive = true;
     (async () => {
-      if (!tenantId) { setMsg({ type:'info', text:'กรุณาเลือก OA (tenant) ก่อน' }); return; }
+      if (!tenantId) { setMsg({ type: 'info', text: 'กรุณาเลือก OA (tenant) ก่อน' }); return; }
       setLoading(true); setMsg(null);
       try {
         const h = await authHeader();
-        const r = await fetch(`/api/tenants/${tenantId}/integrations/attendance`, { headers: h });
-        const j = await safeJson(r);
+
+        // 1) โหลด config attendance
+        const r1 = await fetch(`/api/tenants/${tenantId}/integrations/attendance`, { headers: h });
+        const j1 = await safeJson(r1);
         if (!alive) return;
 
-        if (r.status === 401 || r.status === 403) {
-          setMsg({ type:'info', text:'กรุณาเข้าสู่ระบบก่อนใช้งาน' });
-        } else if (j.ok && j.data?.ok) {
-          const d = j.data.data || {};
+        if (r1.status === 401 || r1.status === 403) {
+          setMsg({ type: 'info', text: 'กรุณาเข้าสู่ระบบก่อนใช้งาน' });
+        } else if (j1.ok && j1.data?.ok) {
+          const d = j1.data.data || {};
           setEnabled(!!d.enabled);
           setAppsSheetId(d.appsSheetId || '');
+          setAdminRichMenuDoc(d.adminRichMenuDoc || '');
+          setUserRichMenuDoc(d.userRichMenuDoc || '');
         } else {
-          setMsg({ type:'warning', text: j.data?.error || j.error || 'โหลดการตั้งค่าไม่สำเร็จ' });
+          setMsg({ type: 'warning', text: j1.data?.error || j1.error || 'โหลดการตั้งค่าไม่สำเร็จ' });
         }
+
+        // 2) โหลดรายการ Rich menu ของ OA นี้ (เหมือนฝั่ง TaskAssignment)
+        const r2 = await fetch(`/api/tenants/${tenantId}/richmenus?status=ready`, { headers: h });
+        const j2 = await safeJson(r2);
+        if (!r2.ok || j2.ok === false) {
+          // fallback ดึงทั้งหมด
+          const rAll = await fetch(`/api/tenants/${tenantId}/richmenus`, { headers: h });
+          const jAll = await safeJson(rAll);
+          if (jAll?.ok && Array.isArray(jAll.data)) {
+            setRichMenus(jAll.data);
+          } else {
+            setRichMenus([]);
+          }
+        } else {
+          setRichMenus(Array.isArray(j2.data) ? j2.data : []);
+        }
+
       } catch (e) {
-        setMsg({ type:'error', text: String(e) });
+        if (alive) setMsg({ type: 'error', text: String(e) });
       } finally {
-        setLoading(false);
+        if (alive) setLoading(false);
       }
     })();
     return () => { alive = false; };
@@ -88,36 +117,39 @@ export default function TimeAttendanceSettingsPage() {
     const res = await fetch(`/api/tenants/${tenantId}/integrations/attendance/enable`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...h },
-      body: JSON.stringify({})
-    });
-    return safeJson(res);
-  };
-  const disableAttendance = async (h) => {
-    const res = await fetch(`/api/tenants/${tenantId}/integrations/attendance/disable`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...h },
-      body: JSON.stringify({})
+      body: JSON.stringify({}),
     });
     return safeJson(res);
   };
 
-  // Save (บันทึกเฉพาะ appsSheetId + enabled flag — ค่าอื่นไม่มีแล้ว)
+  const disableAttendance = async (h) => {
+    const res = await fetch(`/api/tenants/${tenantId}/integrations/attendance/disable`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...h },
+      body: JSON.stringify({}),
+    });
+    return safeJson(res);
+  };
+
+  // Save settings (รวม admin/user rich menu)
   const saveSettings = async (nextEnabled = enabled) => {
     const h = await authHeader();
     const payload = {
       enabled: nextEnabled,
       appsSheetId: (appsSheetId || '').trim(),
-      // เก็บรูป preview ไว้ด้วย เผื่อ server อยากใช้
+      adminRichMenuDoc: adminRichMenuDoc || '',
+      userRichMenuDoc:  userRichMenuDoc  || '',
+      // เผื่อ backend อยากใช้รูป preview
       adminMenuImageUrl: ADMIN_PREVIEW,
-      userMenuImageUrl:  USER_PREVIEW
+      userMenuImageUrl:  USER_PREVIEW,
     };
     const r = await fetch(`/api/tenants/${tenantId}/integrations/attendance`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...h },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
     });
     const j = await safeJson(r);
-    if (!r.ok || !j.ok || !j.data?.ok) {
+    if (!r.ok || !j.ok) {
       throw new Error(j.data?.error || j.error || `บันทึกไม่สำเร็จ (HTTP ${r.status})`);
     }
     return { h };
@@ -126,7 +158,6 @@ export default function TimeAttendanceSettingsPage() {
   // Toggle enable/disable
   const onToggleEnabled = async (e) => {
     const next = e.target.checked;
-    // ต้องมี Sheet ID ก่อนเท่านั้นถึงจะเปิดได้
     if (next && !canEnable) {
       setMsg({ type:'warning', text:'กรุณาใส่ Google Sheet ID ก่อนเปิดใช้งาน' });
       setEnabled(false);
@@ -139,7 +170,7 @@ export default function TimeAttendanceSettingsPage() {
       if (next) {
         const en = await enableAttendance(h);
         if (!(en.ok && en.data?.ok)) throw new Error(en.data?.error || en.error || 'Enable Attendance ไม่สำเร็จ');
-        setMsg({ type:'success', text:'เปิดใช้งานและตั้งค่า Rich Menu (Default = User) สำเร็จ ✅' });
+        setMsg({ type:'success', text:'เปิดใช้งานและตั้งค่า Rich Menu สำเร็จ ✅' });
       } else {
         const di = await disableAttendance(h);
         if (!(di.ok && di.data?.ok)) throw new Error(di.data?.error || di.error || 'Disable Attendance ไม่สำเร็จ');
@@ -153,6 +184,7 @@ export default function TimeAttendanceSettingsPage() {
     }
   };
 
+  // กด “Save settings” อย่างเดียว
   const onSaveOnly = async () => {
     if (!tenantId) return;
     setLoading(true); setMsg(null);
@@ -173,6 +205,18 @@ export default function TimeAttendanceSettingsPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // ไปหน้า RichMenusPage (แบบ SPA เดียวกับ TaskAssignment)
+  const onGotoRichMenuConsole = () => {
+    if (!tenantId) return;
+    navigate(richMenuConsolePath);
+  };
+
+  const findMenuLabel = (id) => {
+    if (!id) return 'ใช้เมนู default ที่ระบบสร้างให้';
+    const m = richMenus.find(x => x.id === id);
+    return m ? (m.title || m.name || m.id) : id;
   };
 
   return (
@@ -196,7 +240,7 @@ export default function TimeAttendanceSettingsPage() {
                 disabled={loading || !canEnable}
               />
             }
-            label="เปิดใช้งานระบบ Time Attendance (จะสร้าง/อัปโหลด Rich Menu ให้โดยอัตโนมัติ)"
+            label="เปิดใช้งานระบบ Time Attendance"
           />
           <Divider sx={{ my:2 }} />
 
@@ -227,16 +271,16 @@ export default function TimeAttendanceSettingsPage() {
           <Typography fontWeight={700}>Rich menu สำหรับ OA นี้</Typography>
           <Divider sx={{ my:1 }} />
           <Typography variant="body2" sx={{ mb:1 }} color="text.secondary">
-            ระบบ Time Attendance จะสร้าง Rich Menu สำหรับ <b>Admin</b> และ <b>User</b> ให้อัตโนมัติ
-            และใช้คำสั่ง <b>"เมนู admin"</b> / <b>"รีเซ็ตเมนู"</b> เพื่อสลับเมนูใน LINE ได้
+            เลือกเมนูสำหรับ <b>Admin</b> และ <b>User</b> ของ Time Attendance
+            (เหมือนกับหน้าตั้งค่า Task Assignment)
           </Typography>
 
-          {/* Preview admin / user (เหมือนเดิม) */}
           <Stack
             direction="row"
             spacing={2}
-            sx={{ mb: 1, flexWrap: 'nowrap', overflowX: 'auto' }}
+            sx={{ mb: 2, flexWrap: 'wrap' }}
           >
+            {/* Admin card */}
             <Box sx={{ minWidth: 260 }}>
               <Typography variant="body2" sx={{ mb:0.5 }}>
                 Admin (owner/admin/payroll)
@@ -246,7 +290,8 @@ export default function TimeAttendanceSettingsPage() {
                   border:'1px solid #e0e0e0',
                   borderRadius:1,
                   overflow:'hidden',
-                  width: 240
+                  width: 240,
+                  mb:1,
                 }}
               >
                 <img
@@ -255,8 +300,29 @@ export default function TimeAttendanceSettingsPage() {
                   style={{ width:240, height:162, objectFit:'cover', display:'block' }}
                 />
               </Box>
+              <FormControl fullWidth size="small">
+                <InputLabel>Rich menu สำหรับ Admin</InputLabel>
+                <Select
+                  label="Rich menu สำหรับ Admin"
+                  value={adminRichMenuDoc}
+                  onChange={e => setAdminRichMenuDoc(e.target.value)}
+                >
+                  <MenuItem value="">
+                    <em>ใช้เมนู default ที่ระบบสร้างให้</em>
+                  </MenuItem>
+                  {richMenus.map(m => (
+                    <MenuItem key={m.id} value={m.id}>
+                      {m.title || m.name || m.id}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <Typography variant="caption" color="text.secondary" sx={{ mt:0.5, display:'block' }}>
+                กำลังใช้: {findMenuLabel(adminRichMenuDoc)}
+              </Typography>
             </Box>
 
+            {/* User card */}
             <Box sx={{ minWidth: 260 }}>
               <Typography variant="body2" sx={{ mb:0.5 }}>
                 User (พนักงานทั่วไป)
@@ -266,7 +332,8 @@ export default function TimeAttendanceSettingsPage() {
                   border:'1px solid #e0e0e0',
                   borderRadius:1,
                   overflow:'hidden',
-                  width: 240
+                  width: 240,
+                  mb:1,
                 }}
               >
                 <img
@@ -275,19 +342,36 @@ export default function TimeAttendanceSettingsPage() {
                   style={{ width:240, height:162, objectFit:'cover', display:'block' }}
                 />
               </Box>
+              <FormControl fullWidth size="small">
+                <InputLabel>Rich menu สำหรับ User</InputLabel>
+                <Select
+                  label="Rich menu สำหรับ User"
+                  value={userRichMenuDoc}
+                  onChange={e => setUserRichMenuDoc(e.target.value)}
+                >
+                  <MenuItem value="">
+                    <em>ใช้เมนู default ที่ระบบสร้างให้</em>
+                  </MenuItem>
+                  {richMenus.map(m => (
+                    <MenuItem key={m.id} value={m.id}>
+                      {m.title || m.name || m.id}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <Typography variant="caption" color="text.secondary" sx={{ mt:0.5, display:'block' }}>
+                กำลังใช้: {findMenuLabel(userRichMenuDoc)}
+              </Typography>
             </Box>
           </Stack>
 
-          {/* ปุ่มไปหน้า Rich Menu Console ของ OA นี้ */}
+          {/* ปุ่มไปหน้าจัดการ Rich Menu (แบบเดียวกับ TaskAssignment) */}
           <Button
             variant="outlined"
             size="small"
             startIcon={<MenuOpenIcon />}
             sx={{ mt:1, mb:2 }}
-            component="a"
-            href={richMenuConsoleUrl}
-            target="_blank"
-            rel="noopener noreferrer"
+            onClick={onGotoRichMenuConsole}
             disabled={!tenantId}
           >
             ไปที่หน้าจัดการ Rich Menu

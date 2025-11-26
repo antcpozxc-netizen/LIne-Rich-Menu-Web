@@ -5378,15 +5378,62 @@ app.post('/api/tenants/:id/integrations/attendance/enable', requireFirebaseAuth,
     console.log('[attendance/enable] skip per-user relink by role (method A)');
 
     // 4) บันทึกสถานะเปิดใช้งาน Attendance
-    await tenant.ref.collection('integrations').doc('attendance').set({
+    const attRef  = tenant.ref.collection('integrations').doc('attendance');
+    const attSnap = await attRef.get();
+    const attData = attSnap.exists ? (attSnap.data() || {}) : {};
+
+    const adminDoc = attData.adminRichMenuDoc || 'ATTEND_MAIN_ADMIN';
+    const userDoc  = attData.userRichMenuDoc  || 'ATTEND_MAIN_USER';
+
+    await attRef.set({
       enabled: true,
       updatedAt: new Date(),
-      adminRichMenuDoc: 'ATTEND_MAIN_ADMIN',
-      userRichMenuDoc:  'ATTEND_MAIN_USER',
+      adminRichMenuDoc: adminDoc,
+      userRichMenuDoc:  userDoc,
       appsSheetId,
     }, { merge:true });
 
-    return res.json({ ok:true, adminLineId, userLineId, linkedAdmins });
+        // ใช้ rich menu ตามที่ config เลือก (ถ้ามี) แทน fallback
+    async function getRichMenuLineId(docId, fallbackId) {
+      if (!docId) return fallbackId;
+      const snapDoc = await tenant.ref.collection('richmenus').doc(docId).get();
+      if (!snapDoc.exists) return fallbackId;
+      const d = snapDoc.data() || {};
+      return d.lineRichMenuId || d.richMenuId || fallbackId;
+    }
+
+    const adminLineIdFinal = await getRichMenuLineId(adminDoc, adminLineId);
+    const userLineIdFinal  = await getRichMenuLineId(userDoc,  userLineId);
+
+    // ตั้ง default OA เป็นเมนู user ที่เลือก (ถ้าเลือกไว้)
+    try { await unsetDefaultRichMenu(tenant.ref); } catch {}
+    try {
+      await callLineAPITenant(
+        tenant.ref,
+        `/v2/bot/user/all/richmenu/${encodeURIComponent(userLineIdFinal)}`,
+        { method: 'POST' }
+      );
+      console.log('[attendance/enable] set default OA ->', userLineIdFinal);
+    } catch (e) {
+      console.warn('[attendance/enable] set default warn', e?.status || e);
+    }
+
+    // ลิงก์เมนู ADMIN ให้ owner/admin ตามชีต (ใช้ตัวที่เลือก)
+    // (แก้จาก adminLineId → adminLineIdFinal ด้านบน loop)
+    // ... ใน loop ด้านบนเปลี่ยนเป็น ...
+    // const link = await callLineAPITenant(
+    //   tenant.ref,
+    //   `/v2/bot/user/${encodeURIComponent(uid)}/richmenu/${encodeURIComponent(adminLineIdFinal)}`,
+    //   { method: 'POST' }
+    // );
+
+    return res.json({
+      ok: true,
+      adminLineId: adminLineIdFinal,
+      userLineId:  userLineIdFinal,
+      linkedAdmins
+    });
+
   } catch (err) {
     console.error('[attendance/enable] error:', err);
     return res.status(500).json({ ok:false, error:String(err?.message || err) });
@@ -11023,7 +11070,8 @@ app.post('/api/tenants/:tid/integrations/attendance', express.json(), async (req
     const allowed = [
       'enabled','appsSheetId','standardStart','workHoursPerDay',
       'latePolicyJson','geoRadiusM','liffId','notifyBeforeHours',
-      'adminMenuImageUrl','userMenuImageUrl','autoApplyRichMenu'
+      'adminMenuImageUrl','userMenuImageUrl','autoApplyRichMenu',
+      'adminRichMenuDoc','userRichMenuDoc',
     ];
     const data = {};
     for (const k of allowed) if (req.body[k] !== undefined) data[k] = req.body[k];
