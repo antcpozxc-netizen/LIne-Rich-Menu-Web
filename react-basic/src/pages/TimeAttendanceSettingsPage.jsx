@@ -6,7 +6,9 @@ import {
 } from '@mui/material';
 import SettingsIcon from '@mui/icons-material/Settings';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import MenuOpenIcon from '@mui/icons-material/MenuOpen';
 import { getAuth } from 'firebase/auth';
+
 
 function useQuery() { return new URLSearchParams(window.location.search); }
 
@@ -25,9 +27,14 @@ async function safeJson(res) {
 const ADMIN_PREVIEW = '/static/hr_menu_admin.png';
 const USER_PREVIEW  = '/static/ta_menu_user.png';
 
+
+
 export default function TimeAttendanceSettingsPage() {
   const q = useQuery();
   const tenantId = q.get('tenant') || '';
+
+  const redirectPath  = '/homepage/settings/attendance';
+  const redirectParam = encodeURIComponent(redirectPath);
 
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState(null);
@@ -212,27 +219,96 @@ export default function TimeAttendanceSettingsPage() {
 
         {/* Right */}
         <Grid item xs={12} md={6}>
-          <Typography fontWeight={700}>Rich Menu (Preview)</Typography>
+          {/* Rich menu สำหรับ OA นี้ */}
+          <Typography fontWeight={700}>Rich menu สำหรับ OA นี้</Typography>
           <Divider sx={{ my:1 }} />
-          <Stack direction="row" spacing={2} sx={{ mb: 1, flexWrap: 'nowrap', overflowX: 'auto' }}>
+          <Typography variant="body2" sx={{ mb:1 }} color="text.secondary">
+            ระบบ Time Attendance จะสร้าง Rich Menu สำหรับ <b>Admin</b> และ <b>User</b> ให้อัตโนมัติ
+            และใช้คำสั่ง <b>"เมนู admin"</b> / <b>"รีเซ็ตเมนู"</b> เพื่อสลับเมนูใน LINE ได้
+          </Typography>
+
+          {/* Preview admin / user (เหมือนเดิม) */}
+          <Stack
+            direction="row"
+            spacing={2}
+            sx={{ mb: 1, flexWrap: 'nowrap', overflowX: 'auto' }}
+          >
             <Box sx={{ minWidth: 260 }}>
-              <Typography variant="body2" sx={{ mb:0.5 }}>Admin (owner/admin/payroll)</Typography>
-              <Box sx={{ border:'1px solid #e0e0e0', borderRadius:1, overflow:'hidden', width: 240 }}>
-                <img src={ADMIN_PREVIEW} alt="Admin rich menu" style={{ width:240, height:162, objectFit:'cover', display:'block' }} />
+              <Typography variant="body2" sx={{ mb:0.5 }}>
+                Admin (owner/admin/payroll)
+              </Typography>
+              <Box
+                sx={{
+                  border:'1px solid #e0e0e0',
+                  borderRadius:1,
+                  overflow:'hidden',
+                  width: 240
+                }}
+              >
+                <img
+                  src={ADMIN_PREVIEW}
+                  alt="Admin rich menu"
+                  style={{ width:240, height:162, objectFit:'cover', display:'block' }}
+                />
               </Box>
             </Box>
+
             <Box sx={{ minWidth: 260 }}>
-              <Typography variant="body2" sx={{ mb:0.5 }}>User (พนักงานทั่วไป)</Typography>
-              <Box sx={{ border:'1px solid #e0e0e0', borderRadius:1, overflow:'hidden', width: 240 }}>
-                <img src={USER_PREVIEW} alt="User rich menu" style={{ width:240, height:162, objectFit:'cover', display:'block' }} />
+              <Typography variant="body2" sx={{ mb:0.5 }}>
+                User (พนักงานทั่วไป)
+              </Typography>
+              <Box
+                sx={{
+                  border:'1px solid #e0e0e0',
+                  borderRadius:1,
+                  overflow:'hidden',
+                  width: 240
+                }}
+              >
+                <img
+                  src={USER_PREVIEW}
+                  alt="User rich menu"
+                  style={{ width:240, height:162, objectFit:'cover', display:'block' }}
+                />
               </Box>
             </Box>
           </Stack>
 
+          {/* ปุ่มไปหน้า Rich Menu Console ของ OA นี้ */}
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<MenuOpenIcon />}
+            sx={{ mt:1, mb:2 }}
+            component="a"
+            href={richMenuConsoleUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            disabled={!tenantId}
+          >
+            ไปที่หน้าจัดการ Rich Menu
+          </Button>
+
+          <Typography variant="caption" display="block" color="text.secondary">
+            * ปุ่มนี้ใช้จัดการ Rich Menu ของ OA โดยรวม (ทั้ง Time Attendance และบอทอื่น ๆ)
+          </Typography>
+
           <Divider sx={{ my:2 }} />
+
+          {/* LINE Webhook (เหมือนเดิม) */}
           <Typography fontWeight={700}>LINE Webhook</Typography>
-          <Typography variant="body2" sx={{ mt:1 }}>ตั้งค่า <b>Webhook URL</b> ใน LINE OA เป็น:</Typography>
-          <Box sx={{ p:1, bgcolor:'#f8f9fa', border:'1px dashed #cfd8dc', borderRadius:1, fontFamily:'monospace' }}>
+          <Typography variant="body2" sx={{ mt:1 }}>
+            ตั้งค่า <b>Webhook URL</b> ใน LINE OA เป็น:
+          </Typography>
+          <Box
+            sx={{
+              p:1,
+              bgcolor:'#f8f9fa',
+              border:'1px dashed #cfd8dc',
+              borderRadius:1,
+              fontFamily:'monospace'
+            }}
+          >
             {webhookUrl}
           </Box>
           <Typography variant="body2" sx={{ mt:1 }} color="text.secondary">

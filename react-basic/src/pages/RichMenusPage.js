@@ -286,6 +286,14 @@ export default function RichMenusPage() {
     const r = sp.get('redirect');
     try { return r ? decodeURIComponent(r) : ''; } catch { return r || ''; }
   })();
+
+  const isFromSettings = !!redirect && (
+    redirect.includes('/homepage/settings/taskbot') ||     // TaskAssignmentSettingsPage
+    redirect.includes('/homepage/settings/attendance') ||  // TimeAttendanceSettingsPage (เวอร์ชัน homepage)
+    redirect.includes('/homepage/task-assign-settings') || // fallback ชื่อเก่า
+    redirect.includes('/app/attendance/settings')          // TASettingPage (ถ้ามีเรียกใช้)
+  );
+
   // NEW: support prefill=prereg|main (จาก Task settings)
   const prefillKind = sp.get('prefill') || '';
 
@@ -639,6 +647,10 @@ async function onSaveDraft() {
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     setSnack('Saved draft locally (Guest)');
+
+    if (isFromSettings && redirect) {
+      navigate(redirect);
+    }
     return;
   }
 
@@ -696,6 +708,11 @@ async function onSaveDraft() {
     if (!res.ok || j?.ok === false) throw new Error(j?.error || txt || 'save failed');
 
     setSnack('Saved draft');
+
+    if (isFromSettings && redirect) {
+      navigate(redirect);
+      return;
+    }
 
     // ถ้าเพิ่งสร้างใหม่ -> เปลี่ยน URL เป็นโหมดแก้ไข (แทนที่จะรีเฟรช/เด้ง)
     const newId = j?.id || j?.docId || j?.data?.id || j?.data?.docId;
@@ -787,19 +804,23 @@ async function onSaveReady() {
           </Button>
           <Typography variant="h4" fontWeight="bold">Rich menu</Typography>
         </Stack>
-        <Stack direction="row" spacing={1}>
+                <Stack direction="row" spacing={1}>
           <Button variant="outlined" startIcon={<SaveAltIcon />} onClick={onSaveDraft}>
             Save draft
           </Button>
-          <Button
-            variant="contained"
-            startIcon={<SaveIcon />}
-            disabled={!canSave}
-            onClick={onSaveReady}
-            sx={{ bgcolor: '#66bb6a', '&:hover': { bgcolor: '#57aa5b' } }}
-          >
-            Save
-          </Button>
+
+          {/* NEW: ถ้ามาจาก Settings → ไม่ต้องมีปุ่ม Save */}
+          {!isFromSettings && (
+            <Button
+              variant="contained"
+              startIcon={<SaveIcon />}
+              disabled={!canSave}
+              onClick={onSaveReady}
+              sx={{ bgcolor: '#66bb6a', '&:hover': { bgcolor: '#57aa5b' } }}
+            >
+              Save
+            </Button>
+          )}
         </Stack>
       </Stack>
 
@@ -819,13 +840,34 @@ async function onSaveReady() {
                 </RadioGroup>
               </Stack>
             </Grid>
-            <Grid item xs={12} md={6}>
-              <Stack direction="row" spacing={2}>
-                <TextField label="Display from" type="datetime-local" size="small" value={periodFrom} onChange={(e) => setPeriodFrom(e.target.value)} sx={{ minWidth: 220 }} InputLabelProps={{ shrink: true }} />
-                <TextField label="to" type="datetime-local" size="small" value={periodTo} onChange={(e) => setPeriodTo(e.target.value)} sx={{ minWidth: 220 }} InputLabelProps={{ shrink: true }} />
-              </Stack>
-              <Typography variant="caption" color="text.secondary">ถ้าเว้นว่าง ระบบจะสร้างเป็น Ready โดยไม่มีตารางเวลา (ไม่ตั้ง default อัตโนมัติ)</Typography>
-            </Grid>
+            {/* NEW: ซ่อนช่วงเวลา ถ้ามาจาก settings */}
+            {!isFromSettings && (
+              <Grid item xs={12} md={6}>
+                <Stack direction="row" spacing={2}>
+                  <TextField
+                    label="Display from"
+                    type="datetime-local"
+                    size="small"
+                    value={periodFrom}
+                    onChange={(e) => setPeriodFrom(e.target.value)}
+                    sx={{ minWidth: 220 }}
+                    InputLabelProps={{ shrink: true }}
+                  />
+                  <TextField
+                    label="to"
+                    type="datetime-local"
+                    size="small"
+                    value={periodTo}
+                    onChange={(e) => setPeriodTo(e.target.value)}
+                    sx={{ minWidth: 220 }}
+                    InputLabelProps={{ shrink: true }}
+                  />
+                </Stack>
+                <Typography variant="caption" color="text.secondary">
+                  ถ้าเว้นว่าง ระบบจะสร้างเป็น Ready โดยไม่มีตารางเวลา (ไม่ตั้ง default อัตโนมัติ)
+                </Typography>
+              </Grid>
+            )}
           </Grid>
         </CardContent>
       </Card>

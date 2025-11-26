@@ -332,7 +332,8 @@ export default function TaskAssignmentSettingsPage() {
       });
 
       const j = await safeJson(res);
-      const back = encodeURIComponent('/homepage/task-assign-settings');
+      const back = encodeURIComponent('/homepage/settings/taskbot');
+
 
       // ถ้า API ใช้ไม่ได้/ตอบไม่ ok → เปิด editor โหมดพรีฟิลให้ไปก่อน
       if (!res.ok || j?.ok === false) {
