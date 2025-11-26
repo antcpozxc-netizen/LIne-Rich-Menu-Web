@@ -431,6 +431,10 @@ export default function RichMenusPage() {
       return; // ไม่ต้องไปโหลดจาก localStorage แล้ว
     }
 
+    if (isAttendancePrefill) {
+      return;
+    }
+
     // เดิม: ถ้าไม่มี prefill เลยค่อยอ่าน draft จาก localStorage
     const d = readDraft();
     if (d?.title) setTitle(d.title);
