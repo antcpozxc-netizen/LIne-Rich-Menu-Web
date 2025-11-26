@@ -393,8 +393,10 @@ export default function RichMenusPage() {
   useEffect(() => {
     if (draftId) return;
 
-    // มี prefill ที่ส่งมาทาง navigate (เช่นจาก TaskAssignmentSettings)
-    if (prefill) {
+    // ถ้าเป็นเส้นทาง Attendance (app=attendance & prefill=admin|user)
+    // ให้ข้าม prefill จาก location.state เพื่อไปใช้ logic ฝั่ง Attendance ด้านล่าง
+    const isAttendancePrefill = (app === 'attendance') && (prefillKind === 'admin' || prefillKind === 'user');
+    if (prefill && !isAttendancePrefill) {
       setTitle(prefill.title || '');
 
       if (prefill.size && template.size !== prefill.size) {
