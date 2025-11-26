@@ -284,7 +284,7 @@ export default function TimeAttendanceSettingsPage() {
       // ถ้า API ใช้งานไม่ได้ → เปิดโหมดพรีฟิลอย่างเดียว
       if (!res.ok || (j && j.ok === false)) {
         navigate(
-          `/homepage/rich-menus/new?tenant=${tenantId}&prefill=${which}&redirect=${back}`,
+          `/homepage/rich-menus/new?tenant=${tenantId}&app=attendance&prefill=${which}&redirect=${back}`,
           { replace: false }
         );
         return;
@@ -297,14 +297,14 @@ export default function TimeAttendanceSettingsPage() {
       if (realId) {
         navigate(
           `/homepage/rich-menus/new?tenant=${tenantId}` +
-          `&draft=${encodeURIComponent(realId)}` +
+          `&app=attendance&draft=${encodeURIComponent(realId)}` +
           `&prefill=${which}&redirect=${back}`,
           { replace: false }
         );
       } else if (guest) {
         navigate(
           `/homepage/rich-menus/new?tenant=${tenantId}` +
-          `&guestDraft=${encodeURIComponent(guest)}` +
+          `&app=attendance&guestDraft=${encodeURIComponent(guest)}` +
           `&prefill=${which}&redirect=${back}`,
           {
             replace: false,
@@ -313,14 +313,14 @@ export default function TimeAttendanceSettingsPage() {
         );
       } else {
         navigate(
-          `/homepage/rich-menus/new?tenant=${tenantId}&prefill=${which}&redirect=${back}`,
+          `/homepage/rich-menus/new?tenant=${tenantId}&app=attendance&prefill=${which}&redirect=${back}`,
           { replace: false }
         );
       }
     } catch (e) {
       const back = encodeURIComponent(redirectPath);
       navigate(
-        `/homepage/rich-menus/new?tenant=${tenantId}&prefill=${which}&redirect=${back}`,
+        `/homepage/rich-menus/new?tenant=${tenantId}&app=attendance&prefill=${which}&redirect=${back}`,
         { replace: false }
       );
       setMsg({

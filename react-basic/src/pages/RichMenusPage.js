@@ -297,7 +297,7 @@ export default function RichMenusPage() {
   // NEW: support prefill=prereg|main (จาก Task settings)
   const prefillKind = sp.get('prefill') || '';
 
-
+  const app = sp.get('app') || 'task'; // 'attendance' | 'task'
 
 
   const { isAuthed, ensureLogin } = useAuthx();
@@ -441,45 +441,79 @@ export default function RichMenusPage() {
   }, [draftId, prefill, template.size]);
 
 
-  // Prefill ผ่าน query: /rich-menus/new?prefill=prereg|main
+  // Prefill ผ่าน query: รองรับทั้ง task และ attendance
   useEffect(() => {
     if (draftId || !prefillKind || prefill) return;
 
-    const map = { prereg: '/static/prereg.json', main: '/static/main.json' };
-    const url = map[prefillKind];
-    if (!url) return;
+    // 1) กรณีเดิมของ Task (ไฟล์ JSON)
+    const jsonMap = {
+      task:    { prereg: '/static/prereg.json', main: '/static/main.json', admin: '/static/task_admin.json', user: '/static/task_user.json' },
+      // ถ้าไม่มีไฟล์สำหรับ attendance จะไปใช้โหมดรูปภาพด้านล่างแทน
+      attendance: { admin: null, user: null },
+    };
 
-    (async () => {
-      try {
-        const res = await fetch(url);
-        const data = await res.json();
+    const url = (jsonMap[app] || jsonMap.task)[prefillKind];
 
-        setTitle(data.title || '');
+    if (url) {
+      (async () => {
+        try {
+          const res = await fetch(url);
+          const data = await res.json();
 
-        // ปรับ template ให้ตรง size ในไฟล์
-        if (data.size && template.size !== data.size) {
-          const found = TEMPLATES.find(t => t.size === data.size) || template;
-          setTemplate(found);
+          setTitle(data.title || '');
+          if (data.size && template.size !== data.size) {
+            const found = TEMPLATES.find(t => t.size === data.size) || template;
+            setTemplate(found);
+          }
+          if (data.imageUrl) setImage(data.imageUrl);
+          if (data.chatBarText) setMenuBarLabel(data.chatBarText);
+
+          if (Array.isArray(data.areas) && data.areas.length) {
+            const toPct = (v) => Math.round(((Number(v) || 0) * 100) * 100) / 100;
+            const aPct = data.areas.map((a, i) => ({
+              id: `A${i + 1}`,
+              x: toPct(a.xPct), y: toPct(a.yPct),
+              w: toPct(a.wPct), h: toPct(a.hPct),
+            }));
+            setAreas(aPct);
+            setActions(data.areas.map(a => a.action || { type:'Select' }));
+          }
+        } catch {
+          /* ignore -> fallback ด้านล่าง */
         }
+      })();
+      return;
+    }
 
-        if (data.imageUrl) setImage(data.imageUrl);
-        if (data.chatBarText) setMenuBarLabel(data.chatBarText);
+    // 2) โหมด Attendance (หรือ fallback ถ้า JSON ไม่มี):
+    if (app === 'attendance' && (prefillKind === 'admin' || prefillKind === 'user')) {
+      // ตั้งค่าดีฟอลต์แบบ Time Attendance
+      // รูปตัวอย่าง: ใช้ไฟล์เดียวกับหน้า Settings ที่คุณใช้
+      const defaultImage =
+        prefillKind === 'admin' ? '/static/hr_menu_admin.png' : '/static/ta_menu_user.png';
 
-        if (Array.isArray(data.areas) && data.areas.length) {
-          const toPct = (v) => Math.round(((Number(v) || 0) * 100) * 100) / 100;
-          const aPct = data.areas.map((a, i) => ({
-            id: `A${i + 1}`,
-            x: toPct(a.xPct), y: toPct(a.yPct),
-            w: toPct(a.wPct), h: toPct(a.hPct),
-          }));
-          setAreas(aPct);
-          setActions(data.areas.map(a => a.action || { type: 'Select' }));
-        }
-      } catch {
-        // ถ้าไฟล์หาย/พัง ก็ปล่อยให้ผู้ใช้แก้เอง
-      }
-    })();
-  }, [draftId, prefillKind, template.size, prefill]);
+      setTitle(prefillKind === 'admin' ? 'TA – Admin' : 'TA – User');
+      // ใช้เทมเพลตใหญ่ 3 บล็อก (เหมือน UI คุณ)
+      const tpl = TEMPLATES.find(t => t.id === 'lg-3+3+full') || TEMPLATES[0];
+      setTemplate(tpl);
+      // สร้าง areas ตามเทมเพลตนั้น
+      const toAreas = tpl.preview.map((c, i) => {
+        const [x,y,w,h] = c;
+        return {
+          id: `A${i+1}`,
+          x: Math.round(((x/6)*100)*100)/100,
+          y: Math.round(((y/4)*100)*100)/100,
+          w: Math.round(((w/6)*100)*100)/100,
+          h: Math.round(((h/4)*100)*100)/100,
+        };
+      });
+      setAreas(toAreas);
+      setActions(Array.from({ length: toAreas.length }, () => ({ type:'Select' })));
+      setImage(defaultImage);
+      setMenuBarLabel('เมนู');
+      setBehavior('shown');
+    }
+  }, [draftId, prefillKind, template.size, prefill, app]);
 
 
   useEffect(() => {
