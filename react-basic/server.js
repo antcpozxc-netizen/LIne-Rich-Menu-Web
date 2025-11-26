@@ -4932,33 +4932,46 @@ app.post('/api/tenants/:id/richmenus/start-edit',
         .doc(gid).collection('richmenus').doc();
 
       // payload ที่จะใช้ทั้งเก็บใน draft และส่งกลับไปให้หน้า RichMenusPage พรีฟิล
+      const baseW = 2500;
+      const baseH = (data.size === 'compact') ? 843 : 1686;
+
+      const toFrac = (v, base) => {
+        const n = Number(v);
+        if (!isFinite(n) || n < 0) return 0;
+        // ถ้าเดิมเป็นสัดส่วน 0–1 อยู่แล้ว ก็ใช้ต่อได้เลย
+        if (n <= 1.0001) return n;
+        // ถ้าเป็นพิกเซล → แปลงเป็นสัดส่วน 0–1
+        return Math.max(0, Math.min(1, n / base));
+      };
+
       const payload = {
         title: data.title || '',
         imageUrl: data.imageUrl || '',
-        // ใช้ size เดิม ถ้าไม่มีให้ default เป็น 'large' (ให้ตรงกับฝั่ง guest/save)
         size: data.size || 'large',
-
-        // ถ้า tenant richmenu ไม่มี chatBarText/behavior ก็ให้ default ไว้ก่อน
         chatBarText: data.chatBarText || data.menuBarLabel || 'Menu',
         defaultBehavior: data.defaultBehavior || data.behavior || 'shown',
 
-        // area/action เดิมทั้งหมด
-        // area/action เดิมทั้งหมด (รองรับทั้งฟอร์แมต bounds และ xPct/yPct/wPct/hPct)
+        // ✅ แปลง bounds → xPct/yPct/wPct/hPct แบบสัดส่วน (0–1)
         areas: Array.isArray(data.areas)
           ? data.areas.map((a) => {
               const b = a.bounds || {};
+              const xFrac = toFrac(a.xPct ?? b.xPct ?? b.x, baseW);
+              const yFrac = toFrac(a.yPct ?? b.yPct ?? b.y, baseH);
+              const wFrac = toFrac(a.wPct ?? b.wPct ?? b.width, baseW);
+              const hFrac = toFrac(a.hPct ?? b.hPct ?? b.height, baseH);
+
               return {
-                // แปลงค่าเป็นเปอร์เซ็นต์ (หรือใช้ค่าที่มีอยู่แล้ว)
-                xPct: a.xPct ?? b.xPct ?? (b.x ?? a.x ?? 0),
-                yPct: a.yPct ?? b.yPct ?? (b.y ?? a.y ?? 0),
-                wPct: a.wPct ?? b.wPct ?? (b.width ?? a.w ?? 0),
-                hPct: a.hPct ?? b.hPct ?? (b.height ?? a.h ?? 0),
+                xPct: xFrac,
+                yPct: yFrac,
+                wPct: wFrac,
+                hPct: hFrac,
                 action: a.action || null,
               };
             })
           : [],
-
       };
+
+
 
       const now = admin.firestore.FieldValue.serverTimestamp();
 

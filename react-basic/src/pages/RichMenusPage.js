@@ -369,6 +369,19 @@ export default function RichMenusPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId, draftId]);
 
+  const normalizeAction = (raw) => {
+    if (!raw) return { type: 'Select' };
+    // แปลง action ที่เคยเก็บแบบ LINE ให้เป็นแบบ editor ใช้
+    if (raw.type === 'message') {
+      return { type: 'Text', text: raw.text || '' };
+    }
+    if (raw.type === 'uri') {
+      return { type: 'Link', url: raw.uri || raw.url || '', label: raw.label || '' };
+    }
+    return raw; // กรณีอื่น ๆ ใช้เดิมไปก่อน
+  };
+
+
   useEffect(() => {
     if (draftId) return;
 
@@ -385,7 +398,7 @@ export default function RichMenusPage() {
       if (prefill.chatBarText)   setMenuBarLabel(prefill.chatBarText);
       if (prefill.defaultBehavior) setBehavior(prefill.defaultBehavior);
 
-      if (Array.isArray(prefill.areas) && prefill.areas.length) {
+            if (Array.isArray(prefill.areas) && prefill.areas.length) {
         const toPct = (v) =>
           Math.round(((Number(v) || 0) * 100) * 100) / 100;
 
@@ -398,7 +411,7 @@ export default function RichMenusPage() {
         }));
 
         setAreas(aPct);
-        setActions(prefill.areas.map((a) => a.action || { type: 'Select' }));
+        setActions(prefill.areas.map((a) => normalizeAction(a.action)));
       }
       return; // ไม่ต้องไปโหลดจาก localStorage แล้ว
     }
