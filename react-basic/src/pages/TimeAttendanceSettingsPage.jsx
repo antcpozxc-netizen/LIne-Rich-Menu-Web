@@ -101,6 +101,11 @@ export default function TimeAttendanceSettingsPage() {
   const tid = useMemo(() => getActiveTenantId(), []);
   const navigate = useNavigate();
 
+  // force unlink ทั้ง OA ตอน enable เสมอ
+  const FORCE_UNLINK_ALL = true;
+  // ถ้าต้องการโชว์ตัวเลือกในอนาคต ค่อยเปลี่ยนเป็น useState ได้
+  const DELETE_MENUS = false;
+
   // auth
   const [authed, setAuthed] = useState(!!getAuth().currentUser);
   useEffect(() => onAuthStateChanged(getAuth(), (u) => setAuthed(!!u)), []);
@@ -315,7 +320,9 @@ export default function TimeAttendanceSettingsPage() {
         if (r2.ok && j2?.ok) setMsg({ type:'success', text:'บันทึก & Apply Rich menus เรียบร้อย ✅' });
         else {
           const en = await fetch(`/api/tenants/${tid}/integrations/attendance/enable`, {
-            method:'POST', headers:{ 'Content-Type':'application/json', ...h }, body: JSON.stringify({})
+            method:'POST',
+            headers:{ 'Content-Type':'application/json', ...h },
+            body: JSON.stringify({ forceUnlinkAll: FORCE_UNLINK_ALL })
           });
           const jEn = await safeJson(en);
           if (en.ok && jEn?.ok) setMsg({ type:'success', text:'บันทึกแล้ว และซิงก์ Rich menus ให้เรียบร้อย ✅' });
@@ -341,14 +348,18 @@ export default function TimeAttendanceSettingsPage() {
       await onSave(false);
       if (next) {
         const en = await fetch(`/api/tenants/${tid}/integrations/attendance/enable`, {
-          method:'POST', headers:{ 'Content-Type':'application/json', ...h }, body: JSON.stringify({})
+          method:'POST',
+          headers:{ 'Content-Type':'application/json', ...h },
+          body: JSON.stringify({ forceUnlinkAll: FORCE_UNLINK_ALL })
         });
         const j = await safeJson(en);
         if (!(en.ok && j?.ok)) throw new Error(j?.error || 'Enable Attendance ไม่สำเร็จ');
         setMsg({ type:'success', text:'Enabled + Apply Rich menus เรียบร้อย ✅' });
       } else {
         const di = await fetch(`/api/tenants/${tid}/integrations/attendance/disable`, {
-          method:'POST', headers:{ 'Content-Type':'application/json', ...h }, body: JSON.stringify({})
+          method:'POST',
+          headers:{ 'Content-Type':'application/json', ...h },
+          body: JSON.stringify({ deleteMenus: DELETE_MENUS })
         });
         const j = await safeJson(di);
         if (!(di.ok && j?.ok)) throw new Error(j?.error || 'Disable Attendance ไม่สำเร็จ');

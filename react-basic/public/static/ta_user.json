@@ -4,13 +4,13 @@
   "imageUrl": "/static/ta_menu_user.png",
   "chatBarText": "เมนู",
   "areas": [
-    { "xPct": 0.52, "yPct": 0.12, "wPct": 0.26, "hPct": 0.38,
+    { "xPct": 0.42, "yPct": 0.11, "wPct": 0.26, "hPct": 0.39,
       "action": { "type": "Text", "text": "ลงเวลา" } },
-    { "xPct": 0.79, "yPct": 0.12, "wPct": 0.18, "hPct": 0.38,
+    { "xPct": 0.69, "yPct": 0.11, "wPct": 0.26, "hPct": 0.39,
       "action": { "type": "Text", "text": "ออกงาน" } },
-    { "xPct": 0.52, "yPct": 0.56, "wPct": 0.26, "hPct": 0.36,
+    { "xPct": 0.42, "yPct": 0.56, "wPct": 0.26, "hPct": 0.38,
       "action": { "type": "Text", "text": "ลางาน" } },
-    { "xPct": 0.79, "yPct": 0.56, "wPct": 0.18, "hPct": 0.36,
+    { "xPct": 0.69, "yPct": 0.56, "wPct": 0.26, "hPct": 0.38,
       "action": { "type": "Text", "text": "ลงทะเบียนเข้าใช้งาน" } }
   ]
 }

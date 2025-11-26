@@ -395,6 +395,124 @@ async function getTenantCfg(tenantId) {
 }
 
 
+// ยกเลิก default rich menu ของบอท
+async function unsetDefaultRichMenu(tenantRef) {
+  const r = await callLineAPITenant(tenantRef, '/v2/bot/user/all/richmenu', { method: 'DELETE' });
+  if (!r.ok && r.status !== 404) {
+    const t = await r.text().catch(()=> '');
+    throw new Error(`unset default failed: ${r.status} ${t}`);
+  }
+}
+
+// ดึงรายชื่อผู้ใช้ที่เรารู้จัก (จาก Firestore tenants/{id}/members)
+async function listKnownLineUserIds(tenantRef) {
+  const snap = await tenantRef.collection('members')
+    .where('lineUserId', '!=', null).get();
+  return snap.docs
+    .map(d => (d.data()?.lineUserId || '').trim())
+    .filter(Boolean);
+}
+
+// Unlink รายคนแบบ bulk เป็นชุด ๆ (500 id ต่อครั้ง)
+async function bulkUnlink(tenantRef, userIds) {
+  const CHUNK = 500;
+  let done = 0;
+  for (let i = 0; i < userIds.length; i += CHUNK) {
+    const part = userIds.slice(i, i + CHUNK);
+    const r = await callLineAPITenant(
+      tenantRef,
+      '/v2/bot/richmenu/bulk/unlink',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userIds: part })
+      }
+    );
+    // ไม่ต้อง fail ทั้งงานถ้า subset ไหน error; log ไว้พอ
+    if (!r.ok) {
+      const txt = await r.text().catch(()=> '');
+      console.warn('[bulk/unlink] warn', r.status, txt);
+    } else {
+      done += part.length;
+    }
+  }
+  return done;
+}
+
+
+// ล้าง rich menu ทั้ง OA โดยไม่พึ่ง Firestore – ใช้ LINE followers/ids
+// ล้าง default OA + unlink rich menu ของผู้ใช้ทุกคนใน OA นี้
+async function unlinkAllRichMenusForTenant(tenantRef, opts = {}) {
+  const accessToken = await getTenantSecretAccessToken(tenantRef);
+  let total = 0;
+
+  // 1) ล้าง default OA (DELETE /user/all/richmenu)
+  try {
+    const resp = await fetchFn('https://api.line.me/v2/bot/user/all/richmenu', {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    console.log('[RM][unlinkAll][default]', resp.status);
+  } catch (e) {
+    console.warn('[RM][unlinkAll][default] warn:', e?.message || e);
+  }
+
+  // 2) ไล่ลบลิงก์ราย user จาก followers list
+  try {
+    let start = undefined;
+    while (true) {
+      const url = new URL('https://api.line.me/v2/bot/followers/ids');
+      if (start) url.searchParams.set('start', start);
+
+      const resp = await fetchFn(url.toString(), {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+
+      if (!resp.ok) {
+        const txt = await resp.text().catch(() => '');
+        console.warn('[RM][unlinkAll] followers list fail', resp.status, txt);
+        break;
+      }
+
+      const data = await resp.json().catch(() => ({}));
+      const ids = Array.isArray(data.userIds) ? data.userIds : [];
+
+      for (const uid of ids) {
+        try {
+          const r = await fetchFn(
+            `https://api.line.me/v2/bot/user/${encodeURIComponent(uid)}/richmenu`,
+            {
+              method: 'DELETE',
+              headers: { Authorization: `Bearer ${accessToken}` },
+            }
+          );
+          if (r.status !== 404) {
+            total++;
+          }
+        } catch (e) {
+          console.warn('[RM][unlinkAll] unlink user error', uid, e?.message || e);
+        }
+        // กัน rate limit
+        await new Promise((r) => setTimeout(r, 80));
+      }
+
+      if (!data.next) break;
+      start = data.next;
+    }
+  } catch (e) {
+    console.warn('[RM][unlinkAll] loop error', e?.message || e);
+  }
+
+  console.log('[RM][unlinkAll] { count:', total, '}');
+  // ✅ จุดสำคัญ: ต้องคืนค่าจริง ๆ
+  return { count: total };
+}
+
+
+
+
+
 
 async function getRoleSafe(tenantId, lineUserId){
   const hit = readRole(tenantId, lineUserId);
@@ -2358,6 +2476,43 @@ async function ensureUserLinkedRichMenuByToken(accessToken, userId, targetRichMe
   }
   return false;
 }
+
+// ==== Unlink all rich menus for this tenant (cancel default + bulk unlink known members) ====
+async function unlinkAllRichMenusForTenant(tenantRef, accessToken) {
+  try {
+    // 1) ยกเลิก default rich menu ของบอท (มีผลทุกคน)
+    await fetchFn('https://api.line.me/v2/bot/richmenu/bot', {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }).catch(() => {});
+
+    // 2) ดึง userId ที่เรารู้จักจาก Firestore (members collection)
+    const membersSnap = await tenantRef.collection('members')
+      .where('lineUserId', '!=', null).get();
+    const userIds = membersSnap.docs
+      .map(d => (d.data()?.lineUserId || '').trim())
+      .filter(Boolean);
+
+    // 3) ยิง bulk unlink ทีละชุด (LINE จำกัด ~500 ids/ครั้ง)
+    const CHUNK = 500;
+    for (let i = 0; i < userIds.length; i += CHUNK) {
+      const chunk = userIds.slice(i, i + CHUNK);
+      await fetchFn('https://api.line.me/v2/bot/richmenu/bulk/unlink', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ userIds: chunk }),
+      }).catch(() => {});
+    }
+
+    console.log('[RM][unlinkAll]', { count: userIds.length });
+  } catch (e) {
+    console.error('[RM][unlinkAll] error', e);
+  }
+}
+
 
 
 async function linkRichMenuToUserByToken(accessToken, userId, richMenuId) {
@@ -4813,6 +4968,9 @@ app.post('/api/tenants/:id/integrations/taskbot/apply-richmenus',
       const tenant = await getTenantIfMember(id, req.user.uid);
       if (!tenant) return res.status(403).json({ ok:false, error:'not_member_of_tenant' });
 
+      // (NEW) ออปชันล้างทุกคนก่อนสลับ
+      const forceUnlinkAll = !!req.body?.forceUnlinkAll; // default = false
+
       // 1) read body
       let { preRichMenuId: pre, postRichMenuId: post, ensurePreset } = req.body || {};
       pre  = String(pre  || '').trim();
@@ -4849,10 +5007,14 @@ app.post('/api/tenants/:id/integrations/taskbot/apply-richmenus',
         }
 
         const hasAreas = Array.isArray(data.areas) && data.areas.length > 0;
-        const imgUrl   = data.imageUrl;
+        let imgUrl   = data.imageUrl;
         if (!imgUrl || !hasAreas) { console.warn('[APPLY] missing areas/image', { hasAreas, imgUrl }); return null; }
 
-        const absoluteImageUrl = /^https?:\/\//i.test(imgUrl) ? imgUrl : `${BASE_APP_URL}${imgUrl}`;
+        // (NEW) ทำ absolute URL ถ้าเป็น /static/...
+        if (!/^https?:\/\//i.test(imgUrl)) {
+          imgUrl = `${BASE_APP_URL}${imgUrl}`;
+        }
+
         const accessToken = await getTenantSecretAccessToken(tenant.ref);
 
         try {
@@ -4862,7 +5024,7 @@ app.post('/api/tenants/:id/integrations/taskbot/apply-richmenus',
             chatBarText: data.chatBarText || 'Menu',
             size: data.size || 'large',
             areasPx: data.areas,
-            imageUrl: absoluteImageUrl,
+            imageUrl: imgUrl,
           });
           const richMenuId = created?.richMenuId || created;
           await dref.set({ lineRichMenuId: richMenuId, status:'ready', updatedAt: new Date() }, { merge:true });
@@ -4880,7 +5042,7 @@ app.post('/api/tenants/:id/integrations/taskbot/apply-richmenus',
       if (!preLineId)  return res.status(400).json({ ok:false, error:'pre_menu_has_no_line_id' });
       const postLineId = post ? await ensureLineIdFromDoc(post) : null;
 
-      // 4.1) ⬅️ NEW: sync alias-docs ให้ KIND → lineRichMenuId ล่าสุด
+      // 4.1) sync alias-docs ให้ KIND → lineRichMenuId ล่าสุด
       try {
         const rm = tenant.ref.collection('richmenus');
         const ts = admin.firestore.FieldValue.serverTimestamp();
@@ -4892,6 +5054,19 @@ app.post('/api/tenants/:id/integrations/taskbot/apply-richmenus',
         console.warn('[APPLY] alias sync failed', e?.message || e);
       }
 
+      // (NEW) เคลียร์ default เดิมเสมอ เพื่อกันค่าเดิมค้าง
+      try { await unsetDefaultRichMenu(tenant.ref); } catch {}
+
+      // (NEW, optional) ล้างลิงก์รายคนทั้งหมดก่อน ตั้ง default ใหม่ (ปลอดภัยสุด)
+      if (forceUnlinkAll) {
+        try {
+          const r = await unlinkAllRichMenusForTenant(tenant.ref, { includeTAAdmins: false });
+          console.log('[APPLY] forceUnlinkAll done:', r.count);
+        } catch (e) {
+          console.warn('[APPLY] forceUnlinkAll warn:', e?.message || e);
+        }
+      }
+
       // 5) ตั้ง default = PRE (ก่อนลงทะเบียน) เสมอ
       const setDef = await callLineAPITenant(
         tenant.ref,
@@ -4901,7 +5076,7 @@ app.post('/api/tenants/:id/integrations/taskbot/apply-richmenus',
       const setTxt = await setDef.text().catch(()=> '');
       console.log('[APPLY] set default to PRE', setDef.status, setTxt || '(ok)');
 
-      // 5.1) Auto unlink ผู้ที่กด Enable (ลบลิงก์รายคน)
+      // 5.1) Auto unlink ผู้ที่กด Enable (ให้เห็นผลทันทีบนเครื่องตัวเอง)
       try {
         const me = extractLineUserId(req.user);
         if (!me) {
@@ -4934,6 +5109,7 @@ app.post('/api/tenants/:id/integrations/taskbot/apply-richmenus',
     }
   }
 );
+
 
 
 
@@ -5229,25 +5405,35 @@ app.post('/api/tenants/:id/integrations/taskbot/bootstrap', requireFirebaseAuth,
 });
 // ยกเลิก Default rich menu ของ OA (DELETE /user/all/richmenu)
 // server.js
-app.post('/api/tenants/:id/integrations/taskbot/disable',
+// ===== Task Assignment – Disable integration =====
+app.post(
+  '/api/tenants/:id/integrations/taskbot/disable',
   requireFirebaseAuth,
+  express.json(),
   async (req, res) => {
     try {
       const { id } = req.params;
       const tenant = await getTenantIfMember(id, req.user.uid);
-      if (!tenant) return res.status(403).json({ ok:false, error:'not_member_of_tenant' });
-
-      // 1) ลบ default rich menu ของ OA
-      try {
-        await unsetDefaultRichMenu(tenant.ref); // helper เดิมของคุณ
-        console.log('[DISABLE] unset default ok');
-      } catch (e) {
-        // fallback: เรียก LINE API ตรง ๆ
-        const r = await callLineAPITenant(tenant.ref, '/v2/bot/user/all/richmenu', { method:'DELETE' });
-        console.log('[DISABLE] unset default via API', r.status, await r.text().catch(()=>'(ok)'));
+      if (!tenant) {
+        return res.status(403).json({ ok:false, error:'not_member_of_tenant' });
       }
 
-      // 2) ล้างลิงก์รายบุคคลของ "ผู้ที่กด Disable" เพื่อให้เห็นผลทันที
+      // ถ้าอยากลบเมนู PREREG / MAIN ออกจาก LINE server ด้วย ให้ส่ง { deleteMenus:true }
+      const deleteMenus = !!req.body?.deleteMenus;
+
+      // 1) unlink richmenu ทั้งหมด (taskbot ไม่เกี่ยว TA admin)
+      let unlinkSum = { count: 0 };
+      try {
+        const tmp = await unlinkAllRichMenusForTenant(tenant.ref, {
+          includeTAAdmins: false,
+        });
+        unlinkSum = tmp || unlinkSum;
+        console.log('[RM][unlinkAll][taskbot]', unlinkSum);
+      } catch (e) {
+        console.warn('[taskbot/disable] unlinkAllRichMenusForTenant error:', e?.message || e);
+      }
+
+      // 2) พยายาม unlink เมนูของ "คนที่กดปุ่ม" เช่นเดียวกับ TA
       try {
         const me = extractLineUserId(req.user);
         if (me) {
@@ -5256,35 +5442,100 @@ app.post('/api/tenants/:id/integrations/taskbot/disable',
             `/v2/bot/user/${encodeURIComponent(me)}/richmenu`,
             { method: 'DELETE' }
           );
-          console.log('[DISABLE] unlink self', me, r.status, await r.text().catch(()=>'(ok)'));
+          console.log('[taskbot/disable] unlink self', me, r.status);
         } else {
-          console.warn('[DISABLE] skip unlink self: cannot resolve LINE user id from req.user');
+          console.warn('[taskbot/disable] skip unlink self: cannot resolve LINE user id from req.user');
         }
       } catch (e) {
-        console.warn('[DISABLE] unlink self failed', e?.message || e);
+        console.warn('[taskbot/disable] unlink self failed', e?.message || e);
       }
 
-      // 3) เคลียร์สถานะ integration + alias PREREG/MAIN
+      // 3) ลบเมนู PREREG / MAIN ออกจาก LINE server ถ้าขอให้ลบจริง ๆ
+      let deletedMenus = 0;
+      if (deleteMenus) {
+        for (const alias of ['PREREG', 'MAIN']) {
+          try {
+            const snap = await tenant.ref.collection('richmenus').doc(alias).get();
+            const d   = snap.exists ? (snap.data() || {}) : {};
+            const rid = d.lineRichMenuId || d.richMenuId || d.lineId || '';
+            if (!rid) continue;
+
+            const resp = await callLineAPITenant(
+              tenant.ref,
+              `/v2/bot/richmenu/${encodeURIComponent(rid)}`,
+              { method: 'DELETE' }
+            );
+            if (resp.ok) {
+              deletedMenus++;
+              console.log('[taskbot/disable] deleted menu', alias, rid);
+            } else {
+              const txt = await resp.text().catch(() => '');
+              console.warn(
+                '[taskbot/disable] delete menu warn',
+                alias,
+                rid,
+                resp.status,
+                txt
+              );
+            }
+          } catch (e) {
+            console.warn('[taskbot/disable] delete menu error', alias, e?.message || e);
+          }
+          await new Promise(r => setTimeout(r, 70));
+        }
+      }
+
+      // 4) ปิดสถานะใน Firestore
       const ts = admin.firestore.FieldValue.serverTimestamp();
       const rm = tenant.ref.collection('richmenus');
 
       await tenant.ref.collection('integrations').doc('taskbot').set({
         enabled: false,
-        preRichMenuId: admin.firestore.FieldValue.delete(),
+        preRichMenuId:  admin.firestore.FieldValue.delete(),
         postRichMenuId: admin.firestore.FieldValue.delete(),
         updatedAt: ts,
       }, { merge: true });
 
-      await rm.doc('PREREG').set({ lineRichMenuId: admin.firestore.FieldValue.delete(), updatedAt: ts }, { merge: true });
-      await rm.doc('MAIN').set({   lineRichMenuId: admin.firestore.FieldValue.delete(), updatedAt: ts }, { merge: true });
+      await rm.doc('PREREG').set({
+        lineRichMenuId: admin.firestore.FieldValue.delete(),
+        updatedAt: ts,
+      }, { merge: true });
 
-      return res.json({ ok: true });
+      await rm.doc('MAIN').set({
+        lineRichMenuId: admin.firestore.FieldValue.delete(),
+        updatedAt: ts,
+      }, { merge: true });
+
+      // 5) ล้าง default richmenu ของ OA เหมือน TA
+      try {
+        const resp = await callLineAPITenant(
+          tenant.ref,
+          '/v2/bot/user/all/richmenu',
+          { method: 'DELETE' }
+        );
+        console.log('[taskbot/disable] clear default OA richmenu status =', resp?.status);
+      } catch (e) {
+        console.warn('[taskbot/disable] clear default OA richmenu error:', e?.message || e);
+      }
+
+      return res.json({
+        ok: true,
+        unlinked: unlinkSum?.count ?? 0,
+        deletedMenus,
+      });
     } catch (e) {
       console.error('[taskbot/disable] error:', e);
-      return res.status(500).json({ ok:false, error:'server_error', detail:String(e?.message || e) });
+      return res.status(500).json({
+        ok:false,
+        error:'server_error',
+        detail:String(e?.message || e),
+      });
     }
   }
 );
+
+
+
 
 
 
@@ -5335,7 +5586,7 @@ app.post('/api/tenants/:id/integrations/attendance/verify', requireFirebaseAuth,
   }
 });
 
-
+const toAbsolute = (u) => /^https?:\/\//i.test(u) ? u : `${BASE_APP_URL}${u}`;
 
 app.post('/api/tenants/:id/integrations/attendance/enable', requireFirebaseAuth, async (req, res) => {
   try {
@@ -5391,6 +5642,8 @@ app.post('/api/tenants/:id/integrations/attendance/enable', requireFirebaseAuth,
       userAreasMsg[3] = { bounds: regBtn.bounds, action: { type:'message', text:'ลงทะเบียนเข้าใช้งาน' } };
     }
 
+    const forceUnlinkAll = !!req.body?.forceUnlinkAll; // default = false
+
     // 2) สร้าง/อัปโหลด (ถ้ายังไม่มี หรือ preset เปลี่ยนให้ recreate)
     async function ensure(docId, imageUrl, areasPx) {
       const dref = tenant.ref.collection('richmenus').doc(docId);
@@ -5398,6 +5651,8 @@ app.post('/api/tenants/:id/integrations/attendance/enable', requireFirebaseAuth,
       const data = snap.exists ? (snap.data() || {}) : {};
 
       let rid = data.lineRichMenuId || data.richMenuId || '';
+
+      const absImg = toAbsolute(imageUrl);
 
       // เปรียบเทียบของเดิมกับพรีเซ็ตใหม่
       const prevAreas = data.areas || [];
@@ -5436,14 +5691,18 @@ app.post('/api/tenants/:id/integrations/attendance/enable', requireFirebaseAuth,
         });
 
         const created = await createAndUploadRichMenuOnLINE({
-          accessToken, title: docId, chatBarText: 'เมนู', size: 'large', areasPx, imageUrl
+          accessToken, title: docId, chatBarText: 'เมนู', size: 'large', areasPx, imageUrl: absImg
         });
         rid = created.richMenuId;
         console.log(`[ensureRichMenu:${docId}] created new rid=`, rid);
 
         await dref.set({
           kind: docId, title: docId, size: 'large', chatBarText: 'เมนู',
-          imageUrl, areas: areasPx, lineRichMenuId: rid, status: 'ready', updatedAt: new Date()
+          imageUrl: absImg,               // ✅ เก็บ absolute ลง Firestore
+          areas: areasPx,
+          lineRichMenuId: rid,
+          status: 'ready',
+          updatedAt: new Date()
         }, { merge: true });
 
       } else {
@@ -5457,20 +5716,17 @@ app.post('/api/tenants/:id/integrations/attendance/enable', requireFirebaseAuth,
     const adminLineId = await ensure('ATTEND_MAIN_ADMIN', ADMIN_IMAGE, adminAreasMsg);
     const userLineId  = await ensure('ATTEND_MAIN_USER',  USER_IMAGE,  userAreasMsg);
 
-    // 3) เคลียร์ default เก่า แล้วตั้ง default OA เป็นเมนู USER
-    try { await unsetDefaultRichMenu(tenant.ref); } catch {}
-    try {
-      await callLineAPITenant(
-        tenant.ref,
-        `/v2/bot/user/all/richmenu/${encodeURIComponent(userLineId)}`,
-        { method: 'POST' }
-      );
-      console.log('[attendance/enable] set default OA ->', userLineId);
-    } catch (e) {
-      console.warn('[attendance/enable] set default warn', e?.status || e);
+    if (forceUnlinkAll) {
+      try {
+        const r = await unlinkAllRichMenusForTenant(tenant.ref, { includeTAAdmins: true });
+        console.log('[attendance/enable] forceUnlinkAll done:', r?.count ?? 0);
+      } catch (e) {
+        console.warn('[attendance/enable] forceUnlinkAll warn:', e?.message || e);
+      }
     }
 
-    // 3.1) ลิงก์เมนู ADMIN ให้ owner/admin ตาม “ชีต” (roles -> fallback employees.role)
+
+    // 3) ลิงก์เมนู ADMIN ให้ owner/admin ตาม “ชีต” (roles -> fallback employees.role)
     let linkedAdmins = 0;
     try {
       const resp = await callAttendanceGASDirect('list_admins', { tenantRef: tenant.ref });
@@ -5580,119 +5836,124 @@ app.post(
     try {
       const { id } = req.params;
       const tenant = await getTenantIfMember(id, req.user.uid);
-      if (!tenant) return res.status(403).json({ ok:false, error:'not_member_of_tenant' });
+      if (!tenant) {
+        return res.status(403).json({ ok: false, error: 'not_member_of_tenant' });
+      }
 
       const deleteMenus = !!req.body?.deleteMenus;
 
-      // รายชื่อที่จะ unlink: รับจาก body เท่านั้น (ไม่ดึงจาก GAS แล้ว)
-      // ---- รายชื่อที่จะ unlink ----
-      let unlinkUserIds = Array.isArray(req.body?.userIds) ? req.body.userIds.filter(Boolean) : [];
-
-      // (ออปชัน) current user
-      const bodyCurrent = (req.body?.currentLineUserId || '').trim();
-      let currentLineUserId = bodyCurrent;
-      if (!currentLineUserId && typeof extractLineUserId === 'function') {
-        try { currentLineUserId = extractLineUserId(req.user) || ''; } catch {}
-      }
-      if (currentLineUserId) unlinkUserIds.push(currentLineUserId);
-
-    
-      // ✅ ดึง owner/admin จากชีต roles ผ่าน GAS Attendance
-      let adminIds = [];
+      // 1) unlink richmenu ทั้งหมด (กันกรณีฟังก์ชันคืน undefined)
+      let unlinkSum = { count: 0 };
       try {
-        const resp = await callAttendanceGASDirect('list_admins', { tenantRef: tenant.ref });
-        adminIds = Array.isArray(resp?.ids) ? resp.ids.filter(Boolean) : [];
-        console.log('[attendance/disable] admins from sheet =', adminIds);
+        const tmp = await unlinkAllRichMenusForTenant(tenant.ref, {
+          includeTAAdmins: true,   // TA ใช้ admin จากระบบลงเวลา
+        });
+        unlinkSum = tmp || unlinkSum;
+        console.log('[RM][unlinkAll][attendance]', unlinkSum);
       } catch (e) {
-        console.warn('[attendance/disable] list_admins via TA failed:', String(e?.message || e));
+        console.warn('[attendance/disable] unlinkAllRichMenusForTenant error:', e?.message || e);
       }
-      unlinkUserIds.push(...adminIds);
-      console.log('[attendance/disable] will unlink users:', unlinkUserIds);
 
-
-      // 1) ล้าง default ของ OA
+      // 2) พยายาม unlink เมนูของ "คนที่กดปุ่ม" (ถ้ารู้ LINE userId จาก req.user)
       try {
-        const resp = await callLineAPITenant(tenant.ref, '/v2/bot/user/all/richmenu', { method:'DELETE' });
-        if (!resp.ok && resp.status !== 404) {
-          const txt = await resp.text().catch(()=> '');
-          throw new Error(`unset default failed: ${resp.status} ${txt}`);
-        }
-        console.log('[attendance/disable] unset default OK');
-      } catch (e) {
-        console.warn('[attendance/disable] unset default warn:', String(e?.message || e));
-      }
-
-      // 2) unlink รายบุคคล (ถ้าระบุมา)
-      let unlinkedCount = 0;
-      for (const uid of unlinkUserIds) {
-        try {
-          const del = await callLineAPITenant(
+        const me = extractLineUserId(req.user);
+        if (me) {
+          const r = await callLineAPITenant(
             tenant.ref,
-            `/v2/bot/user/${encodeURIComponent(uid)}/richmenu`,
-            { method:'DELETE' }
+            `/v2/bot/user/${encodeURIComponent(me)}/richmenu`,
+            { method: 'DELETE' }
           );
-          if (!del.ok && del.status !== 404) {
-            const txt = await del.text().catch(()=> '');
-            console.warn('[attendance/disable] unlink fail', uid, del.status, txt);
-          } else {
-            // verify (GET): ถ้ายังมีเมนูจะได้ 200, ถ้าไม่มีกลับ 404
-            let ok404 = true;
-            try {
-              const chk = await callLineAPITenant(
-                tenant.ref,
-                `/v2/bot/user/${encodeURIComponent(uid)}/richmenu`,
-                { method:'GET' }
-              );
-              ok404 = (chk.status === 404);
-            } catch {}
-            unlinkedCount++;
-            console.log('[attendance/disable] unlinked user', uid, ok404 ? '(verified 404)' : '(still linked?)');
-          }
-        } catch (e) {
-          console.warn('[attendance/disable] unlink error', uid, String(e?.message || e));
+          console.log('[attendance/disable] unlink self', me, r.status);
+        } else {
+          console.warn('[attendance/disable] skip unlink self: cannot resolve LINE user id from req.user');
         }
-        await new Promise(r => setTimeout(r, 70));
+      } catch (e) {
+        console.warn('[attendance/disable] unlink self failed', e?.message || e);
       }
 
-      // 3) (ออปชัน) ลบเมนูทิ้งด้วย
+      // 3) ถ้าเลือกให้ลบเมนูออกจาก LINE server ด้วย (ATTEND_MAIN_ADMIN / ATTEND_MAIN_USER)
       let deletedMenus = 0;
       if (deleteMenus) {
         for (const kind of ['ATTEND_MAIN_ADMIN', 'ATTEND_MAIN_USER']) {
           try {
             const snap = await tenant.ref.collection('richmenus').doc(kind).get();
-            const d = snap.exists ? (snap.data() || {}) : {};
-            const rid = d.lineId || d.richMenuId || d.lineRichMenuId || '';
+            const d   = snap.exists ? (snap.data() || {}) : {};
+            const rid = d.lineRichMenuId || d.richMenuId || d.lineId || '';
             if (!rid) continue;
+
             const resp = await callLineAPITenant(
               tenant.ref,
               `/v2/bot/richmenu/${encodeURIComponent(rid)}`,
-              { method:'DELETE' }
+              { method: 'DELETE' }
             );
             if (resp.ok) {
               deletedMenus++;
               console.log('[attendance/disable] deleted menu', kind, rid);
             } else {
-              const txt = await resp.text().catch(()=> '');
-              console.warn('[attendance/disable] delete menu warn', kind, rid, resp.status, txt);
+              const txt = await resp.text().catch(() => '');
+              console.warn(
+                '[attendance/disable] delete menu warn',
+                kind,
+                rid,
+                resp.status,
+                txt
+              );
             }
           } catch (e) {
-            console.warn('[attendance/disable] delete menu error', kind, String(e?.message || e));
+            console.warn('[attendance/disable] delete menu error', kind, e?.message || e);
           }
-          await new Promise(r => setTimeout(r, 70));
+          await new Promise(r => setTimeout(r, 70)); // กัน rate limit
         }
       }
 
-      // 4) อัปเดตสถานะ
-      await tenant.ref.collection('integrations').doc('attendance')
-        .set({ enabled:false, updatedAt:new Date() }, { merge:true });
+      // 4) ปิดสถานะ integration
+      await tenant.ref
+        .collection('integrations')
+        .doc('attendance')
+        .set(
+          {
+            enabled: false,
+            updatedAt: new Date(),
+          },
+          { merge: true },
+        );
 
-      return res.json({ ok:true, unlinked: unlinkedCount, deletedMenus });
+      // 5) ล้าง default richmenu ของ OA (user/all)
+      try {
+        const resp = await callLineAPITenant(
+          tenant.ref,
+          '/v2/bot/user/all/richmenu',
+          { method: 'DELETE' }
+        );
+        console.log(
+          '[attendance/disable] clear default OA richmenu status =',
+          resp?.status
+        );
+      } catch (e) {
+        console.warn(
+          '[attendance/disable] clear default OA richmenu error',
+          String(e?.message || e)
+        );
+      }
+
+      return res.json({
+        ok: true,
+        unlinked: unlinkSum?.count ?? 0,
+        deletedMenus,
+      });
     } catch (err) {
       console.error('[attendance/disable] error:', err);
-      return res.status(500).json({ ok:false, error:String(err?.message || err) });
+      return res
+        .status(500)
+        .json({ ok: false, error: String(err?.message || err) });
     }
   }
 );
+
+
+
+
+
 
 // DEBUG: ปิด/ถอดเมนูด้วย curl
 app.post('/debug/attendance/disable', express.json(), async (req, res) => {

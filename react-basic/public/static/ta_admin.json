@@ -4,13 +4,13 @@
   "imageUrl": "/static/hr_menu_admin.png",
   "chatBarText": "เมนู",
   "areas": [
-    { "xPct": 0.41, "yPct": 0.10, "wPct": 0.31, "hPct": 0.39,
-      "action": { "type": "Text", "text": "บันทึกการทำงาน" } },
-    { "xPct": 0.74, "yPct": 0.10, "wPct": 0.23, "hPct": 0.39,
-      "action": { "type": "Text", "text": "เงินเดือน" } },
-    { "xPct": 0.41, "yPct": 0.54, "wPct": 0.31, "hPct": 0.39,
-      "action": { "type": "Text", "text": "รายงาน" } },
-    { "xPct": 0.74, "yPct": 0.54, "wPct": 0.23, "hPct": 0.39,
-      "action": { "type": "Text", "text": "ตั้งค่า" } }
+    { "xPct": 0.38, "yPct": 0.085, "wPct": 0.27, "hPct": 0.39,
+      "action": { "type": "Text", "text": "ลงเวลา" } },
+    { "xPct": 0.67, "yPct": 0.085, "wPct": 0.27, "hPct": 0.39,
+      "action": { "type": "Text", "text": "ออกงาน" } },
+    { "xPct": 0.38, "yPct": 0.555, "wPct": 0.27, "hPct": 0.39,
+      "action": { "type": "Text", "text": "ลางาน" } },
+    { "xPct": 0.67, "yPct": 0.555, "wPct": 0.27, "hPct": 0.39,
+      "action": { "type": "Text", "text": "ลงทะเบียนเข้าใช้งาน" } }
   ]
 }

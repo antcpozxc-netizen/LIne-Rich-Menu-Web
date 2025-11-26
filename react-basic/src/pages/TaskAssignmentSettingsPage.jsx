@@ -48,6 +48,8 @@ const DEFAULT_IMAGES = {
   main:   '/static/Rich_menu_for_registered.png',
 };
 
+const FORCE_UNLINK_ALL = true;
+
 // ปาร์ส JSON แบบปลอดภัย — ถ้าตอบไม่ใช่ JSON จะคืน { ok:false, error:... }
 async function safeJson(res) {
   const ct = res.headers.get('content-type') || '';
@@ -259,6 +261,7 @@ export default function TaskAssignmentSettingsPage() {
             preRichMenuId: preRichMenuId || null,
             postRichMenuId: postRichMenuId || null,
             ensurePreset: true,
+            forceUnlinkAll: FORCE_UNLINK_ALL,
           }),
         });
         const j2 = await safeJson(r2);
@@ -479,6 +482,7 @@ export default function TaskAssignmentSettingsPage() {
                           preRichMenuId: preId,
                           postRichMenuId: postId,
                           ensurePreset: true,
+                          forceUnlinkAll: FORCE_UNLINK_ALL, 
                         }),
                       });
                       const j2 = await safeJson(r2);
@@ -554,7 +558,7 @@ export default function TaskAssignmentSettingsPage() {
             ตั้งค่า Webhook URL ใน <b>LINE Official Account</b> ของคุณเป็น:
           </Typography>
           <Box sx={{ p:1, bgcolor:'#f8f9fa', border:'1px dashed #cfd8dc', borderRadius:1 }}>
-            <code>https://lineoa.superhr.biz//webhook/line</code>
+            <code>https://lineoa.superhr.biz/webhook/line</code>
           </Box>
           <Typography variant="body2" color="text.secondary">
             1)ไปที่ <i>Messaging API → กรอก Webhook URL</i> แล้ว <b>กดปุ่ม save </b>
