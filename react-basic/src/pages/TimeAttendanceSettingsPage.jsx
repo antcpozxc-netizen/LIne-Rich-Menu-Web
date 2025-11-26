@@ -260,79 +260,45 @@ export default function TimeAttendanceSettingsPage() {
     closePicker();
   };
 
+  // เปิดหน้า RichMenusPage แบบ attendance (admin/user)
   const startEdit = async (which /* 'admin' | 'user' */) => {
     if (!tenantId) return;
-    const whichKey = (which === 'admin') ? 'ta_admin' : 'ta_user';
+
+    const pref = which === 'admin' ? 'ta_admin' : 'ta_user';
+    const back = encodeURIComponent(redirectPath);
+    const base = `/homepage/rich-menus/new?tenant=${tenantId}&app=attendance&prefill=${pref}&redirect=${back}`;
+
     try {
       const h = await authHeader();
-
       const docId =
         which === 'admin'
           ? (adminRichMenuDoc || null)
           : (userRichMenuDoc || null);
 
+      // optional: เรียก start-edit ถ้าพร้อม (ไม่จำเป็นต่อ prefill)
       const res = await fetch(`/api/tenants/${tenantId}/richmenus/start-edit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...h },
-        body: JSON.stringify({ docId, kind: whichKey }), // << ส่ง kind ให้รู้ว่าเป็น TA
+        body: JSON.stringify({ docId, kind: which }),
       });
 
-      const back = encodeURIComponent(redirectPath);
+      // ไม่ว่าผลจะเป็นอะไร ให้เปิดแบบ app=attendance เสมอ
       let j = null; try { j = await res.json(); } catch {}
-
-      // ถ้า API ใช้ไม่ได้ → เปิดโหมดพรีฟิล
-      if (!res.ok || (j && j.ok === false)) {
-        navigate(
-          `/homepage/rich-menus/new?tenant=${tenantId}` +
-          `&prefill=${whichKey}&redirect=${back}`,
-          { replace: false }
-        );
-        return;
-      }
-
-      const realId =
-        j?.draftId || j?.id || j?.docId || j?.data?.id || j?.data?.docId;
-      const guest = j?.guestDraft;
+      const realId = j?.draftId || j?.id || j?.docId || j?.data?.id || j?.data?.docId;
+      const guest  = j?.guestDraft;
 
       if (realId) {
-        navigate(
-          `/homepage/rich-menus/new?tenant=${tenantId}` +
-          `&draft=${encodeURIComponent(realId)}` +
-          `&prefill=${whichKey}&redirect=${back}`,
-          { replace: false }
-        );
+        navigate(`${base}&draft=${encodeURIComponent(realId)}`, { replace: false });
       } else if (guest) {
-        navigate(
-          `/homepage/rich-menus/new?tenant=${tenantId}` +
-          `&guestDraft=${encodeURIComponent(guest)}` +
-          `&prefill=${whichKey}&redirect=${back}`,
-          {
-            replace: false,
-            state: { prefill: j?.data || null },
-          }
-        );
+        navigate(`${base}&guestDraft=${encodeURIComponent(guest)}`, { replace: false });
       } else {
-        navigate(
-          `/homepage/rich-menus/new?tenant=${tenantId}` +
-          `&prefill=${whichKey}&redirect=${back}`,
-          { replace: false }
-        );
+        navigate(base, { replace: false });
       }
-    } catch (e) {
-      const back = encodeURIComponent(redirectPath);
-      const whichKey = (which === 'admin') ? 'ta_admin' : 'ta_user';
-      navigate(
-        `/homepage/rich-menus/new?tenant=${tenantId}` +
-        `&prefill=${whichKey}&redirect=${back}`,
-        { replace: false }
-      );
-      setMsg({
-        type: 'warning',
-        text: 'เปิดตัวแก้ไข Rich menu แบบพรีฟิล (start-edit ใช้งานไม่ได้)',
-      });
-      console.error('[attendance][startEdit] error:', e);
+    } catch {
+      navigate(base, { replace: false });
     }
   };
+
 
 
 
