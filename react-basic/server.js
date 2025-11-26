@@ -4943,7 +4943,21 @@ app.post('/api/tenants/:id/richmenus/start-edit',
         defaultBehavior: data.defaultBehavior || data.behavior || 'shown',
 
         // area/action เดิมทั้งหมด
-        areas: Array.isArray(data.areas) ? data.areas : [],
+        // area/action เดิมทั้งหมด (รองรับทั้งฟอร์แมต bounds และ xPct/yPct/wPct/hPct)
+        areas: Array.isArray(data.areas)
+          ? data.areas.map((a) => {
+              const b = a.bounds || {};
+              return {
+                // แปลงค่าเป็นเปอร์เซ็นต์ (หรือใช้ค่าที่มีอยู่แล้ว)
+                xPct: a.xPct ?? b.xPct ?? (b.x ?? a.x ?? 0),
+                yPct: a.yPct ?? b.yPct ?? (b.y ?? a.y ?? 0),
+                wPct: a.wPct ?? b.wPct ?? (b.width ?? a.w ?? 0),
+                hPct: a.hPct ?? b.hPct ?? (b.height ?? a.h ?? 0),
+                action: a.action || null,
+              };
+            })
+          : [],
+
       };
 
       const now = admin.firestore.FieldValue.serverTimestamp();
