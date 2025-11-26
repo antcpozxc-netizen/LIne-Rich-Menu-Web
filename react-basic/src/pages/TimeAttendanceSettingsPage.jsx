@@ -260,9 +260,9 @@ export default function TimeAttendanceSettingsPage() {
     closePicker();
   };
 
-  // เปิดหน้า RichMenusPage แบบเดียวกับ TaskAssignment (start-edit)
   const startEdit = async (which /* 'admin' | 'user' */) => {
     if (!tenantId) return;
+    const whichKey = (which === 'admin') ? 'ta_admin' : 'ta_user';
     try {
       const h = await authHeader();
 
@@ -274,17 +274,17 @@ export default function TimeAttendanceSettingsPage() {
       const res = await fetch(`/api/tenants/${tenantId}/richmenus/start-edit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...h },
-        body: JSON.stringify({ docId, kind: which }),
+        body: JSON.stringify({ docId, kind: whichKey }), // << ส่ง kind ให้รู้ว่าเป็น TA
       });
 
       const back = encodeURIComponent(redirectPath);
-      let j = null;
-      try { j = await res.json(); } catch {}
+      let j = null; try { j = await res.json(); } catch {}
 
-      // ถ้า API ใช้งานไม่ได้ → เปิดโหมดพรีฟิลอย่างเดียว
+      // ถ้า API ใช้ไม่ได้ → เปิดโหมดพรีฟิล
       if (!res.ok || (j && j.ok === false)) {
         navigate(
-          `/homepage/rich-menus/new?tenant=${tenantId}&app=attendance&prefill=${which}&redirect=${back}`,
+          `/homepage/rich-menus/new?tenant=${tenantId}` +
+          `&prefill=${whichKey}&redirect=${back}`,
           { replace: false }
         );
         return;
@@ -297,15 +297,15 @@ export default function TimeAttendanceSettingsPage() {
       if (realId) {
         navigate(
           `/homepage/rich-menus/new?tenant=${tenantId}` +
-          `&app=attendance&draft=${encodeURIComponent(realId)}` +
-          `&prefill=${which}&redirect=${back}`,
+          `&draft=${encodeURIComponent(realId)}` +
+          `&prefill=${whichKey}&redirect=${back}`,
           { replace: false }
         );
       } else if (guest) {
         navigate(
           `/homepage/rich-menus/new?tenant=${tenantId}` +
-          `&app=attendance&guestDraft=${encodeURIComponent(guest)}` +
-          `&prefill=${which}&redirect=${back}`,
+          `&guestDraft=${encodeURIComponent(guest)}` +
+          `&prefill=${whichKey}&redirect=${back}`,
           {
             replace: false,
             state: { prefill: j?.data || null },
@@ -313,14 +313,17 @@ export default function TimeAttendanceSettingsPage() {
         );
       } else {
         navigate(
-          `/homepage/rich-menus/new?tenant=${tenantId}&app=attendance&prefill=${which}&redirect=${back}`,
+          `/homepage/rich-menus/new?tenant=${tenantId}` +
+          `&prefill=${whichKey}&redirect=${back}`,
           { replace: false }
         );
       }
     } catch (e) {
       const back = encodeURIComponent(redirectPath);
+      const whichKey = (which === 'admin') ? 'ta_admin' : 'ta_user';
       navigate(
-        `/homepage/rich-menus/new?tenant=${tenantId}&app=attendance&prefill=${which}&redirect=${back}`,
+        `/homepage/rich-menus/new?tenant=${tenantId}` +
+        `&prefill=${whichKey}&redirect=${back}`,
         { replace: false }
       );
       setMsg({
@@ -330,6 +333,8 @@ export default function TimeAttendanceSettingsPage() {
       console.error('[attendance][startEdit] error:', e);
     }
   };
+
+
 
 
   return (
