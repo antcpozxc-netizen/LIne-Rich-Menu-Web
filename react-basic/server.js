@@ -8685,12 +8685,12 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
      // ===== TA Rich Menu Switch (เฉพาะ Owner/Admin) =====
 
     // รีเซ็ตเมนู -> กลับไปใช้เมนูของ user (ATTEND_MAIN_USER)
-    if (/^รีเซ็ตเมนู$/i.test(text)) {
-      // ต้องเปิดใช้ระบบ Time Attendance ก่อน
-      if (!(await isAttendanceEnabled(tenantRef))) {
-        return reply(replyToken, 'ยังไม่ได้เปิดใช้ระบบลงเวลาใน OA นี้', null, tenantRef);
-      }
-
+    // รีเซ็ตเมนู -> กลับไปใช้เมนูของ user (ATTEND_MAIN_USER) — ใช้เฉพาะ OA ที่มีแค่ Time Attendance
+    if (
+      /^(รีเซ็ตเมนู)$/i.test(text) &&
+      (await isAttendanceEnabled(tenantRef)) &&
+      !(await isTaskbotEnabled(tenantRef))      // ถ้ามี Task Bot ให้ไปใช้คำสั่งฝั่ง Task Bot แทน
+    ) {
       try {
         // ยืนยันสิทธิ์ admin/owner/developer
         await requireAdminRole(tenantRef, userId);
@@ -8704,12 +8704,12 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
       }
     }
 
-    // เมนู admin -> สลับไปใช้เมนูของ admin (ATTEND_MAIN_ADMIN)
-    if (/^เมนู\s*admin$/i.test(text)) {
-      if (!(await isAttendanceEnabled(tenantRef))) {
-        return reply(replyToken, 'ยังไม่ได้เปิดใช้ระบบลงเวลาใน OA นี้', null, tenantRef);
-      }
-
+    // เมนู admin -> สลับไปใช้เมนูของ admin (ATTEND_MAIN_ADMIN) — ใช้เฉพาะ OA ที่มีแค่ Time Attendance
+    if (
+      /^เมนู\s*admin$/i.test(text) &&
+      (await isAttendanceEnabled(tenantRef)) &&
+      !(await isTaskbotEnabled(tenantRef))
+    ) {
       try {
         await requireAdminRole(tenantRef, userId);
 
