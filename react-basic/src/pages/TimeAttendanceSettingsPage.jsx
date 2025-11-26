@@ -75,12 +75,6 @@ export default function TimeAttendanceSettingsPage() {
     ? `/homepage/settings/attendance?tenant=${encodeURIComponent(tenantId)}`
     : '/homepage/settings/attendance';
 
-  // ✅ แก้เป็น /rich-menus/new แทน /rich-menus
-  const richMenuConsolePath = tenantId
-    ? `/homepage/rich-menus/new?tenant=${encodeURIComponent(tenantId)}&redirect=${encodeURIComponent(redirectPath)}`
-    : '/homepage/rich-menus/new';
-
-
   // โหลดค่าเดิม + รายการ Rich menu
   useEffect(() => {
     let alive = true;
@@ -227,12 +221,7 @@ export default function TimeAttendanceSettingsPage() {
     }
   };
 
-  // ไปหน้า RichMenusPage (แบบ SPA เดียวกับ TaskAssignment)
-  const richMenuConsolePath = tenantId
-    ? `/homepage/rich-menus/new?tenant=${encodeURIComponent(tenantId)}&redirect=${encodeURIComponent(redirectPath)}`
-    : '/homepage/rich-menus/new';
-
-    const menuById = (id) =>
+  const menuById = (id) =>
     richMenus.find(m => (m.id || m.menuId) === id) || null;
 
   const menuOptionLabel = (id, fallback = 'ใช้เมนู default ที่ระบบสร้างให้') => {
