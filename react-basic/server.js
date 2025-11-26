@@ -16,6 +16,7 @@ const admin = require('firebase-admin');
 const crypto = require('crypto'); 
 const sharp = require('sharp');
 
+
 const multer = require("multer");
 const dotenv = require("dotenv");
 
@@ -4014,6 +4015,73 @@ app.post('/api/tenants', requireFirebaseAuth, async (req, res) => {
   }
 });
 
+// ==== leave tenant (remove self from members) ====
+// ลบ OA (เฉพาะ Owner)
+// ==== Delete Tenant (Owner only) ====
+app.delete('/api/tenants/:id', requireFirebaseAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const uid = req.user.uid;
+    const db = admin.firestore();
+
+    // อ่าน tenant
+    const tRef = db.collection('tenants').doc(id);
+    const snap = await tRef.get();
+    if (!snap.exists) return res.status(404).json({ ok:false, error:'not_found' });
+
+    const t = snap.data();
+
+    // อนุญาตเฉพาะ owner
+    if (t.ownerUid !== uid) return res.status(403).json({ ok:false, error:'not_member' });
+
+    // ลบ subcollections ที่เราคุมเอง (ที่จำเป็น)
+    // หมายเหตุ: Firestore ไม่มี recursive delete ใน admin SDK ตรง ๆ
+    // เราเลยลบคอลเลกชันย่อยที่รู้จักเป็นรายตัว
+    async function deleteColl(path){
+      const col = db.collection(path);
+      const batch = db.batch();
+      const docs = await col.listDocuments();
+      docs.forEach(d => batch.delete(d));
+      await batch.commit();
+    }
+
+    await Promise.all([
+      deleteColl(`tenants/${id}/broadcasts`),
+      deleteColl(`tenants/${id}/richmenus`),
+      deleteColl(`tenants/${id}/liveSessions`),
+      // secrets ห้ามให้ client แตะ แต่ลบฝั่ง server ได้
+      deleteColl(`tenants/${id}/secret`),
+    ]).catch(()=>{}); // เผื่อไม่มีคอลเลกชันนั้น ๆ
+
+    // ลบตัวเอกสารหลัก
+    await tRef.delete();
+
+    return res.json({ ok:true });
+  } catch (e) {
+    console.error('DELETE tenant error', e);
+    return res.status(500).json({ ok:false, error:String(e.message || e) });
+  }
+});
+
+
+// GET /api/tenants/:id/integrations/status
+app.get('/api/tenants/:id/integrations/status', requireFirebaseAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const tenant = await getTenantIfMember(id, req.user.uid);
+    if (!tenant) return res.status(403).json({ ok:false, error:'not_member' });
+    const integ = tenant.integrations || {};
+    const attendance = !!(integ.attendance && integ.attendance.enabled);
+    const taskassignment = !!(integ.taskassignment && integ.taskassignment.enabled);
+    return res.json({ ok:true, data: { attendance, taskassignment } });
+  } catch (e) {
+    return res.status(500).json({ ok:false, error:String(e) });
+  }
+});
+
+
+
+
 // ==== Members: add/remove (Owner only) ====
 app.post('/api/tenants/:id/members:add', requireFirebaseAuth, async (req, res) => {
   try {
@@ -5078,6 +5146,17 @@ app.post('/api/tenants/:id/integrations/taskbot/bootstrap', requireFirebaseAuth,
     const tenant = await getTenantIfMember(id, req.user.uid);
     if (!tenant) return res.status(403).json({ error: 'not_member_of_tenant' });
 
+    // ⛔ กันชนกับ Time Attendance
+    const attSnap = await tenant.ref.collection('integrations').doc('attendance').get();
+    const attEnabled = attSnap.exists ? !!attSnap.data().enabled : false;
+    if (attEnabled) {
+      return res.status(409).json({
+        ok: false,
+        error: 'conflict_attendance_enabled',
+        message: 'มีการเปิดใช้ Time Attendance อยู่แล้ว — กรุณาปิด Time Attendance ก่อนเปิดใช้ Task Assignment'
+      });
+    }
+
     const body = req.body || {};
     let { preRichMenuId, postRichMenuId } = body;
 
@@ -5220,11 +5299,60 @@ app.post('/api/tenants/:id/integrations/taskbot/disable',
 
 // ==== Enable Time Attendance (สร้าง/อัปโหลด Rich Menu ของ Attendance แล้วบันทึกสถานะ) ====
 
+// === VERIFY Time Attendance integration ===
+// [POST] /api/tenants/:id/integrations/attendance/verify
+// ==== Verify Time Attendance (ไม่พึ่ง lineUserId) ====
+app.post('/api/tenants/:id/integrations/attendance/verify', requireFirebaseAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // 1) ยืนยันว่า user นี้เป็นสมาชิก tenant นี้พอ (ไม่ต้องรู้ lineUserId)
+    const tenant = await getTenantIfMember(id, req.user?.uid);
+    if (!tenant) return res.status(403).json({ ok:false, error:'not_member_of_tenant' });
+
+    // 2) รับ sheetId จาก body หรือจาก config เดิม
+    const integRef = tenant.ref.collection('integrations').doc('attendance');
+    const snap = await integRef.get();
+    const cfg  = snap.exists ? (snap.data() || {}) : {};
+
+    const sheetId = String(req.body?.sheetId || cfg.appsSheetId || '').trim();
+    if (!sheetId) {
+      return res.status(400).json({ ok:false, error:'appsSheetId_required' });
+    }
+
+    // บันทึก Sheet ID เผื่อเพิ่งกรอกแล้วยังไม่ได้กด Save
+    const ts = admin.firestore.FieldValue.serverTimestamp();
+    await integRef.set({ appsSheetId: sheetId, verifiedAt: ts }, { merge: true });
+
+    // 3) Ping หา GAS (ไม่ต้องมี lineUserId)
+    // ถ้าคุณมี helper callTA อยู่แล้ว ใช้อันนี้ได้
+    const out = await callTA(id, 'ping', { ping: Date.now() });
+
+    return res.json({ ok:true, out });
+  } catch (e) {
+    console.error('[attendance/verify] error:', e);
+    return res.status(500).json({ ok:false, error:String(e?.message || e) });
+  }
+});
+
+
+
 app.post('/api/tenants/:id/integrations/attendance/enable', requireFirebaseAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const tenant = await getTenantIfMember(id, req.user.uid);
     if (!tenant) return res.status(403).json({ ok:false, error:'not_member_of_tenant' });
+
+    // ⛔ กันชนกับ TaskBot (Task Assignment)
+    const taskbotSnap = await tenant.ref.collection('integrations').doc('taskbot').get();
+    const taskbotEnabled = taskbotSnap.exists ? !!taskbotSnap.data().enabled : false;
+    if (taskbotEnabled) {
+      return res.status(409).json({
+        ok: false,
+        error: 'conflict_taskbot_enabled',
+        message: 'มีการเปิดใช้ Task Assignment (TaskBot) อยู่แล้ว — กรุณาปิด Task Assignment ก่อนเปิดใช้ Time Attendance'
+      });
+    }
 
     const accessToken = await getTenantSecretAccessToken(tenant.ref);
 
@@ -8734,7 +8862,7 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
     // รีเซ็ตเมนู -> กลับไปใช้เมนูของ user (ATTEND_MAIN_USER)
     // รีเซ็ตเมนู -> กลับไปใช้เมนูของ user (ATTEND_MAIN_USER) — ใช้เฉพาะ OA ที่มีแค่ Time Attendance
     if (
-      /^(รีเซ็ตเมนู)$/i.test(text) &&
+      /^(รีเซ็ตเมนู|เมนูแรก|เมนูพนักงาน)$/i.test(text) &&
       (await isAttendanceEnabled(tenantRef)) &&
       !(await isTaskbotEnabled(tenantRef))      // ถ้ามี Task Bot ให้ไปใช้คำสั่งฝั่ง Task Bot แทน
     ) {
@@ -8753,7 +8881,7 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
 
     // เมนู admin -> สลับไปใช้เมนูของ admin (ATTEND_MAIN_ADMIN) — ใช้เฉพาะ OA ที่มีแค่ Time Attendance
     if (
-      /^เมนู\s*admin$/i.test(text) &&
+      /^(เมนู\s*admin|เมนู\s*แอดมิน|เมนู\s*ผู้ดูแล)$/i.test(text) &&
       (await isAttendanceEnabled(tenantRef)) &&
       !(await isTaskbotEnabled(tenantRef))
     ) {
@@ -8772,7 +8900,7 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
 
     // ===== Admin Settings =====
     
-    if (/^ตั้งค่า$/i.test(text)) {
+    if (/^(ตั้งค่า|ตั้งค่าผู้ใช้งาน)$/i.test(text)) {
       const t0 = Date.now();
       const dbgOn = String(process.env.DEBUG_WEBHOOK || '').trim() !== '';
       const dbg = (msg, extra={}) => { if (dbgOn) console.log(`[ADMIN][SETUP] ${msg}`, extra); };
@@ -8944,7 +9072,7 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
     }
 
 
-    if (/^ลางาน$/i.test(text)) {
+    if (/^ลางาน|ขอลา$/i.test(text)) {
       // เปิดใช้ฟีเจอร์?
       if (!(await isAttendanceEnabled(tenantRef))) {
         return reply(replyToken, 'ยังไม่ได้เปิดใช้ระบบลางานใน OA นี้', null, tenantRef);
@@ -9119,7 +9247,7 @@ async function handleLineEvent(ev, tenantRef, accessToken) {
     }
 
         // ======= HELP – Admin / Owner (คำสั่ง: ช่วยเหลือ admin, ช่วยเหลือ ผู้ดูแล) =======
-    if (/^ช่วยเหลือ\s*(admin|ผู้ดูแล)$/i.test(text) && (await isAttendanceEnabled(tenantRef)) && !(await isTaskbotEnabled(tenantRef))) 
+    if (/^ช่วยเหลือ\s*(admin|แอดมิน|ผู้ดูแล)$/i.test(text) && (await isAttendanceEnabled(tenantRef)) && !(await isTaskbotEnabled(tenantRef))) 
     {
       try {
         // ยืนยันว่าเป็น owner/admin/developer ก่อน
@@ -10826,6 +10954,20 @@ app.post('/api/tenants/:tid/integrations/taskbot', express.json(), async (req, r
   const { tid } = req.params;
   const tenant = await getTenantIfMember(tid, req.user.uid);
   if (!tenant) return res.status(403).json({ error: 'not_member_of_tenant' });
+
+  // ถ้ามีฟิลด์ enabled ถูกส่งมา และตั้งใจจะเปิด (true) ให้กันชนกับ Attendance
+  const wantEnable = req.body && typeof req.body.enabled === 'boolean' ? !!req.body.enabled : null;
+  if (wantEnable === true) {
+    const attSnap = await tenant.ref.collection('integrations').doc('attendance').get();
+    const attendanceEnabled = attSnap.exists ? !!attSnap.data().enabled : false;
+    if (attendanceEnabled) {
+      return res.status(409).json({
+        ok: false,
+        error: 'conflict_attendance_enabled',
+        message: 'มีการเปิดใช้ Time Attendance อยู่แล้ว — กรุณาปิด Time Attendance ก่อนเปิดใช้ Task Assignment'
+      });
+    }
+  }
 
   const { enabled, execUrl, sharedKey, appsSheetId } = req.body || {};
   const data = {

@@ -322,6 +322,46 @@ export default function AccountsPage() {
     }
   };
 
+    // ---- ลบ OA ----
+  const handleDeleteTenant = async (tenant) => {
+    if (!tenant?.id) return;
+    if (tenant.ownerUid !== user?.uid) {
+      alert('ลบไม่ได้: คุณไม่ใช่ Owner ของ OA นี้');
+      return;
+    }
+    const step1 = window.confirm(`ยืนยันลบ OA "${tenant.displayName || tenant.id}" ?\nข้อมูลที่เชื่อมกับ OA นี้บนระบบจะถูกลบ (ไม่กระทบข้อมูลใน LINE Developers)`);
+    if (!step1) return;
+
+    const typed = window.prompt('พิมพ์คำว่า DELETE เพื่อยืนยันการลบ OA นี้');
+    if ((typed || '').trim().toUpperCase() !== 'DELETE') return;
+
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const res = await fetch(`/api/tenants/${tenant.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      const text = await res.text();
+      let json = {};
+      try { json = JSON.parse(text); } catch { json = { error: text }; }
+
+      if (!res.ok || json?.ok === false) {
+        throw new Error(json.detail || json.error || 'delete failed');
+      }
+
+      // ถ้าลบอันที่กำลังถูกเลือกอยู่อยู่ ให้เคลียร์ activeTenantId
+      if (localStorage.getItem('activeTenantId') === tenant.id) {
+        localStorage.removeItem('activeTenantId');
+      }
+
+      alert('ลบ OA สำเร็จ');
+      // รายการบนหน้าจะถูก sync เองจาก onSnapshot
+    } catch (e) {
+      alert('ลบ OA ไม่สำเร็จ: ' + (e.message || e));
+    }
+  };
+
+
   const displayName =
     profile?.displayName ||
     user?.displayName ||
@@ -463,6 +503,20 @@ export default function AccountsPage() {
                     Members
                   </Button>
                   <Button size="small" onClick={() => openTenant(t)}>Open</Button>
+                  <Tooltip title={t.ownerUid !== user?.uid ? 'ลบได้เฉพาะ Owner' : 'ลบ OA นี้'}>
+                    <span>
+                      <Button
+                        startIcon={<DeleteIcon />}
+                        color="error"
+                        size="small"
+                        variant="outlined"
+                        onClick={() => handleDeleteTenant(t)}
+                        disabled={t.ownerUid !== user?.uid}
+                      >
+                        Delete
+                      </Button>
+                    </span>
+                  </Tooltip>
                 </TableCell>
               </TableRow>
             ))}

@@ -388,7 +388,8 @@ export default function TaskAssignmentSettingsPage() {
 
   // ====== UI ======
   return (
-    <Stack spacing={2} sx={{ p: { xs:2, md:3 }, maxWidth: 1100 }}>
+    <Stack spacing={2} sx={{ p: { xs:2, md:3 }, maxWidth: 1100, mx: 'auto' }}>
+
       <Stack direction="row" alignItems="center" spacing={1}>
         <SettingsIcon fontSize="small" />
         <Typography variant="h5">Task Assignment</Typography>
@@ -412,38 +413,8 @@ export default function TaskAssignmentSettingsPage() {
       {/* === /NEW === */}
       <Typography variant="body2" color="text.secondary">
         หน้านี้ตั้งค่าเฉพาะ Google Sheet และ Rich menu ของ OA นี้เท่านั้น
-        (Apps Script URL / Shared Key ตั้งที่ฝั่งเซิร์ฟเวอร์ผ่านไฟล์ <code>.env</code>)
+        (Apps Script URL / Shared Key ตั้งที่ฝั่งเซิร์ฟเวอร์)
       </Typography>
-
-      {msg && <Alert severity={msg.type}>{msg.text}</Alert>}
-
-      {/* 🔔 คำแนะนำการตั้งค่า LINE Webhook (อยู่เหนือ Enable) */}
-      <Paper variant="outlined" sx={{ p:2 }}>
-        <Stack spacing={1}>
-          <Stack direction="row" alignItems="center" spacing={1}>
-            <InfoOutlinedIcon fontSize="small" />
-            <Typography variant="subtitle1" fontWeight={600}>ตั้งค่า LINE Webhook</Typography>
-          </Stack>
-          <Typography variant="body2">
-            ตั้งค่า Webhook URL ใน <b>LINE Official Account</b> ของคุณเป็น:
-          </Typography>
-          <Box sx={{ p:1, bgcolor:'#f8f9fa', border:'1px dashed #cfd8dc', borderRadius:1 }}>
-            <code>https://line-rich-menu-web.onrender.com/webhook/line</code>
-          </Box>
-          <Typography variant="body2" color="text.secondary">
-            ไปที่ <i>Messaging API → กรอก Webhook URL</i> แล้ว <b>กดปุ่ม save </b>
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            ไปที่ <i>Response settings → Webhook settings</i> แล้ว <b>เปิด (Enable) WebHook and Chat</b>
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            กดปุ่ม Verifly Connection เพื่อตรวจการเชื่อมต่อ 
-          </Typography>
-          <Typography variant="caption" color="text.secondary" display="block">
-            * เซิร์ฟเวอร์นี้รองรับ URL เดียวสำหรับทุก OA: <code>/webhook/line</code>
-          </Typography>
-        </Stack>
-      </Paper>
 
       {/* Enable */}
       <Paper variant="outlined" sx={{ p:2 }}>
@@ -570,6 +541,35 @@ export default function TaskAssignmentSettingsPage() {
         </Stack>
       </Paper>
 
+      {msg && <Alert severity={msg.type}>{msg.text}</Alert>}
+
+      {/* 🔔 คำแนะนำการตั้งค่า LINE Webhook  */}
+      <Paper variant="outlined" sx={{ p:2 }}>
+        <Stack spacing={1}>
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <InfoOutlinedIcon fontSize="small" />
+            <Typography variant="subtitle1" fontWeight={600}>ตั้งค่า LINE Webhook</Typography>
+          </Stack>
+          <Typography variant="body2">
+            ตั้งค่า Webhook URL ใน <b>LINE Official Account</b> ของคุณเป็น:
+          </Typography>
+          <Box sx={{ p:1, bgcolor:'#f8f9fa', border:'1px dashed #cfd8dc', borderRadius:1 }}>
+            <code>https://lineoa.superhr.biz//webhook/line</code>
+          </Box>
+          <Typography variant="body2" color="text.secondary">
+            1)ไปที่ <i>Messaging API → กรอก Webhook URL</i> แล้ว <b>กดปุ่ม save </b>
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            2)ไปที่ <i>Response settings → Webhook settings</i> แล้ว <b>เปิด (Enable) WebHook and Chat</b>
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            3)กดปุ่ม Verifly Connection เพื่อตรวจการเชื่อมต่อ 
+          </Typography>
+        </Stack>
+      </Paper>
+
+      
+
       {/* Google Sheet 1:1 */}
       <Paper variant="outlined" sx={{ p:2 }}>
         <Typography variant="subtitle1" sx={{ mb:1 }}>Google Sheet (1:1 ต่อ OA)</Typography>
@@ -617,15 +617,16 @@ export default function TaskAssignmentSettingsPage() {
                 คลิกที่รูปเพื่อขยายดู
               </Typography>
             </Box>
+            <Typography variant="body2">1) สร้าง Google Sheet เปล่าขึ้นมา 1 อัน และตั้งค่าสิทธิ์เป็น Anyone with the link : editor</Typography>
             <Typography variant="body2">
-              1) เปิดสเปรดชีตใน Google Sheets แล้วดูที่ URL เช่น&nbsp;
+              2) เปิดสเปรดชีตใน Google Sheets แล้วดูที่ URL เช่น&nbsp;
               <em>https://docs.google.com/spreadsheets/d/<b>1AbCDef…XYZ</b>/edit#gid=0</em>
             </Typography>
-            <Typography variant="body2">2) คัดลอกเฉพาะข้อความระหว่าง <code>/d/</code> กับ <code>/edit</code></Typography>
-            <Typography variant="body2">3) วางลงในช่อง “Google Sheet ID” แล้วกด Save</Typography>
-            <Typography variant="body2">4) กด Verify เพื่อตรวจการเชื่อมต่อ</Typography>
+            <Typography variant="body2">3) คัดลอกเฉพาะข้อความระหว่าง <code>/d/</code> กับ <code>/edit</code></Typography>
+            <Typography variant="body2">4) วางลงในช่อง “Google Sheet ID” แล้วกด Save</Typography>
+            <Typography variant="body2">5) กด Verify เพื่อตรวจการเชื่อมต่อ</Typography>
             <Typography variant="body2" sx={{ mt:1 }}>
-              หมายเหตุ : ตั้งค่า Share Google Sheet เป็น Anyone with the link = "Editor"
+              หมายเหตุ : header ของ Sheet ระบบจะตั้งค่าให้เองอัตโนมัติเมื่อใช้งาน
             </Typography>
           </Stack>
         </Stack>
@@ -676,6 +677,9 @@ export default function TaskAssignmentSettingsPage() {
                   <Button size="small" variant="text" onClick={() => startEdit('prereg')}>
                     ไปที่หน้าสร้าง/แก้ไข
                   </Button>
+                  <Button size="small" variant="text" onClick={() => setPreRichMenuId('')}>
+                    ใช้เมนู default
+                  </Button>
                   {preRichMenuId
                     ? <Chip size="small" label={menuOptionLabel(menuById(preRichMenuId))} />
                     : <Chip size="small" label="ใช้ preset (prereg)" variant="outlined" />
@@ -711,6 +715,9 @@ export default function TaskAssignmentSettingsPage() {
                   </Button>
                   <Button size="small" variant="text" onClick={() => startEdit('main')}>
                     ไปที่หน้าสร้าง/แก้ไข
+                  </Button>
+                  <Button size="small" variant="text" onClick={() => setPostRichMenuId('')}>
+                    ใช้เมนู default
                   </Button>
                   {postRichMenuId
                     ? <Chip size="small" label={menuOptionLabel(menuById(postRichMenuId))} />

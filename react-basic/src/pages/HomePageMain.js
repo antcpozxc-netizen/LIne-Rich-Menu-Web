@@ -10,9 +10,12 @@ import {
   ExpandLess, ExpandMore, Send as SendIcon, Image as ImageIcon,
   Chat as ChatIcon,
   Logout as LogoutIcon, Login as LoginIcon, Menu as MenuIcon, SwapHoriz as SwapIcon,
-  AdminPanelSettings as AdminIcon, HelpOutline as HelpIcon
+  AdminPanelSettings as AdminIcon, HelpOutline as HelpIcon,
+  ViewModule as TemplateIcon            // ✅ new: icon สำหรับ Template Line OA
 } from '@mui/icons-material';
-import AssignmentTurnedInOutlinedIcon from '@mui/icons-material/AssignmentTurnedInOutlined';
+// ❌ ลบ import ที่ไม่ใช้ออก (เคยใช้กับเมนูแยก)
+// import AssignmentTurnedInOutlinedIcon from '@mui/icons-material/AssignmentTurnedInOutlined';
+
 import { useNavigate, useLocation, useSearchParams, Outlet, Link as RouterLink  } from 'react-router-dom';
 import { db, auth } from '../firebase';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -25,7 +28,7 @@ const drawerWidthExpanded = 240;
 const drawerWidthCollapsed = 60;
 
 export default function HomePageMain() {
-  
+
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -36,6 +39,7 @@ export default function HomePageMain() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [chatScreenOpen, setChatScreenOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
+  const [templateOpen, setTemplateOpen] = useState(true);   // ✅ new: ภายใต้ “Template Line OA”
 
   // auth + profile
   const [user, setUser] = useState(null);
@@ -44,11 +48,10 @@ export default function HomePageMain() {
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-      return onAuthStateChanged(auth, (u) => {
+    return onAuthStateChanged(auth, (u) => {
       setUser(u || null);
       setReady(true);
       if (!u) {
-        // ผู้ใช้หลุด/ออก -> ลืม OA ที่เลือกไว้
         try { localStorage.removeItem('activeTenantId'); } catch {}
       }
     });
@@ -60,8 +63,7 @@ export default function HomePageMain() {
     }
   }, [location.pathname]);
 
-
-  // claims/admin (เผื่อมี)
+  // claims/admin
   useEffect(() => {
     let unsub = () => {};
     setIsAdmin(false);
@@ -71,14 +73,12 @@ export default function HomePageMain() {
         const p = snap.data() || {};
         setProfile(p);
 
-        // ดึง custom claims มาดูด้วย
         let claimsAdmin = false;
         try {
           const idt = await auth.currentUser.getIdTokenResult(true);
           claimsAdmin = !!idt.claims?.admin;
         } catch {}
 
-        // ตรวจครบทั้ง 3 เงื่อนไข
         const ok = !!p.isAdmin || p.role === 'admin' || claimsAdmin;
         setIsAdmin(ok);
       });
@@ -89,7 +89,6 @@ export default function HomePageMain() {
     return () => unsub();
   }, [user]);
 
-
   // OA active
   const [activeTenantId, setActiveTenantId] = useState(null);
   const [tenant, setTenant] = useState(null);
@@ -97,7 +96,7 @@ export default function HomePageMain() {
   // ใช้ custom claims สำหรับสิทธิ์ฝั่งเมนู
   const { isAdmin: claimsAdmin, isHead, isDev } = useAuthClaims();
 
-  // เมื่อมีพารามิเตอร์ tenant ก็จำไว้ใน localStorage (ทั้ง guest และ user ใช้ได้เหมือนกัน)
+  // อ่าน tenant จาก URL/localStorage
   useEffect(() => {
     const tFromUrl = searchParams.get('tenant');
     if (tFromUrl) {
@@ -112,7 +111,7 @@ export default function HomePageMain() {
     }
   }, [searchParams, setSearchParams]);
 
-  // subscribe tenant doc (ถ้ามี id)
+  // subscribe tenant doc
   useEffect(() => {
     if (!activeTenantId) { setTenant(null); return; }
     const ref = doc(db, 'tenants', activeTenantId);
@@ -123,7 +122,7 @@ export default function HomePageMain() {
     return () => unsub();
   }, [activeTenantId]);
 
-  // list OA ของฉัน (เฉพาะตอนล็อกอิน)
+  // list OA ของฉัน
   const [myTenants, setMyTenants] = useState([]);
   const [pickerOpen, setPickerOpen] = useState(false);
   useEffect(() => {
@@ -147,13 +146,12 @@ export default function HomePageMain() {
     return Array.from(m.values()).sort((x, y) => (x.displayName || '').localeCompare(y.displayName || ''));
   };
 
-  // Tabs: ตัด Insight ออก → เหลือแท็บเดียว
+  // Tabs
   const tabValue = 0;
   const handleTabChange = () => {};
 
   const tenantQuery = activeTenantId ? `?tenant=${activeTenantId}` : '';
   const allowAdminMenu = isAdmin || claimsAdmin || isHead || isDev;
-
 
   const switchTenant = (t) => {
     setPickerOpen(false);
@@ -163,7 +161,6 @@ export default function HomePageMain() {
     setActiveTenantId(t.id);
   };
 
-  
   const logout = async () => {
     await fullLogout('/');
   };
@@ -193,15 +190,12 @@ export default function HomePageMain() {
             <IconButton color="inherit" edge="start" onClick={() => setSidebarOpen(!sidebarOpen)}>
               <MenuIcon />
             </IconButton>
-            <Typography
-              variant="h6"
-              sx={{ fontWeight: 'bold', cursor: 'pointer' }}
-            >
+            <Typography variant="h6" sx={{ fontWeight: 'bold', cursor: 'pointer' }}>
               Line Rich Menus Web
             </Typography>
           </Box>
 
-          {/* Right: Tips + OA + User + Switch + Login/Logout */}
+          {/* Right */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <Button
               startIcon={<HelpIcon />}
@@ -212,6 +206,7 @@ export default function HomePageMain() {
             >
               Tips : คู่มือการใช้งาน
             </Button>
+
             {/* OA info */}
             {tenant ? (
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, pr: 1.5, borderRight: '1px solid rgba(255,255,255,.3)' }}>
@@ -284,21 +279,11 @@ export default function HomePageMain() {
             </Box>
 
             {user ? (
-              <Button
-                variant="contained"
-                color="error"
-                startIcon={<LogoutIcon />}
-                onClick={logout}
-              >
+              <Button variant="contained" color="error" startIcon={<LogoutIcon />} onClick={logout}>
                 Logout
               </Button>
             ) : (
-              <Button
-                variant="contained"
-                color="inherit"
-                startIcon={<LoginIcon />}
-                onClick={() => loginWithLine(location.pathname + location.search)}
-              >
+              <Button variant="contained" color="inherit" startIcon={<LoginIcon />} onClick={() => loginWithLine(location.pathname + location.search)}>
                 Login
               </Button>
             )}
@@ -387,24 +372,31 @@ export default function HomePageMain() {
               </List>
             </Collapse>
 
-            {/* Task Assignment (single menu) */}
+            {/* ✅ NEW: รวม Task Assignment + Time Attendance ใต้ “Template Line OA” */}
             <ListItem disablePadding>
-              <ListItemButton onClick={() => navigate(`/homepage/settings/taskbot${tenantQuery}`)}>
-                <ListItemIcon><AssignmentTurnedInOutlinedIcon /></ListItemIcon>
-                {sidebarOpen && <ListItemText primary="Task Assignment" secondary="ตั้งค่า & Apps Script" />}
+              <ListItemButton onClick={() => setTemplateOpen(!templateOpen)}>
+                <ListItemIcon><TemplateIcon /></ListItemIcon>
+                {sidebarOpen && <ListItemText primary="Template Line OA" />}
+                {sidebarOpen && (templateOpen ? <ExpandLess /> : <ExpandMore />)}
               </ListItemButton>
             </ListItem>
+            <Collapse in={templateOpen && sidebarOpen} timeout="auto" unmountOnExit>
+              <List component="div" disablePadding>
+                <ListItemButton sx={{ pl: 4 }} onClick={() => navigate(`/homepage/settings/taskbot${activeTenantId ? `?tenant=${activeTenantId}` : ''}`)}>
+                  <ListItemText primary="Task Assignment" secondary="ตั้งค่า & Apps Script" />
+                </ListItemButton>
+                <ListItemButton sx={{ pl: 4 }} onClick={() => navigate(`/homepage/settings/attendance${activeTenantId ? `?tenant=${activeTenantId}` : ''}`)}>
+                  <ListItemText primary="Time Attendance" secondary="ตั้งค่า & Apps Script" />
+                </ListItemButton>
+              </List>
+            </Collapse>
 
-            {/* Time Attendance (single menu) */}
-            <ListItem disablePadding>
-              <ListItemButton onClick={() => navigate(`/homepage/settings/attendance${tenantQuery}`)}>
-                <ListItemIcon><AssignmentTurnedInOutlinedIcon /></ListItemIcon>
-                {sidebarOpen && <ListItemText primary="Time Attendance" secondary="ตั้งค่า & Apps Script" />}
-              </ListItemButton>
-            </ListItem>
+            {/* ❌ ลบเมนูเดิมที่แยกเดี่ยวออกแล้ว
+            <ListItem disablePadding> ... Task Assignment ... </ListItem>
+            <ListItem disablePadding> ... Time Attendance ... </ListItem>
+            */}
 
-
-            {/* Admin (collapsible) */}
+            {/* Admin */}
             {allowAdminMenu && (
               <>
                 <ListItem disablePadding>
@@ -416,10 +408,10 @@ export default function HomePageMain() {
                 </ListItem>
                 <Collapse in={adminOpen && sidebarOpen} timeout="auto" unmountOnExit>
                   <List component="div" disablePadding>
-                    <ListItemButton sx={{ pl: 4 }} onClick={() => navigate(`/homepage/admin/templates${tenantQuery}`)}>
+                    <ListItemButton sx={{ pl: 4 }} onClick={() => navigate(`/homepage/admin/templates${activeTenantId ? `?tenant=${activeTenantId}` : ''}`)}>
                       <ListItemText primary="Add Template Rich Menus" />
                     </ListItemButton>
-                    <ListItemButton sx={{ pl: 4 }} onClick={() => navigate(`/homepage/admin/users${tenantQuery}`)}>
+                    <ListItemButton sx={{ pl: 4 }} onClick={() => navigate(`/homepage/admin/users${activeTenantId ? `?tenant=${activeTenantId}` : ''}`)}>
                       <ListItemText primary="Administrator management" />
                     </ListItemButton>
                   </List>
@@ -431,22 +423,11 @@ export default function HomePageMain() {
           <Divider />
           <Box sx={{ mt: 'auto', p: 2 }}>
             {user ? (
-              <Button
-                variant="contained"
-                color="error"
-                startIcon={<LogoutIcon />}
-                fullWidth={sidebarOpen}
-                onClick={logout}
-              >
+              <Button variant="contained" color="error" startIcon={<LogoutIcon />} fullWidth={sidebarOpen} onClick={logout}>
                 {sidebarOpen ? 'Log out' : ''}
               </Button>
             ) : (
-              <Button
-                variant="contained"
-                startIcon={<LoginIcon />}
-                fullWidth={sidebarOpen}
-                onClick={() => loginWithLine(window.location.pathname + window.location.search)}
-              >
+              <Button variant="contained" startIcon={<LoginIcon />} fullWidth={sidebarOpen} onClick={() => loginWithLine(window.location.pathname + window.location.search)}>
                 {sidebarOpen ? 'Login' : ''}
               </Button>
             )}
@@ -458,18 +439,12 @@ export default function HomePageMain() {
       <Box component="main" sx={{ flexGrow: 1, bgcolor: '#fff', minHeight: '100vh' }}>
         <Toolbar />
         <Tabs value={tabValue} onChange={handleTabChange} sx={{ borderBottom: 1, borderColor: 'divider' }}>
-          <Tab
-            label="Home"
-            onClick={() => navigate(`/homepage${activeTenantId ? `?tenant=${activeTenantId}` : ''}`)}
-          />
+          <Tab label="Home" onClick={() => navigate(`/homepage${activeTenantId ? `?tenant=${activeTenantId}` : ''}`)} />
         </Tabs>
 
-        {/* แถบแจ้ง Guest Mode */}
+        {/* Guest mode banner */}
         <Box sx={{ p: 2 }}>
-          <GuestGate
-            visible={!user}
-            nextPath={location.pathname + location.search}
-          />
+          <GuestGate visible={!user} nextPath={location.pathname + location.search} />
         </Box>
 
         <Box sx={{ p: 3, pt: 0 }}>
