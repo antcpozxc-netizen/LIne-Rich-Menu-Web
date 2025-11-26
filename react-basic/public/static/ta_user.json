@@ -5,13 +5,12 @@
   "chatBarText": "เมนู",
   "areas": [
     { "xPct": 0.46, "yPct": 0.00, "wPct": 0.27, "hPct": 0.50,
-        "action": { "type": "Text", "text": "ลงเวลา" } },
-    { "xPct": 0.73, "yPct": 0.00, "wPct": 0.27, "hPct": 0.50,
-        "action": { "type": "Text", "text": "ออกงาน" } },
+      "action": { "type": "Text", "text": "ลงเวลา" } },
+    { "xPct": 0.73, "yPct": 0.00, "wPct": 0.25, "hPct": 0.50,
+      "action": { "type": "Text", "text": "ออกงาน" } },
     { "xPct": 0.46, "yPct": 0.50, "wPct": 0.27, "hPct": 0.50,
-        "action": { "type": "Text", "text": "ลางาน" } },
-    { "xPct": 0.73, "yPct": 0.50, "wPct": 0.27, "hPct": 0.50,
-        "action": { "type": "Text", "text": "ลงทะเบียนเข้าใช้งาน" } }
+      "action": { "type": "Text", "text": "ลางาน" } },
+    { "xPct": 0.73, "yPct": 0.50, "wPct": 0.25, "hPct": 0.50,
+      "action": { "type": "Text", "text": "ลงทะเบียนเข้าใช้งาน" } }
   ]
-
 }

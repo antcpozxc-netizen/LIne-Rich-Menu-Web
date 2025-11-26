@@ -75,10 +75,16 @@ export default function TimeAttendanceSettingsPage() {
 
   // รวมผลให้รองรับได้ทั้ง {data: []} หรือ {data: {items: []}}
   function pickItems(j) {
+    // รองรับโครงสร้าง:
+    // { ok:true, data:[...] }
+    // { ok:true, data:{ items:[...] } }
+    // { ok:true, data:{ ok:true, data:[...] } }  <-- บาง backend ห่อซ้อน
     if (!j || j.ok === false) return [];
     const d = j.data;
     if (Array.isArray(d)) return d;
-    if (d && Array.isArray(d.items)) return d.items;
+    if (Array.isArray(d?.items)) return d.items;
+    if (Array.isArray(d?.data)) return d.data;
+    if (Array.isArray(d?.data?.items)) return d.data.items;
     return [];
   }
 
@@ -156,9 +162,9 @@ export default function TimeAttendanceSettingsPage() {
           if (!r2.ok || j2.ok === false) {
             const rAll = await fetch(`/api/tenants/${tenantId}/richmenus`, { headers: h });
             const jAll = await safeJson(rAll);
-            setRichMenus(Array.isArray(jAll?.data) ? jAll.data : []);
+            setRichMenus(pickItems(jAll));
           } else {
-            setRichMenus(Array.isArray(j2.data) ? j2.data : []);
+            setRichMenus(pickItems(j2));
           }
         } catch {}
       })();
