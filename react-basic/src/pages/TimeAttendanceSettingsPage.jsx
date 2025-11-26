@@ -36,6 +36,10 @@ export default function TimeAttendanceSettingsPage() {
   const redirectPath  = '/homepage/settings/attendance';
   const redirectParam = encodeURIComponent(redirectPath);
 
+  const richMenuConsoleUrl = tenantId
+    ? `/homepage/rich-menus?tenant=${tenantId}&redirect=${redirectParam}`
+    : `/homepage/rich-menus?redirect=${redirectParam}`;
+
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState(null);
 
