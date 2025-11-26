@@ -28,7 +28,7 @@ async function safeJson(res) {
   catch (e) { return { ok: false, error: txt || String(e) }; }
 }
 
-// แค่ตัวอย่าง preview รูป (ถ้าไม่มีใน /public/static ให้เปลี่ยน path หรือถอดรูปออกได้)
+// preview ดีฟอลต์
 const ADMIN_PREVIEW = '/static/hr_menu_admin.png';
 const USER_PREVIEW  = '/static/ta_menu_user.png';
 
@@ -44,7 +44,6 @@ export default function TimeAttendanceSettingsPage() {
   const pickerCols      = xlUp ? 6 : lgUp ? 5 : mdUp ? 4 : 2;
   const pickerRowHeight = mdUp ? 180 : 140;
 
-
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState(null);
 
@@ -56,14 +55,13 @@ export default function TimeAttendanceSettingsPage() {
   // รายการ Rich menu ของ OA นี้
   const [richMenus, setRichMenus] = useState([]);
 
-  // เลือกเมนูสำหรับ Admin/User (เก็บเป็น docId ของ collection richmenus)
+  // id/doc ของเมนูที่เลือก
   const [adminRichMenuDoc, setAdminRichMenuDoc] = useState('');
   const [userRichMenuDoc, setUserRichMenuDoc]   = useState('');
 
   const [pickerOpen, setPickerOpen]   = useState(false);
   const [pickerFor, setPickerFor]     = useState(null); // 'admin' | 'user'
   const [pickerValue, setPickerValue] = useState('');
-
 
   const webhookUrl = useMemo(
     () => `${window.location.origin.replace(/\/$/, '')}/webhook/line`,
@@ -75,7 +73,7 @@ export default function TimeAttendanceSettingsPage() {
     ? `/homepage/settings/attendance?tenant=${encodeURIComponent(tenantId)}`
     : '/homepage/settings/attendance';
 
-  // โหลดค่าเดิม + รายการ Rich menu
+  // ===== โหลด config + รายการ Rich menu =====
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -84,7 +82,7 @@ export default function TimeAttendanceSettingsPage() {
       try {
         const h = await authHeader();
 
-        // 1) โหลด config attendance
+        // 1) config attendance
         const r1 = await fetch(`/api/tenants/${tenantId}/integrations/attendance`, { headers: h });
         const j1 = await safeJson(r1);
         if (!alive) return;
@@ -95,28 +93,26 @@ export default function TimeAttendanceSettingsPage() {
           const d = j1.data.data || {};
           setEnabled(!!d.enabled);
           setAppsSheetId(d.appsSheetId || '');
-          setAdminRichMenuDoc(d.adminRichMenuDoc || '');
-          setUserRichMenuDoc(d.userRichMenuDoc || '');
+
+          // รองรับหลายชื่อฟิลด์ (Id/Doc)
+          const adminId = d.adminRichMenuDoc || d.adminRichMenuId || d.adminRichMenu || '';
+          const userId  = d.userRichMenuDoc  || d.userRichMenuId  || d.userRichMenu  || '';
+          setAdminRichMenuDoc(adminId);
+          setUserRichMenuDoc(userId);
         } else {
           setMsg({ type: 'warning', text: j1.data?.error || j1.error || 'โหลดการตั้งค่าไม่สำเร็จ' });
         }
 
-        // 2) โหลดรายการ Rich menu ของ OA นี้ (เหมือนฝั่ง TaskAssignment)
+        // 2) รายการเมนู (ready → fallback all)
         const r2 = await fetch(`/api/tenants/${tenantId}/richmenus?status=ready`, { headers: h });
         const j2 = await safeJson(r2);
         if (!r2.ok || j2.ok === false) {
-          // fallback ดึงทั้งหมด
           const rAll = await fetch(`/api/tenants/${tenantId}/richmenus`, { headers: h });
           const jAll = await safeJson(rAll);
-          if (jAll?.ok && Array.isArray(jAll.data)) {
-            setRichMenus(jAll.data);
-          } else {
-            setRichMenus([]);
-          }
+          setRichMenus(Array.isArray(jAll?.data) ? jAll.data : []);
         } else {
           setRichMenus(Array.isArray(j2.data) ? j2.data : []);
         }
-
       } catch (e) {
         if (alive) setMsg({ type: 'error', text: String(e) });
       } finally {
@@ -126,7 +122,30 @@ export default function TimeAttendanceSettingsPage() {
     return () => { alive = false; };
   }, [tenantId]);
 
-  // helpers
+  // ===== Auto-refresh รายการเมนูเมื่อกลับโฟกัสแท็บ (หลัง Save draft แล้ว redirect กลับมา) =====
+  useEffect(() => {
+    if (!tenantId) return;
+    const onFocus = () => {
+      (async () => {
+        try {
+          const h = await authHeader();
+          const r2 = await fetch(`/api/tenants/${tenantId}/richmenus?status=ready`, { headers: h });
+          const j2 = await safeJson(r2);
+          if (!r2.ok || j2.ok === false) {
+            const rAll = await fetch(`/api/tenants/${tenantId}/richmenus`, { headers: h });
+            const jAll = await safeJson(rAll);
+            setRichMenus(Array.isArray(jAll?.data) ? jAll.data : []);
+          } else {
+            setRichMenus(Array.isArray(j2.data) ? j2.data : []);
+          }
+        } catch {}
+      })();
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [tenantId]);
+
+  // ===== helpers =====
   const enableAttendance = async (h) => {
     const res = await fetch(`/api/tenants/${tenantId}/integrations/attendance/enable`, {
       method: 'POST',
@@ -135,7 +154,6 @@ export default function TimeAttendanceSettingsPage() {
     });
     return safeJson(res);
   };
-
   const disableAttendance = async (h) => {
     const res = await fetch(`/api/tenants/${tenantId}/integrations/attendance/disable`, {
       method: 'POST',
@@ -145,14 +163,19 @@ export default function TimeAttendanceSettingsPage() {
     return safeJson(res);
   };
 
-  // Save settings (รวม admin/user rich menu)
+  // ===== Save settings (รองรับชื่อฟิลด์ได้ทั้ง Doc/Id) =====
   const saveSettings = async (nextEnabled = enabled) => {
     const h = await authHeader();
     const payload = {
       enabled: nextEnabled,
       appsSheetId: (appsSheetId || '').trim(),
+
+      // ส่งทั้งสองแบบ เพื่อความเข้ากันได้กับ backend
       adminRichMenuDoc: adminRichMenuDoc || '',
       userRichMenuDoc:  userRichMenuDoc  || '',
+      adminRichMenuId:  adminRichMenuDoc || '',
+      userRichMenuId:   userRichMenuDoc  || '',
+
       // เผื่อ backend อยากใช้รูป preview
       adminMenuImageUrl: ADMIN_PREVIEW,
       userMenuImageUrl:  USER_PREVIEW,
@@ -198,7 +221,7 @@ export default function TimeAttendanceSettingsPage() {
     }
   };
 
-  // กด “Save settings” อย่างเดียว
+  // Save only
   const onSaveOnly = async () => {
     if (!tenantId) return;
     setLoading(true); setMsg(null);
@@ -236,25 +259,16 @@ export default function TimeAttendanceSettingsPage() {
 
   const openPicker = (kind) => {
     setPickerFor(kind);
-    setPickerValue(
-      kind === 'admin'
-        ? (adminRichMenuDoc || '')
-        : (userRichMenuDoc || '')
-    );
+    setPickerValue(kind === 'admin' ? (adminRichMenuDoc || '') : (userRichMenuDoc || ''));
     setPickerOpen(true);
   };
-
   const closePicker = () => {
     setPickerOpen(false);
     setPickerFor(null);
     setPickerValue('');
   };
-
   const handlePickerApply = () => {
-    if (!pickerFor || !pickerValue) {
-      closePicker();
-      return;
-    }
+    if (!pickerFor || !pickerValue) return closePicker();
     if (pickerFor === 'admin') setAdminRichMenuDoc(pickerValue);
     if (pickerFor === 'user')  setUserRichMenuDoc(pickerValue);
     closePicker();
@@ -270,38 +284,25 @@ export default function TimeAttendanceSettingsPage() {
 
     try {
       const h = await authHeader();
-      const docId =
-        which === 'admin'
-          ? (adminRichMenuDoc || null)
-          : (userRichMenuDoc || null);
+      const docId = which === 'admin' ? (adminRichMenuDoc || null) : (userRichMenuDoc || null);
 
-      // optional: เรียก start-edit ถ้าพร้อม (ไม่จำเป็นต่อ prefill)
       const res = await fetch(`/api/tenants/${tenantId}/richmenus/start-edit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...h },
-        body: JSON.stringify({ docId, kind: which }),
+        body: JSON.stringify({ docId, kind: which, app: 'attendance' }),
       });
 
-      // ไม่ว่าผลจะเป็นอะไร ให้เปิดแบบ app=attendance เสมอ
       let j = null; try { j = await res.json(); } catch {}
       const realId = j?.draftId || j?.id || j?.docId || j?.data?.id || j?.data?.docId;
       const guest  = j?.guestDraft;
 
-      if (realId) {
-        navigate(`${base}&draft=${encodeURIComponent(realId)}`, { replace: false });
-      } else if (guest) {
-        navigate(`${base}&guestDraft=${encodeURIComponent(guest)}`, { replace: false });
-      } else {
-        navigate(base, { replace: false });
-      }
+      if (realId)      navigate(`${base}&draft=${encodeURIComponent(realId)}`, { replace: false });
+      else if (guest)  navigate(`${base}&guestDraft=${encodeURIComponent(guest)}`, { replace: false });
+      else             navigate(base, { replace: false });
     } catch {
       navigate(base, { replace: false });
     }
   };
-
-
-
-
 
   return (
     <Paper sx={{ p:3, my:3 }}>
@@ -349,9 +350,9 @@ export default function TimeAttendanceSettingsPage() {
           </Button>
         </Grid>
 
-                {/* Right */}
+        {/* Right */}
         <Grid item xs={12} md={6}>
-          {/* Rich menu สำหรับ OA นี้ (layout เหมือน Task Assignment) */}
+          {/* Rich menu สำหรับ OA นี้ */}
           <Paper variant="outlined" sx={{ p:2, mb:2 }}>
             <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
               <MenuOpenIcon fontSize="small" />
@@ -387,33 +388,16 @@ export default function TimeAttendanceSettingsPage() {
                     </Box>
 
                     <Stack direction="row" spacing={1} flexWrap="wrap">
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        onClick={() => openPicker('admin')}
-                      >
+                      <Button size="small" variant="outlined" onClick={() => openPicker('admin')}>
                         เปลี่ยนเมนู…
                       </Button>
-                      <Button
-                        size="small"
-                        variant="text"
-                        onClick={() => startEdit('admin')}
-                      >
+                      <Button size="small" variant="text" onClick={() => startEdit('admin')}>
                         ไปที่หน้าสร้าง/แก้ไข
                       </Button>
                       {adminRichMenuDoc
-                        ? (
-                          <Chip
-                            size="small"
-                            label={menuOptionLabel(adminRichMenuDoc, 'ใช้เมนู default (Admin)')}
-                          />
-                        ) : (
-                          <Chip
-                            size="small"
-                            label="ใช้เมนู default (Admin)"
-                            variant="outlined"
-                          />
-                        )}
+                        ? <Chip size="small" label={menuOptionLabel(adminRichMenuDoc, 'ใช้เมนู default (Admin)')} />
+                        : <Chip size="small" label="ใช้เมนู default (Admin)" variant="outlined" />
+                      }
                     </Stack>
                   </Stack>
                 </CardContent>
@@ -441,33 +425,16 @@ export default function TimeAttendanceSettingsPage() {
                     </Box>
 
                     <Stack direction="row" spacing={1} flexWrap="wrap">
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        onClick={() => openPicker('user')}
-                      >
+                      <Button size="small" variant="outlined" onClick={() => openPicker('user')}>
                         เปลี่ยนเมนู…
                       </Button>
-                      <Button
-                        size="small"
-                        variant="text"
-                        onClick={() => startEdit('user')}
-                      >
+                      <Button size="small" variant="text" onClick={() => startEdit('user')}>
                         ไปที่หน้าสร้าง/แก้ไข
                       </Button>
                       {userRichMenuDoc
-                        ? (
-                          <Chip
-                            size="small"
-                            label={menuOptionLabel(userRichMenuDoc, 'ใช้เมนู default (User)')}
-                          />
-                        ) : (
-                          <Chip
-                            size="small"
-                            label="ใช้เมนู default (User)"
-                            variant="outlined"
-                          />
-                        )}
+                        ? <Chip size="small" label={menuOptionLabel(userRichMenuDoc, 'ใช้เมนู default (User)')} />
+                        : <Chip size="small" label="ใช้เมนู default (User)" variant="outlined" />
+                      }
                     </Stack>
                   </Stack>
                 </CardContent>
@@ -479,11 +446,10 @@ export default function TimeAttendanceSettingsPage() {
             </Typography>
           </Paper>
 
-          {/* Dialog เลือก Rich menu (ใช้ร่วมกันทั้ง Admin/User) */}
+          {/* Dialog เลือก Rich menu */}
           <Dialog open={pickerOpen} onClose={closePicker} fullWidth maxWidth="lg">
             <DialogTitle>
-              เลือกเมนูสำหรับ{' '}
-              {pickerFor === 'admin' ? 'Admin' : pickerFor === 'user' ? 'User' : ''}
+              เลือกเมนูสำหรับ {pickerFor === 'admin' ? 'Admin' : pickerFor === 'user' ? 'User' : ''}
             </DialogTitle>
             <DialogContent dividers>
               <ImageList cols={pickerCols} rowHeight={pickerRowHeight} gap={12}>
@@ -491,11 +457,7 @@ export default function TimeAttendanceSettingsPage() {
                   const id = m.id || m.menuId;
                   const fallback = pickerFor === 'admin' ? ADMIN_PREVIEW : USER_PREVIEW;
                   return (
-                    <ImageListItem
-                      key={id}
-                      onClick={() => setPickerValue(id)}
-                      style={{ cursor:'pointer' }}
-                    >
+                    <ImageListItem key={id} onClick={() => setPickerValue(id)} style={{ cursor:'pointer' }}>
                       <img
                         src={m.imageUrl || fallback}
                         alt={m.title || id}
@@ -512,17 +474,11 @@ export default function TimeAttendanceSettingsPage() {
                         {menuOptionLabel(id, '')}
                       </Typography>
                       {pickerValue === id && (
-                        <Chip
-                          size="small"
-                          color="success"
-                          label="เลือกแล้ว"
-                          sx={{ mt:.5 }}
-                        />
+                        <Chip size="small" color="success" label="เลือกแล้ว" sx={{ mt:.5 }} />
                       )}
                     </ImageListItem>
                   );
                 })}
-
                 {!richMenus.length && (
                   <Typography variant="body2" color="text.secondary">
                     ยังไม่มี Rich menu ใน OA นี้ — ไปสร้างจากปุ่ม “ไปที่หน้าสร้าง/แก้ไข”
@@ -532,11 +488,7 @@ export default function TimeAttendanceSettingsPage() {
             </DialogContent>
             <DialogActions>
               <Button onClick={closePicker}>ยกเลิก</Button>
-              <Button
-                onClick={handlePickerApply}
-                disabled={!pickerValue}
-                variant="contained"
-              >
+              <Button onClick={handlePickerApply} disabled={!pickerValue} variant="contained">
                 ใช้เมนูนี้
               </Button>
             </DialogActions>
@@ -544,7 +496,7 @@ export default function TimeAttendanceSettingsPage() {
 
           <Divider sx={{ my:2 }} />
 
-          {/* LINE Webhook (เหมือนเดิม) */}
+          {/* LINE Webhook */}
           <Typography fontWeight={700}>LINE Webhook</Typography>
           <Typography variant="body2" sx={{ mt:1 }}>
             ตั้งค่า <b>Webhook URL</b> ใน LINE OA เป็น:
