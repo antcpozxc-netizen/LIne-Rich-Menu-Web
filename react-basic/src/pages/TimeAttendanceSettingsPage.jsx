@@ -73,6 +73,26 @@ export default function TimeAttendanceSettingsPage() {
     ? `/homepage/settings/attendance?tenant=${encodeURIComponent(tenantId)}`
     : '/homepage/settings/attendance';
 
+  // รวมผลให้รองรับได้ทั้ง {data: []} หรือ {data: {items: []}}
+  function pickItems(j) {
+    if (!j || j.ok === false) return [];
+    const d = j.data;
+    if (Array.isArray(d)) return d;
+    if (d && Array.isArray(d.items)) return d.items;
+    return [];
+  }
+
+  // เลือก URL รูปสำหรับ preview ให้ครอบคลุมทุกเคส
+  function getMenuImage(m, fallback) {
+    return (
+      m?.imageUrl ||
+      m?.image?.url || // เผื่อ backend เก็บเป็น nested
+      fallback
+    );
+  }
+
+
+  
   // ===== โหลด config + รายการ Rich menu =====
   useEffect(() => {
     let alive = true;
@@ -106,13 +126,15 @@ export default function TimeAttendanceSettingsPage() {
         // 2) รายการเมนู (ready → fallback all)
         const r2 = await fetch(`/api/tenants/${tenantId}/richmenus?status=ready`, { headers: h });
         const j2 = await safeJson(r2);
-        if (!r2.ok || j2.ok === false) {
+        let items = pickItems(j2);
+        if (!r2.ok || j2.ok === false || !items.length) {
           const rAll = await fetch(`/api/tenants/${tenantId}/richmenus`, { headers: h });
           const jAll = await safeJson(rAll);
-          setRichMenus(Array.isArray(jAll?.data) ? jAll.data : []);
-        } else {
-          setRichMenus(Array.isArray(j2.data) ? j2.data : []);
+          items = pickItems(jAll);
         }
+        setRichMenus(items);
+
+
       } catch (e) {
         if (alive) setMsg({ type: 'error', text: String(e) });
       } finally {
@@ -381,7 +403,7 @@ export default function TimeAttendanceSettingsPage() {
 
                     <Box sx={{ border:'1px solid #e0e0e0', borderRadius:1, overflow:'hidden' }}>
                       <img
-                        src={(menuById(adminRichMenuDoc)?.imageUrl) || ADMIN_PREVIEW}
+                        src={getMenuImage(menuById(adminRichMenuDoc), ADMIN_PREVIEW)}
                         alt="admin-richmenu"
                         style={{ width:'100%', display:'block', height:140, objectFit:'cover' }}
                       />
@@ -418,7 +440,7 @@ export default function TimeAttendanceSettingsPage() {
 
                     <Box sx={{ border:'1px solid #e0e0e0', borderRadius:1, overflow:'hidden' }}>
                       <img
-                        src={(menuById(userRichMenuDoc)?.imageUrl) || USER_PREVIEW}
+                        src={getMenuImage(menuById(userRichMenuDoc), USER_PREVIEW)}
                         alt="user-richmenu"
                         style={{ width:'100%', display:'block', height:140, objectFit:'cover' }}
                       />

@@ -4,11 +4,11 @@
   "imageUrl": "/static/hr_menu_admin.png",
   "chatBarText": "เมนู",
   "areas": [
-    { "xPct": 0.46, "yPct": 0.00, "wPct": 0.27, "hPct": 0.50,
+    { "xPct": 0.36, "yPct": 0.00, "wPct": 0.37, "hPct": 0.50,
         "action": { "type": "Text", "text": "บันทึกการทำงาน" } },
     { "xPct": 0.73, "yPct": 0.00, "wPct": 0.27, "hPct": 0.50,
         "action": { "type": "Text", "text": "เงินเดือน" } },
-    { "xPct": 0.46, "yPct": 0.50, "wPct": 0.27, "hPct": 0.50,
+    { "xPct": 0.36, "yPct": 0.50, "wPct": 0.37, "hPct": 0.50,
         "action": { "type": "Text", "text": "รายงาน" } },
     { "xPct": 0.73, "yPct": 0.50, "wPct": 0.27, "hPct": 0.50,
         "action": { "type": "Text", "text": "ตั้งค่า" } }
