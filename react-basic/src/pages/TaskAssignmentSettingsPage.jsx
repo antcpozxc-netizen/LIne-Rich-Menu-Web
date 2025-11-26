@@ -355,12 +355,18 @@ export default function TaskAssignmentSettingsPage() {
           { replace: false }
         );
       } else if (guest) {
-        // โหมด guest draft → ไปพร้อม guestDraft
+        // โหมด guest draft → ไปพร้อม guestDraft + prefill (layout จากเมนูที่เลือก)
         navigate(
           `/homepage/rich-menus/new?tenant=${tid}&guestDraft=${encodeURIComponent(guest)}&prefill=${which}&redirect=${back}`,
-          { replace: false }
+          {
+            replace: false,
+            state: {
+              prefill: j?.data || null,   // << ใช้ payload จาก /start-edit
+            },
+          },
         );
       } else {
+
         // กันพลาดสุดท้าย
         navigate(
           `/homepage/rich-menus/new?tenant=${tid}&prefill=${which}&redirect=${back}`,
