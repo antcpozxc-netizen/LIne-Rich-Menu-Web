@@ -371,22 +371,39 @@ export default function RichMenusPage() {
 
   useEffect(() => {
     if (draftId) return;
+
+    // มี prefill ที่ส่งมาทาง navigate (เช่นจาก TaskAssignmentSettings)
     if (prefill) {
       setTitle(prefill.title || '');
+
       if (prefill.size && template.size !== prefill.size) {
         const found = TEMPLATES.find(t => t.size === prefill.size) || template;
         setTemplate(found);
       }
-      if (prefill.imageUrl) setImage(prefill.imageUrl);
-      if (prefill.chatBarText) setMenuBarLabel(prefill.chatBarText);
+
+      if (prefill.imageUrl)      setImage(prefill.imageUrl);
+      if (prefill.chatBarText)   setMenuBarLabel(prefill.chatBarText);
+      if (prefill.defaultBehavior) setBehavior(prefill.defaultBehavior);
+
       if (Array.isArray(prefill.areas) && prefill.areas.length) {
-        const toPct = (v)=> Math.round(((Number(v)||0)*100)*100)/100;
-        const aPct = prefill.areas.map((a,i)=>({ id:`A${i+1}`, x:toPct(a.xPct), y:toPct(a.yPct), w:toPct(a.wPct), h:toPct(a.hPct) }));
+        const toPct = (v) =>
+          Math.round(((Number(v) || 0) * 100) * 100) / 100;
+
+        const aPct = prefill.areas.map((a, i) => ({
+          id: `A${i + 1}`,
+          x: toPct(a.xPct),
+          y: toPct(a.yPct),
+          w: toPct(a.wPct),
+          h: toPct(a.hPct),
+        }));
+
         setAreas(aPct);
-        setActions(prefill.areas.map(a => a.action || { type:'Select' }));
+        setActions(prefill.areas.map((a) => a.action || { type: 'Select' }));
       }
-      return;
+      return; // ไม่ต้องไปโหลดจาก localStorage แล้ว
     }
+
+    // เดิม: ถ้าไม่มี prefill เลยค่อยอ่าน draft จาก localStorage
     const d = readDraft();
     if (d?.title) setTitle(d.title);
     if (d?.menuBarLabel != null) setMenuBarLabel(d.menuBarLabel);
@@ -402,9 +419,10 @@ export default function RichMenusPage() {
     if (d?.periodTo) setPeriodTo(d.periodTo);
   }, [draftId, prefill, template.size]);
 
+
   // Prefill ผ่าน query: /rich-menus/new?prefill=prereg|main
   useEffect(() => {
-    if (draftId || !prefillKind) return; // ถ้าแก้ไขของเดิมอยู่ หรือไม่มีพรีฟิล -> ข้าม
+    if (draftId || !prefillKind || prefill) return;
 
     const map = { prereg: '/static/prereg.json', main: '/static/main.json' };
     const url = map[prefillKind];
@@ -440,7 +458,7 @@ export default function RichMenusPage() {
         // ถ้าไฟล์หาย/พัง ก็ปล่อยให้ผู้ใช้แก้เอง
       }
     })();
-  }, [draftId, prefillKind, template.size]);
+  }, [draftId, prefillKind, template.size, prefill]);
 
 
   useEffect(() => {

@@ -4924,25 +4924,42 @@ app.post('/api/tenants/:id/richmenus/start-edit',
       const snap = await tenant.ref.collection('richmenus').doc(String(sourceId)).get();
       if (!snap.exists) return res.status(404).json({ error: 'source_not_found' });
 
-      const data = snap.data() || {};
+            const data = snap.data() || {};
       const gid = req.guest?.gid;
       if (!gid) return res.status(400).json({ error: 'guest_id_required' });
 
       const draftRef = admin.firestore().collection('guests')
         .doc(gid).collection('richmenus').doc();
 
-      await draftRef.set({
+      // payload ที่จะใช้ทั้งเก็บใน draft และส่งกลับไปให้หน้า RichMenusPage พรีฟิล
+      const payload = {
         title: data.title || '',
         imageUrl: data.imageUrl || '',
-        size: data.size || 'full',
+        // ใช้ size เดิม ถ้าไม่มีให้ default เป็น 'large' (ให้ตรงกับฝั่ง guest/save)
+        size: data.size || 'large',
+
+        // ถ้า tenant richmenu ไม่มี chatBarText/behavior ก็ให้ default ไว้ก่อน
+        chatBarText: data.chatBarText || data.menuBarLabel || 'Menu',
+        defaultBehavior: data.defaultBehavior || data.behavior || 'shown',
+
+        // area/action เดิมทั้งหมด
         areas: Array.isArray(data.areas) ? data.areas : [],
+      };
+
+      const now = admin.firestore.FieldValue.serverTimestamp();
+
+      await draftRef.set({
+        ...payload,
         fromDoc: snap.id,
         tenantId: id,
-        createdAt: new Date(),
-        updatedAt: new Date(),
+        status: 'draft',
+        createdAt: now,
+        updatedAt: now,
       }, { merge: true });
 
-      return res.json({ ok: true, guestDraft: draftRef.id });
+      // ส่ง payload กลับไปให้ฝั่ง frontend เอาไปใส่ state.prefill
+      return res.json({ ok: true, guestDraft: draftRef.id, data: payload });
+
     } catch (e) {
       console.error('start-edit error:', e);
       return res.status(500).json({ error: 'server_error', detail: String(e?.message || e) });
