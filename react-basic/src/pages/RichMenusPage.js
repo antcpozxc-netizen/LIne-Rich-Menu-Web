@@ -457,13 +457,26 @@ export default function RichMenusPage() {
     if (draftId || !prefillKind || prefill) return;
 
     // 1) กรณีเดิมของ Task (ไฟล์ JSON)
-    const jsonMap = {
-      task: { prereg: '/static/prereg.json', main: '/static/main.json', admin: '/static/task_admin.json', user: '/static/task_user.json' },
-      // เพิ่มไฟล์ของ Attendance เพื่อให้โหลด "areas + actions" มาด้วย
-      attendance: { admin: '/static/ta_admin.json', user: '/static/ta_user.json' },
+      const jsonMapTask = {
+      prereg: '/static/prereg.json',
+      main:   '/static/main.json',
+      // ถ้าไม่อยากมี task_admin.json ก็ชี้ไปไฟล์อื่นได้
+      admin:  '/static/ta_admin.json',
+      user:   '/static/ta_user.json',
+    };
+    const jsonMapAttendance = {
+      admin: '/static/ta_admin.json',
+      user:  '/static/ta_user.json',
     };
 
-    const url = (jsonMap[app] || jsonMap.task)[prefillKind];
+    const map = (app === 'attendance') ? jsonMapAttendance : jsonMapTask;
+    const url = map[prefillKind];
+    if (url) {
+      fetch(url).then(r => r.json()).then(setPrefillFromJson).catch(()=>{});
+      return;
+    }
+
+    
 
     if (url) {
       (async () => {
