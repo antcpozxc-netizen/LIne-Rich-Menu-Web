@@ -452,12 +452,36 @@ export default function RichMenusPage() {
   }, [draftId, prefill, template.size]);
 
 
+  // ---- helper: apply JSON prefill into state ----
+  const setPrefillFromJson = (data) => {
+    if (!data) return;
+    setTitle(data.title || '');
+
+    if (data.size && template.size !== data.size) {
+      const found = TEMPLATES.find(t => t.size === data.size) || template;
+      setTemplate(found);
+    }
+    if (data.imageUrl)    setImage(data.imageUrl);
+    if (data.chatBarText) setMenuBarLabel(data.chatBarText);
+
+    if (Array.isArray(data.areas) && data.areas.length) {
+      const toPct = (v) => Math.round(((Number(v) || 0) * 100) * 100) / 100;
+      const aPct = data.areas.map((a, i) => ({
+        id: `A${i + 1}`,
+        x: toPct(a.xPct), y: toPct(a.yPct),
+        w: toPct(a.wPct), h: toPct(a.hPct),
+      }));
+      setAreas(aPct);
+      setActions(data.areas.map(a => normalizeAction(a.action)));
+    }
+  };
+
   // Prefill ผ่าน query: รองรับทั้ง task และ attendance
   useEffect(() => {
     if (draftId || !prefillKind || prefill) return;
 
     // 1) กรณีเดิมของ Task (ไฟล์ JSON)
-      const jsonMapTask = {
+    const jsonMapTask = {
       prereg: '/static/prereg.json',
       main:   '/static/main.json',
       // ถ้าไม่อยากมี task_admin.json ก็ชี้ไปไฟล์อื่นได้
