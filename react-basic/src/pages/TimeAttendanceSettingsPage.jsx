@@ -3,8 +3,12 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Paper, Stack, Typography, Switch, FormControlLabel,
   Button, Alert, Divider, TextField, Grid, Box, Chip,
-  FormControl, InputLabel, Select, MenuItem
+  Card, CardContent, Tooltip,
+  Dialog, DialogTitle, DialogContent, DialogActions,
+  ImageList, ImageListItem,
+  useMediaQuery, useTheme,
 } from '@mui/material';
+
 import SettingsIcon from '@mui/icons-material/Settings';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import MenuOpenIcon from '@mui/icons-material/MenuOpen';
@@ -33,6 +37,14 @@ export default function TimeAttendanceSettingsPage() {
   const tenantId = q.get('tenant') || '';
   const navigate = useNavigate();
 
+  const theme = useTheme();
+  const mdUp  = useMediaQuery(theme.breakpoints.up('md'));
+  const lgUp  = useMediaQuery(theme.breakpoints.up('lg'));
+  const xlUp  = useMediaQuery(theme.breakpoints.up('xl'));
+  const pickerCols      = xlUp ? 6 : lgUp ? 5 : mdUp ? 4 : 2;
+  const pickerRowHeight = mdUp ? 180 : 140;
+
+
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState(null);
 
@@ -48,6 +60,11 @@ export default function TimeAttendanceSettingsPage() {
   const [adminRichMenuDoc, setAdminRichMenuDoc] = useState('');
   const [userRichMenuDoc, setUserRichMenuDoc]   = useState('');
 
+  const [pickerOpen, setPickerOpen]   = useState(false);
+  const [pickerFor, setPickerFor]     = useState(null); // 'admin' | 'user'
+  const [pickerValue, setPickerValue] = useState('');
+
+
   const webhookUrl = useMemo(
     () => `${window.location.origin.replace(/\/$/, '')}/webhook/line`,
     []
@@ -57,9 +74,12 @@ export default function TimeAttendanceSettingsPage() {
   const redirectPath   = tenantId
     ? `/homepage/settings/attendance?tenant=${encodeURIComponent(tenantId)}`
     : '/homepage/settings/attendance';
+
+  // ✅ แก้เป็น /rich-menus/new แทน /rich-menus
   const richMenuConsolePath = tenantId
-    ? `/homepage/rich-menus?tenant=${encodeURIComponent(tenantId)}&redirect=${encodeURIComponent(redirectPath)}`
-    : '/homepage/rich-menus';
+    ? `/homepage/rich-menus/new?tenant=${encodeURIComponent(tenantId)}&redirect=${encodeURIComponent(redirectPath)}`
+    : '/homepage/rich-menus/new';
+
 
   // โหลดค่าเดิม + รายการ Rich menu
   useEffect(() => {
@@ -208,16 +228,120 @@ export default function TimeAttendanceSettingsPage() {
   };
 
   // ไปหน้า RichMenusPage (แบบ SPA เดียวกับ TaskAssignment)
-  const onGotoRichMenuConsole = () => {
-    if (!tenantId) return;
-    navigate(richMenuConsolePath);
+  const richMenuConsolePath = tenantId
+    ? `/homepage/rich-menus/new?tenant=${encodeURIComponent(tenantId)}&redirect=${encodeURIComponent(redirectPath)}`
+    : '/homepage/rich-menus/new';
+
+    const menuById = (id) =>
+    richMenus.find(m => (m.id || m.menuId) === id) || null;
+
+  const menuOptionLabel = (id, fallback = 'ใช้เมนู default ที่ระบบสร้างให้') => {
+    const m = menuById(id);
+    if (!m) return fallback;
+    const bits = [];
+    bits.push(m.title || m.name || '(no title)');
+    if (m.kind) bits.push(m.kind);
+    if (m.size) bits.push(m.size);
+    return bits.join(' • ');
   };
 
-  const findMenuLabel = (id) => {
-    if (!id) return 'ใช้เมนู default ที่ระบบสร้างให้';
-    const m = richMenus.find(x => x.id === id);
-    return m ? (m.title || m.name || m.id) : id;
+  const openPicker = (kind) => {
+    setPickerFor(kind);
+    setPickerValue(
+      kind === 'admin'
+        ? (adminRichMenuDoc || '')
+        : (userRichMenuDoc || '')
+    );
+    setPickerOpen(true);
   };
+
+  const closePicker = () => {
+    setPickerOpen(false);
+    setPickerFor(null);
+    setPickerValue('');
+  };
+
+  const handlePickerApply = () => {
+    if (!pickerFor || !pickerValue) {
+      closePicker();
+      return;
+    }
+    if (pickerFor === 'admin') setAdminRichMenuDoc(pickerValue);
+    if (pickerFor === 'user')  setUserRichMenuDoc(pickerValue);
+    closePicker();
+  };
+
+  // เปิดหน้า RichMenusPage แบบเดียวกับ TaskAssignment (start-edit)
+  const startEdit = async (which /* 'admin' | 'user' */) => {
+    if (!tenantId) return;
+    try {
+      const h = await authHeader();
+
+      const docId =
+        which === 'admin'
+          ? (adminRichMenuDoc || null)
+          : (userRichMenuDoc || null);
+
+      const res = await fetch(`/api/tenants/${tenantId}/richmenus/start-edit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...h },
+        body: JSON.stringify({ docId, kind: which }),
+      });
+
+      const back = encodeURIComponent(redirectPath);
+      let j = null;
+      try { j = await res.json(); } catch {}
+
+      // ถ้า API ใช้งานไม่ได้ → เปิดโหมดพรีฟิลอย่างเดียว
+      if (!res.ok || (j && j.ok === false)) {
+        navigate(
+          `/homepage/rich-menus/new?tenant=${tenantId}&prefill=${which}&redirect=${back}`,
+          { replace: false }
+        );
+        return;
+      }
+
+      const realId =
+        j?.draftId || j?.id || j?.docId || j?.data?.id || j?.data?.docId;
+      const guest = j?.guestDraft;
+
+      if (realId) {
+        navigate(
+          `/homepage/rich-menus/new?tenant=${tenantId}` +
+          `&draft=${encodeURIComponent(realId)}` +
+          `&prefill=${which}&redirect=${back}`,
+          { replace: false }
+        );
+      } else if (guest) {
+        navigate(
+          `/homepage/rich-menus/new?tenant=${tenantId}` +
+          `&guestDraft=${encodeURIComponent(guest)}` +
+          `&prefill=${which}&redirect=${back}`,
+          {
+            replace: false,
+            state: { prefill: j?.data || null },
+          }
+        );
+      } else {
+        navigate(
+          `/homepage/rich-menus/new?tenant=${tenantId}&prefill=${which}&redirect=${back}`,
+          { replace: false }
+        );
+      }
+    } catch (e) {
+      const back = encodeURIComponent(redirectPath);
+      navigate(
+        `/homepage/rich-menus/new?tenant=${tenantId}&prefill=${which}&redirect=${back}`,
+        { replace: false }
+      );
+      setMsg({
+        type: 'warning',
+        text: 'เปิดตัวแก้ไข Rich menu แบบพรีฟิล (start-edit ใช้งานไม่ได้)',
+      });
+      console.error('[attendance][startEdit] error:', e);
+    }
+  };
+
 
   return (
     <Paper sx={{ p:3, my:3 }}>
@@ -265,121 +389,198 @@ export default function TimeAttendanceSettingsPage() {
           </Button>
         </Grid>
 
-        {/* Right */}
+                {/* Right */}
         <Grid item xs={12} md={6}>
-          {/* Rich menu สำหรับ OA นี้ */}
-          <Typography fontWeight={700}>Rich menu สำหรับ OA นี้</Typography>
-          <Divider sx={{ my:1 }} />
-          <Typography variant="body2" sx={{ mb:1 }} color="text.secondary">
-            เลือกเมนูสำหรับ <b>Admin</b> และ <b>User</b> ของ Time Attendance
-            (เหมือนกับหน้าตั้งค่า Task Assignment)
-          </Typography>
-
-          <Stack
-            direction="row"
-            spacing={2}
-            sx={{ mb: 2, flexWrap: 'wrap' }}
-          >
-            {/* Admin card */}
-            <Box sx={{ minWidth: 260 }}>
-              <Typography variant="body2" sx={{ mb:0.5 }}>
-                Admin (owner/admin/payroll)
+          {/* Rich menu สำหรับ OA นี้ (layout เหมือน Task Assignment) */}
+          <Paper variant="outlined" sx={{ p:2, mb:2 }}>
+            <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
+              <MenuOpenIcon fontSize="small" />
+              <Typography variant="subtitle1" fontWeight={600}>
+                Rich menu สำหรับ OA นี้
               </Typography>
-              <Box
-                sx={{
-                  border:'1px solid #e0e0e0',
-                  borderRadius:1,
-                  overflow:'hidden',
-                  width: 240,
-                  mb:1,
-                }}
+            </Stack>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              เลือกเมนูสำหรับ <b>Admin</b> และ <b>User</b> ของ Time Attendance —
+              เมื่อกด <b>Enable</b> ระบบจะตั้งค่าให้ OA นี้โดยอัตโนมัติ
+            </Typography>
+
+            <Stack direction="row" spacing={2} sx={{ overflowX:'auto', pb:1 }}>
+              {/* Admin card */}
+              <Card variant="outlined" sx={{ minWidth: 320, maxWidth: 360 }}>
+                <CardContent>
+                  <Stack spacing={1}>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <Typography variant="subtitle2" fontWeight="bold">
+                        Admin (owner/admin/payroll)
+                      </Typography>
+                      <Tooltip title="เมนูสำหรับผู้ดูแลระบบ / HR / Payroll">
+                        <InfoOutlinedIcon fontSize="small" color="action" />
+                      </Tooltip>
+                    </Stack>
+
+                    <Box sx={{ border:'1px solid #e0e0e0', borderRadius:1, overflow:'hidden' }}>
+                      <img
+                        src={(menuById(adminRichMenuDoc)?.imageUrl) || ADMIN_PREVIEW}
+                        alt="admin-richmenu"
+                        style={{ width:'100%', display:'block', height:140, objectFit:'cover' }}
+                      />
+                    </Box>
+
+                    <Stack direction="row" spacing={1} flexWrap="wrap">
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() => openPicker('admin')}
+                      >
+                        เปลี่ยนเมนู…
+                      </Button>
+                      <Button
+                        size="small"
+                        variant="text"
+                        onClick={() => startEdit('admin')}
+                      >
+                        ไปที่หน้าสร้าง/แก้ไข
+                      </Button>
+                      {adminRichMenuDoc
+                        ? (
+                          <Chip
+                            size="small"
+                            label={menuOptionLabel(adminRichMenuDoc, 'ใช้เมนู default (Admin)')}
+                          />
+                        ) : (
+                          <Chip
+                            size="small"
+                            label="ใช้เมนู default (Admin)"
+                            variant="outlined"
+                          />
+                        )}
+                    </Stack>
+                  </Stack>
+                </CardContent>
+              </Card>
+
+              {/* User card */}
+              <Card variant="outlined" sx={{ minWidth: 320, maxWidth: 360 }}>
+                <CardContent>
+                  <Stack spacing={1}>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <Typography variant="subtitle2" fontWeight="bold">
+                        User (พนักงานทั่วไป)
+                      </Typography>
+                      <Tooltip title="เมนูสำหรับพนักงานที่ลงทะเบียนแล้ว">
+                        <InfoOutlinedIcon fontSize="small" color="action" />
+                      </Tooltip>
+                    </Stack>
+
+                    <Box sx={{ border:'1px solid #e0e0e0', borderRadius:1, overflow:'hidden' }}>
+                      <img
+                        src={(menuById(userRichMenuDoc)?.imageUrl) || USER_PREVIEW}
+                        alt="user-richmenu"
+                        style={{ width:'100%', display:'block', height:140, objectFit:'cover' }}
+                      />
+                    </Box>
+
+                    <Stack direction="row" spacing={1} flexWrap="wrap">
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() => openPicker('user')}
+                      >
+                        เปลี่ยนเมนู…
+                      </Button>
+                      <Button
+                        size="small"
+                        variant="text"
+                        onClick={() => startEdit('user')}
+                      >
+                        ไปที่หน้าสร้าง/แก้ไข
+                      </Button>
+                      {userRichMenuDoc
+                        ? (
+                          <Chip
+                            size="small"
+                            label={menuOptionLabel(userRichMenuDoc, 'ใช้เมนู default (User)')}
+                          />
+                        ) : (
+                          <Chip
+                            size="small"
+                            label="ใช้เมนู default (User)"
+                            variant="outlined"
+                          />
+                        )}
+                    </Stack>
+                  </Stack>
+                </CardContent>
+              </Card>
+            </Stack>
+
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+              หมายเหตุ: ถ้าไม่เลือกอะไร ระบบจะใช้เมนู default ที่ Time Attendance สร้างให้
+            </Typography>
+          </Paper>
+
+          {/* Dialog เลือก Rich menu (ใช้ร่วมกันทั้ง Admin/User) */}
+          <Dialog open={pickerOpen} onClose={closePicker} fullWidth maxWidth="lg">
+            <DialogTitle>
+              เลือกเมนูสำหรับ{' '}
+              {pickerFor === 'admin' ? 'Admin' : pickerFor === 'user' ? 'User' : ''}
+            </DialogTitle>
+            <DialogContent dividers>
+              <ImageList cols={pickerCols} rowHeight={pickerRowHeight} gap={12}>
+                {richMenus.map((m) => {
+                  const id = m.id || m.menuId;
+                  const fallback = pickerFor === 'admin' ? ADMIN_PREVIEW : USER_PREVIEW;
+                  return (
+                    <ImageListItem
+                      key={id}
+                      onClick={() => setPickerValue(id)}
+                      style={{ cursor:'pointer' }}
+                    >
+                      <img
+                        src={m.imageUrl || fallback}
+                        alt={m.title || id}
+                        loading="lazy"
+                        style={{
+                          width:'100%',
+                          height: pickerRowHeight,
+                          objectFit:'cover',
+                          borderRadius:8,
+                          border:'1px solid #e0e0e0',
+                        }}
+                      />
+                      <Typography variant="caption" sx={{ display:'block', mt: .5 }}>
+                        {menuOptionLabel(id, '')}
+                      </Typography>
+                      {pickerValue === id && (
+                        <Chip
+                          size="small"
+                          color="success"
+                          label="เลือกแล้ว"
+                          sx={{ mt:.5 }}
+                        />
+                      )}
+                    </ImageListItem>
+                  );
+                })}
+
+                {!richMenus.length && (
+                  <Typography variant="body2" color="text.secondary">
+                    ยังไม่มี Rich menu ใน OA นี้ — ไปสร้างจากปุ่ม “ไปที่หน้าสร้าง/แก้ไข”
+                  </Typography>
+                )}
+              </ImageList>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={closePicker}>ยกเลิก</Button>
+              <Button
+                onClick={handlePickerApply}
+                disabled={!pickerValue}
+                variant="contained"
               >
-                <img
-                  src={ADMIN_PREVIEW}
-                  alt="Admin rich menu"
-                  style={{ width:240, height:162, objectFit:'cover', display:'block' }}
-                />
-              </Box>
-              <FormControl fullWidth size="small">
-                <InputLabel>Rich menu สำหรับ Admin</InputLabel>
-                <Select
-                  label="Rich menu สำหรับ Admin"
-                  value={adminRichMenuDoc}
-                  onChange={e => setAdminRichMenuDoc(e.target.value)}
-                >
-                  <MenuItem value="">
-                    <em>ใช้เมนู default ที่ระบบสร้างให้</em>
-                  </MenuItem>
-                  {richMenus.map(m => (
-                    <MenuItem key={m.id} value={m.id}>
-                      {m.title || m.name || m.id}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-              <Typography variant="caption" color="text.secondary" sx={{ mt:0.5, display:'block' }}>
-                กำลังใช้: {findMenuLabel(adminRichMenuDoc)}
-              </Typography>
-            </Box>
-
-            {/* User card */}
-            <Box sx={{ minWidth: 260 }}>
-              <Typography variant="body2" sx={{ mb:0.5 }}>
-                User (พนักงานทั่วไป)
-              </Typography>
-              <Box
-                sx={{
-                  border:'1px solid #e0e0e0',
-                  borderRadius:1,
-                  overflow:'hidden',
-                  width: 240,
-                  mb:1,
-                }}
-              >
-                <img
-                  src={USER_PREVIEW}
-                  alt="User rich menu"
-                  style={{ width:240, height:162, objectFit:'cover', display:'block' }}
-                />
-              </Box>
-              <FormControl fullWidth size="small">
-                <InputLabel>Rich menu สำหรับ User</InputLabel>
-                <Select
-                  label="Rich menu สำหรับ User"
-                  value={userRichMenuDoc}
-                  onChange={e => setUserRichMenuDoc(e.target.value)}
-                >
-                  <MenuItem value="">
-                    <em>ใช้เมนู default ที่ระบบสร้างให้</em>
-                  </MenuItem>
-                  {richMenus.map(m => (
-                    <MenuItem key={m.id} value={m.id}>
-                      {m.title || m.name || m.id}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-              <Typography variant="caption" color="text.secondary" sx={{ mt:0.5, display:'block' }}>
-                กำลังใช้: {findMenuLabel(userRichMenuDoc)}
-              </Typography>
-            </Box>
-          </Stack>
-
-          {/* ปุ่มไปหน้าจัดการ Rich Menu (แบบเดียวกับ TaskAssignment) */}
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={<MenuOpenIcon />}
-            sx={{ mt:1, mb:2 }}
-            onClick={onGotoRichMenuConsole}
-            disabled={!tenantId}
-          >
-            ไปที่หน้าจัดการ Rich Menu
-          </Button>
-
-          <Typography variant="caption" display="block" color="text.secondary">
-            * ปุ่มนี้ใช้จัดการ Rich Menu ของ OA โดยรวม (ทั้ง Time Attendance และบอทอื่น ๆ)
-          </Typography>
+                ใช้เมนูนี้
+              </Button>
+            </DialogActions>
+          </Dialog>
 
           <Divider sx={{ my:2 }} />
 
