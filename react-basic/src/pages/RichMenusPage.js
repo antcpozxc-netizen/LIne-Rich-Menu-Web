@@ -458,9 +458,9 @@ export default function RichMenusPage() {
 
     // 1) กรณีเดิมของ Task (ไฟล์ JSON)
     const jsonMap = {
-      task:    { prereg: '/static/prereg.json', main: '/static/main.json', admin: '/static/task_admin.json', user: '/static/task_user.json' },
-      // ถ้าไม่มีไฟล์สำหรับ attendance จะไปใช้โหมดรูปภาพด้านล่างแทน
-      attendance: { admin: null, user: null },
+      task: { prereg: '/static/prereg.json', main: '/static/main.json', admin: '/static/task_admin.json', user: '/static/task_user.json' },
+      // เพิ่มไฟล์ของ Attendance เพื่อให้โหลด "areas + actions" มาด้วย
+      attendance: { admin: '/static/ta_admin.json', user: '/static/ta_user.json' },
     };
 
     const url = (jsonMap[app] || jsonMap.task)[prefillKind];
