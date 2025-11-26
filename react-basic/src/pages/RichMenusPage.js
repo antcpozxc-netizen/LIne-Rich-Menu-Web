@@ -295,9 +295,14 @@ export default function RichMenusPage() {
   );
 
   // NEW: support prefill=prereg|main (จาก Task settings)
-  const prefillKind = sp.get('prefill') || '';
+  const prefillRaw  = sp.get('prefill') || '';
+  // map ta_admin/ta_user -> admin/user ให้สอดคล้องกับ logic ด้านล่าง
+  const prefillKind = prefillRaw === 'ta_admin' ? 'admin'
+                    : prefillRaw === 'ta_user'  ? 'user'
+                    : prefillRaw;
 
   const app = sp.get('app') || 'task'; // 'attendance' | 'task'
+
 
 
   const { isAuthed, ensureLogin } = useAuthx();
